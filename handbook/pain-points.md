@@ -1,0 +1,86 @@
+# Pain Points
+
+Common bad practices across the software delivery lifecycle. Each entry is a
+problem that erodes codebase health over time, and a potential opportunity for
+a Scute fitness check. Coding agents push these problems to unmanageable
+scale because they cut the same corners, just faster, more consistently, and
+with more creative workarounds.
+
+This is a living backlog. Not everything here is automatable today. What
+matters is mapping the problem space so we know where enforcement can add
+value.
+
+---
+
+## Commits
+
+- **Message conventions ignored.** Commit messages that bypass agreed-upon
+  standards (e.g. Conventional Commits). The format is known and
+  machine-checkable.
+- **Oversized commits.** Too many changes bundled into a single commit, making
+  review harder and bisecting less useful.
+- **Breaking changes unannounced.** Public API signatures changed without
+  corresponding version bumps, changelog entries, or migration notes.
+
+## Tests
+
+- **Ambiguous test names.** Names don't communicate the scenario. Not
+  structured around Given/When/Then or any recognizable pattern.
+- **Bloated test bodies.** Tests that are too long to scan. The story they tell
+  is buried under setup noise and assertion volume.
+- **Logic in tests.** Loops, conditionals, and computation inside test code.
+  Tests should be linear and declarative.
+- **Magic values.** Unnamed literals scattered through assertions with no
+  indication of what they represent or why that value matters.
+- **No test helpers or factories.** Repeated, verbose setup instead of
+  expressive helpers that name the intent.
+- **Duplicate test coverage.** Multiple tests validating the same behavior
+  without adding signal. Noise that slows the suite and obscures gaps.
+- **Core logic left untested.** Tests skipped entirely, jumping straight to
+  implementation. TDD isn't mandatory, but core logic without tests is a
+  fitness problem.
+
+## Code Quality
+
+- **Clean code violations.** General readability and maintainability rules
+  broken: long functions, deep nesting, unclear control flow.
+- **Duplication (DRY).** Copy-pasted logic instead of extracting shared
+  behavior.
+- **Poor variable names.** Names that don't communicate intent or that mislead.
+
+## Architecture
+
+- **Separation of concerns violated.** Responsibilities leak across boundaries
+  (e.g. configuration logic embedded in domain code).
+- **SOLID / Tell Don't Ask violations.** Objects exposing internals instead of
+  encapsulating behavior. Dependency inversion ignored.
+- **Layer boundary violations.** Imports that cross architectural layers
+  directly. This goes beyond a single check and applies broadly across module
+  boundaries.
+
+## API Design
+
+- **Duplicated function signatures.** Multiple functions that do nearly the
+  same thing (e.g. `Check` vs `CheckWithConfig`), adding cognitive load instead
+  of a single composable interface.
+- **Breaking public API changes.** Signature changes to public APIs without
+  versioning discipline.
+
+## Documentation
+
+- **Language-level docs ignored.** Doc comments (GoDoc, Rustdoc, JSDoc) left
+  empty or missing on public interfaces.
+- **CLI docs drift from implementation.** The documented CLI commands don't
+  match what the tool actually does. The source of truth and the docs diverge.
+
+---
+
+## How to Read This
+
+Each entry describes a **problem**, not a solution. Some map cleanly to
+deterministic checks (commit message format, test complexity metrics). Others
+are judgment calls that may need heuristic proxies (test readability, naming
+quality). A few sit at the boundary of what static analysis can catch.
+
+The value is in the catalog itself: knowing what goes wrong tells us where
+enforcement matters most.
