@@ -1,4 +1,4 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
@@ -8,7 +8,7 @@ pub enum Status {
     Fail,
 }
 
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct Thresholds {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub warn: Option<u64>,
@@ -42,24 +42,40 @@ impl Evidence {
     }
 }
 
+#[derive(Debug, Default)]
+pub struct Definition {
+    pub types: Option<Vec<String>>,
+    pub thresholds: Option<Thresholds>,
+}
+
+pub const CHECK_NAME: &str = "commit-message";
+
+const DEFAULT_THRESHOLDS: Thresholds = Thresholds {
+    warn: None,
+    fail: Some(0),
+};
+
 const DEFAULT_TYPES: &[&str] = &[
     "feat", "fix", "docs", "style", "refactor", "perf", "test", "build", "ci", "chore", "revert",
 ];
 
 #[must_use]
-pub fn check_commit_message(message: &str) -> CheckResult {
+pub fn check_commit_message(message: &str, definition: Option<&Definition>) -> CheckResult {
     let message: String = message
         .lines()
         .filter(|l| !l.starts_with('#'))
         .collect::<Vec<_>>()
         .join("\n");
     let subject = message.lines().next().unwrap_or("");
-    let mut evidence = validate_subject(subject);
+    let types = definition
+        .and_then(|d| d.types.clone())
+        .unwrap_or_else(|| DEFAULT_TYPES.iter().map(|&s| s.into()).collect());
+    let mut evidence = validate_subject(subject, &types);
     evidence.extend(validate_structure(&message));
     let observed = u64::from(!evidence.is_empty());
 
     CheckResult {
-        check: "commit-message".into(),
+        check: CHECK_NAME.into(),
         target: subject.into(),
         status: if observed > 0 {
             Status::Fail
@@ -67,15 +83,14 @@ pub fn check_commit_message(message: &str) -> CheckResult {
             Status::Pass
         },
         observed,
-        expected: Thresholds {
-            warn: None,
-            fail: Some(0),
-        },
+        expected: definition
+            .and_then(|d| d.thresholds.clone())
+            .unwrap_or(DEFAULT_THRESHOLDS),
         evidence,
     }
 }
 
-fn validate_subject(subject: &str) -> Vec<Evidence> {
+fn validate_subject(subject: &str, types: &[String]) -> Vec<Evidence> {
     let Some((prefix, description)) = subject.split_once(": ") else {
         return vec![Evidence::new("subject-format", subject)];
     };
@@ -84,10 +99,8 @@ fn validate_subject(subject: &str) -> Vec<Evidence> {
     let type_str = prefix_clean.split('(').next().unwrap_or(prefix_clean);
     let mut evidence = Vec::new();
 
-    if !DEFAULT_TYPES
-        .iter()
-        .any(|t| t.eq_ignore_ascii_case(type_str))
-    {
+    let type_known = types.iter().any(|t| t.eq_ignore_ascii_case(type_str));
+    if !type_known {
         evidence.push(Evidence::new("unknown-type", type_str));
     }
 
@@ -179,7 +192,7 @@ mod tests {
 
     #[test]
     fn message_without_colon_space_separator_fails() {
-        let result = check_commit_message("no separator here");
+        let result = check_commit_message("no separator here", None);
 
         assert_eq!(result.status, Status::Fail);
         assert_eq!(result.observed, 1);
@@ -191,7 +204,7 @@ mod tests {
 
     #[test]
     fn unknown_type_is_a_violation() {
-        let result = check_commit_message("banana: do something");
+        let result = check_commit_message("banana: do something", None);
 
         assert_eq!(result.status, Status::Fail);
         assert_eq!(result.evidence, [Evidence::new("unknown-type", "banana")]);
@@ -199,7 +212,7 @@ mod tests {
 
     #[test]
     fn empty_description_is_a_violation() {
-        let result = check_commit_message("feat: ");
+        let result = check_commit_message("feat: ", None);
 
         assert_eq!(result.status, Status::Fail);
         assert_eq!(result.evidence, [Evidence::new("empty-description", "")]);
@@ -207,7 +220,7 @@ mod tests {
 
     #[test]
     fn whitespace_only_description_is_a_violation() {
-        let result = check_commit_message("feat:   \t  ");
+        let result = check_commit_message("feat:   \t  ", None);
 
         assert_eq!(result.status, Status::Fail);
         assert_eq!(
@@ -218,7 +231,7 @@ mod tests {
 
     #[test]
     fn type_matching_is_case_insensitive() {
-        let result = check_commit_message("Feat: add login");
+        let result = check_commit_message("Feat: add login", None);
 
         assert_eq!(result.status, Status::Pass);
         assert_eq!(result.evidence, vec![]);
@@ -226,7 +239,7 @@ mod tests {
 
     #[test]
     fn scope_in_parentheses_is_accepted() {
-        let result = check_commit_message("feat(auth): add login");
+        let result = check_commit_message("feat(auth): add login", None);
 
         assert_eq!(result.status, Status::Pass);
         assert_eq!(result.evidence, vec![]);
@@ -234,7 +247,7 @@ mod tests {
 
     #[test]
     fn empty_scope_is_a_violation() {
-        let result = check_commit_message("feat(): add login");
+        let result = check_commit_message("feat(): add login", None);
 
         assert_eq!(result.status, Status::Fail);
         assert_eq!(result.evidence, [Evidence::new("empty-scope", "()")]);
@@ -242,7 +255,7 @@ mod tests {
 
     #[test]
     fn breaking_change_indicator_is_accepted() {
-        let result = check_commit_message("feat!: breaking change");
+        let result = check_commit_message("feat!: breaking change", None);
 
         assert_eq!(result.status, Status::Pass);
         assert_eq!(result.evidence, vec![]);
@@ -250,7 +263,7 @@ mod tests {
 
     #[test]
     fn scope_with_breaking_change_is_accepted() {
-        let result = check_commit_message("feat(api)!: remove endpoint");
+        let result = check_commit_message("feat(api)!: remove endpoint", None);
 
         assert_eq!(result.status, Status::Pass);
         assert_eq!(result.evidence, vec![]);
@@ -258,7 +271,7 @@ mod tests {
 
     #[test]
     fn multiple_violations_produce_multiple_evidence_entries() {
-        let result = check_commit_message("banana: ");
+        let result = check_commit_message("banana: ", None);
 
         assert_eq!(result.status, Status::Fail);
         assert_eq!(result.observed, 1);
@@ -273,7 +286,7 @@ mod tests {
 
     #[test]
     fn body_not_separated_by_blank_line_is_a_violation() {
-        let result = check_commit_message("feat: add login\nThis is not separated.");
+        let result = check_commit_message("feat: add login\nThis is not separated.", None);
 
         assert_eq!(result.status, Status::Fail);
         assert_eq!(
@@ -284,8 +297,10 @@ mod tests {
 
     #[test]
     fn valid_message_with_footer_passes() {
-        let result =
-            check_commit_message("feat: add login\n\nSome body text.\n\nReviewed-by: Alice");
+        let result = check_commit_message(
+            "feat: add login\n\nSome body text.\n\nReviewed-by: Alice",
+            None,
+        );
 
         assert_eq!(result.status, Status::Pass);
         assert_eq!(result.evidence, vec![]);
@@ -293,7 +308,7 @@ mod tests {
 
     #[test]
     fn footer_with_hash_value_format_is_accepted() {
-        let result = check_commit_message("fix: resolve bug\n\nFixes #123");
+        let result = check_commit_message("fix: resolve bug\n\nFixes #123", None);
 
         assert_eq!(result.status, Status::Pass);
         assert_eq!(result.evidence, vec![]);
@@ -303,6 +318,7 @@ mod tests {
     fn malformed_footer_is_a_violation() {
         let result = check_commit_message(
             "feat: add login\n\nSome body.\n\nReviewed-by: Alice\nnot a valid footer",
+            None,
         );
 
         assert_eq!(result.status, Status::Fail);
@@ -314,7 +330,8 @@ mod tests {
 
     #[test]
     fn breaking_change_footer_must_be_uppercase() {
-        let result = check_commit_message("feat!: drop API\n\nbreaking change: removed endpoint");
+        let result =
+            check_commit_message("feat!: drop API\n\nbreaking change: removed endpoint", None);
 
         assert_eq!(result.status, Status::Fail);
         assert_eq!(
@@ -325,7 +342,10 @@ mod tests {
 
     #[test]
     fn git_comment_lines_are_stripped() {
-        let result = check_commit_message("feat: add login\n# This is a git comment\n\nBody here.");
+        let result = check_commit_message(
+            "feat: add login\n# This is a git comment\n\nBody here.",
+            None,
+        );
 
         assert_eq!(result.status, Status::Pass);
         assert_eq!(result.evidence, vec![]);
@@ -333,7 +353,7 @@ mod tests {
 
     #[test]
     fn empty_input_is_a_violation() {
-        let result = check_commit_message("");
+        let result = check_commit_message("", None);
 
         assert_eq!(result.status, Status::Fail);
         assert_eq!(result.evidence, [Evidence::new("subject-format", "")]);
@@ -341,14 +361,14 @@ mod tests {
 
     #[test]
     fn whitespace_only_input_is_a_violation() {
-        let result = check_commit_message("   \n  \n ");
+        let result = check_commit_message("   \n  \n ", None);
 
         assert_eq!(result.status, Status::Fail);
     }
 
     #[test]
     fn valid_message_with_body_passes() {
-        let result = check_commit_message("feat: add login\n\nThis adds the login flow.");
+        let result = check_commit_message("feat: add login\n\nThis adds the login flow.", None);
 
         assert_eq!(result.status, Status::Pass);
         assert_eq!(result.evidence, vec![]);
@@ -356,7 +376,7 @@ mod tests {
 
     #[test]
     fn valid_message_returns_pass_with_all_fields() {
-        let result = check_commit_message("feat: add login");
+        let result = check_commit_message("feat: add login", None);
 
         assert_eq!(result.check, "commit-message");
         assert_eq!(result.target, "feat: add login");
@@ -369,6 +389,53 @@ mod tests {
                 fail: Some(0)
             }
         );
+        assert_eq!(result.evidence, vec![]);
+    }
+
+    #[test]
+    fn definition_thresholds_are_used_in_result() {
+        let definition = Definition {
+            thresholds: Some(Thresholds {
+                warn: Some(1),
+                fail: Some(3),
+            }),
+            ..Definition::default()
+        };
+
+        let result = check_commit_message("feat: add login", Some(&definition));
+
+        assert_eq!(
+            result.expected,
+            Thresholds {
+                warn: Some(1),
+                fail: Some(3),
+            }
+        );
+    }
+
+    #[test]
+    fn custom_types_reject_unlisted_defaults() {
+        let definition = Definition {
+            types: Some(vec!["hotfix".into()]),
+            ..Definition::default()
+        };
+
+        let result = check_commit_message("feat: add login", Some(&definition));
+
+        assert_eq!(result.status, Status::Fail);
+        assert_eq!(result.evidence, [Evidence::new("unknown-type", "feat")]);
+    }
+
+    #[test]
+    fn custom_types_override_defaults() {
+        let definition = Definition {
+            types: Some(vec!["hotfix".into()]),
+            ..Definition::default()
+        };
+
+        let result = check_commit_message("hotfix: urgent patch", Some(&definition));
+
+        assert_eq!(result.status, Status::Pass);
         assert_eq!(result.evidence, vec![]);
     }
 }
