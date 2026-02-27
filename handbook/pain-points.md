@@ -36,6 +36,16 @@ value.
   expressive helpers that name the intent.
 - **Duplicate test coverage.** Multiple tests validating the same behavior
   without adding signal. Noise that slows the suite and obscures gaps.
+- **Over-specified test inputs.** Test data more complex than what the test
+  actually proves. The extra detail couples the test to unrelated features,
+  making it fragile: changes to those features break tests that weren't
+  testing them.
+- **Helpers that hide the story.** Test helpers that wrap both the action and
+  the assertion, making individual tests opaque. Helpers should reduce
+  construction boilerplate, not obscure the test narrative.
+- **Weak assertions.** Generic boolean checks instead of specific value
+  comparisons. They hide the expected value and produce useless failure
+  messages.
 - **Test pyramid violations.** Behavior verified at the wrong level.
   Integration tests asserting on domain-level details that belong in unit
   tests, or unit tests mocking so heavily they're testing wiring instead of
