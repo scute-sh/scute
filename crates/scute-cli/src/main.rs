@@ -1,4 +1,4 @@
-use std::io::Read;
+use std::io::{IsTerminal, Read};
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -47,7 +47,11 @@ fn resolve_message(arg: Option<String>) -> Result<String> {
     if let Some(message) = arg {
         return Ok(message);
     }
+    let mut stdin = std::io::stdin();
+    if stdin.is_terminal() {
+        return Ok(String::new());
+    }
     let mut buf = String::new();
-    std::io::stdin().read_to_string(&mut buf)?;
+    stdin.read_to_string(&mut buf)?;
     Ok(buf)
 }

@@ -44,3 +44,11 @@ fn argument_takes_precedence_over_stdin() {
 
     assert_eq!(result["target"], "feat: from argument");
 }
+
+#[test]
+fn failing_check_exits_with_code_1() {
+    cargo_bin_cmd!("scute")
+        .args(["check", "commit-message", "not a conventional commit"])
+        .assert()
+        .code(1);
+}
