@@ -1,0 +1,9 @@
+[workspace]
+resolver = "2"
+members = ["scute-core", "scute-cli"]
+
+[workspace.lints.clippy]
+pedantic = { level = "warn", priority = -1 }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"

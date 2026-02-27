@@ -36,6 +36,11 @@ value.
   expressive helpers that name the intent.
 - **Duplicate test coverage.** Multiple tests validating the same behavior
   without adding signal. Noise that slows the suite and obscures gaps.
+- **Test pyramid violations.** Behavior verified at the wrong level.
+  Integration tests asserting on domain-level details that belong in unit
+  tests, or unit tests mocking so heavily they're testing wiring instead of
+  logic. Each layer should own its own concerns: unit tests verify behavior,
+  integration tests verify that layers talk to each other.
 - **Core logic left untested.** Tests skipped entirely, jumping straight to
   implementation. TDD isn't mandatory, but core logic without tests is a
   fitness problem.
@@ -47,6 +52,9 @@ value.
 - **Duplication (DRY).** Copy-pasted logic instead of extracting shared
   behavior.
 - **Poor variable names.** Names that don't communicate intent or that mislead.
+- **Formatting and linting not enforced.** Tools exist but aren't wired into
+  the workflow. The codebase drifts from its own standards one PR at a time.
+  Trivially automatable, yet consistently overlooked.
 
 ## Architecture
 
@@ -57,6 +65,23 @@ value.
 - **Layer boundary violations.** Imports that cross architectural layers
   directly. This goes beyond a single check and applies broadly across module
   boundaries.
+- **UI concerns leaking into domain.** Serialization formats, framework types,
+  or presentation logic creeping into core domain code. A domain module
+  returning `serde_json::Value` instead of its own types is a classic example.
+  The domain should be infrastructure-agnostic; serialization belongs at the
+  edges.
+
+## Dependencies
+
+- **Unused dependencies.** Libraries added speculatively or left behind after
+  a refactor. They inflate build times, expand the attack surface, and mislead
+  readers about what the code actually uses.
+- **Duplicate dependencies.** The same library declared in multiple dependency
+  sections or at multiple versions. Causes confusion about which version is
+  active and bloats the dependency tree.
+- **Dependency freshness.** Dependencies falling behind on major versions.
+  Stale deps accumulate security vulnerabilities and make future upgrades
+  painful.
 
 ## API Design
 
