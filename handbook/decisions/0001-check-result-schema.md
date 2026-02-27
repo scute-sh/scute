@@ -55,10 +55,13 @@ static/dynamic result distinction and the atomic/holistic scope distinction.
 
 ### `observed` + `expected`
 
-Every check *observes* something and compares it to an *expectation*. For metrics,
-`observed` is a measurement and `expected` carries thresholds. For violations,
-`observed` is a count and `expected` is `{ fail: 0 }`. The abstraction holds across
-check types.
+Every check *observes* something and compares it to an *expectation*. `observed` is
+the check's measurement, in whatever unit is natural to it. The schema doesn't
+prescribe the unit; the check does. Coverage observes a percentage. Layer violations
+observe a count of violations, so thresholds like `{ warn: 3, fail: 10 }` allow
+controlled tolerance during migrations. Commit-message validity observes 0 or 1,
+because the check's scope is a single message. `evidence` carries the detailed
+breakdown regardless of `observed`.
 
 `expected` is always the *resolved* threshold for this evaluation, whether it came
 from static config or dynamic computation (e.g., acceptable latency shifting with
