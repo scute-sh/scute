@@ -1,6 +1,10 @@
 - See @README for the overview of what Scute is about.
 - See @handbook/vision.md @handbook/attributes.md and @handbook/roadmap.md to understand more about the project context, goals, and the direction we're headed.
 
+# Tools & Workflow
+
+- Do not use `git -C` commands, instead `cd` at the root and use regular `git` commands.
+
 # Voice & Tone
 
 The tone is **informal**, like friends working together in a startup. Not a big corpo, not a government press release. Just direct & respectful communication between devs who've seen the trenches and focus on what really matters.
