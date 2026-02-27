@@ -59,8 +59,18 @@ value.
 
 - **Clean code violations.** General readability and maintainability rules
   broken: long functions, deep nesting, unclear control flow.
+- **Complex conditions.** Compound boolean expressions, especially negated
+  ones, that obscure intent. An intermediate variable that names what the
+  condition means is worth the extra line.
 - **Duplication (DRY).** Copy-pasted logic instead of extracting shared
-  behavior.
+  behavior. Includes structural duplication: same operation applied to
+  different data, with only the data source varying.
+- **Duplicated domain strings.** The same concept hardcoded as a string
+  literal in multiple places. The coupling is implicit and breaks silently
+  when one occurrence changes without the other.
+- **Premature optimization.** Adding complexity to avoid trivial costs.
+  Extra variables, match arms, or type gymnastics to save an allocation
+  that doesn't matter. Simplicity wins until profiling says otherwise.
 - **Poor variable names.** Names that don't communicate intent or that mislead.
 - **Formatting and linting not enforced.** Tools exist but aren't wired into
   the workflow. The codebase drifts from its own standards one PR at a time.
