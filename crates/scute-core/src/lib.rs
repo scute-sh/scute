@@ -73,19 +73,16 @@ pub fn check_commit_message(message: &str, definition: Option<&Definition>) -> C
     let mut evidence = validate_subject(subject, &types);
     evidence.extend(validate_structure(&message));
     let observed = u64::from(!evidence.is_empty());
+    let expected = definition
+        .and_then(|d| d.thresholds.clone())
+        .unwrap_or(DEFAULT_THRESHOLDS);
 
     CheckResult {
         check: CHECK_NAME.into(),
         target: subject.into(),
-        status: if observed > 0 {
-            Status::Fail
-        } else {
-            Status::Pass
-        },
+        status: derive_status(observed, &expected),
         observed,
-        expected: definition
-            .and_then(|d| d.thresholds.clone())
-            .unwrap_or(DEFAULT_THRESHOLDS),
+        expected,
         evidence,
     }
 }
@@ -182,6 +179,33 @@ fn is_footer_token(token: &str) -> bool {
         || (!token.is_empty() && token.chars().all(|c| c.is_alphanumeric() || c == '-'))
 }
 
+fn derive_status(observed: u64, thresholds: &Thresholds) -> Status {
+    let higher_is_worse = match (thresholds.warn, thresholds.fail) {
+        (Some(w), Some(f)) => w < f,
+        _ => true,
+    };
+
+    let exceeds = if higher_is_worse {
+        |observed: u64, threshold: u64| observed > threshold
+    } else {
+        |observed: u64, threshold: u64| observed < threshold
+    };
+
+    if let Some(fail) = thresholds.fail
+        && exceeds(observed, fail)
+    {
+        return Status::Fail;
+    }
+
+    if let Some(warn) = thresholds.warn
+        && exceeds(observed, warn)
+    {
+        return Status::Warn;
+    }
+
+    Status::Pass
+}
+
 fn is_breaking_change(token: &str) -> bool {
     token.eq_ignore_ascii_case("BREAKING CHANGE") || token.eq_ignore_ascii_case("BREAKING-CHANGE")
 }
@@ -189,6 +213,90 @@ fn is_breaking_change(token: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lower_is_worse_below_fail_is_fail() {
+        let thresholds = Thresholds {
+            warn: Some(70),
+            fail: Some(50),
+        };
+
+        let status = derive_status(40, &thresholds);
+
+        assert_eq!(status, Status::Fail);
+    }
+
+    #[test]
+    fn lower_is_worse_between_warn_and_fail_is_warn() {
+        let thresholds = Thresholds {
+            warn: Some(70),
+            fail: Some(50),
+        };
+
+        let status = derive_status(60, &thresholds);
+
+        assert_eq!(status, Status::Warn);
+    }
+
+    #[test]
+    fn lower_is_worse_above_warn_is_pass() {
+        let thresholds = Thresholds {
+            warn: Some(70),
+            fail: Some(50),
+        };
+
+        let status = derive_status(80, &thresholds);
+
+        assert_eq!(status, Status::Pass);
+    }
+
+    #[test]
+    fn observed_below_fail_with_no_warn_is_pass() {
+        let thresholds = Thresholds {
+            warn: None,
+            fail: Some(5),
+        };
+
+        let status = derive_status(3, &thresholds);
+
+        assert_eq!(status, Status::Pass);
+    }
+
+    #[test]
+    fn observed_at_warn_is_pass() {
+        let thresholds = Thresholds {
+            warn: Some(5),
+            fail: Some(10),
+        };
+
+        let status = derive_status(5, &thresholds);
+
+        assert_eq!(status, Status::Pass);
+    }
+
+    #[test]
+    fn observed_above_warn_below_fail_is_warn() {
+        let thresholds = Thresholds {
+            warn: Some(3),
+            fail: Some(10),
+        };
+
+        let status = derive_status(5, &thresholds);
+
+        assert_eq!(status, Status::Warn);
+    }
+
+    #[test]
+    fn observed_above_fail_is_fail() {
+        let thresholds = Thresholds {
+            warn: None,
+            fail: Some(5),
+        };
+
+        let status = derive_status(10, &thresholds);
+
+        assert_eq!(status, Status::Fail);
+    }
 
     #[test]
     fn message_without_colon_space_separator_fails() {
