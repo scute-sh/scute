@@ -1,5 +1,25 @@
+//! Conventional Commits validation for commit messages.
+//!
+//! Checks whether a commit message follows the
+//! [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/) specification.
+//!
+//! # Quick start
+//!
+//! ```
+//! use scute_core::{check_commit_message, Status};
+//!
+//! let result = check_commit_message("feat: add login", None);
+//! assert_eq!(result.status, Status::Pass);
+//!
+//! let result = check_commit_message("not conventional", None);
+//! assert_eq!(result.status, Status::Fail);
+//! ```
+
 use serde::{Deserialize, Serialize};
 
+/// Outcome of a threshold comparison.
+///
+/// Derived by comparing [`CheckResult::observed`] against [`Thresholds`].
 #[derive(Debug, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Status {
@@ -8,6 +28,21 @@ pub enum Status {
     Fail,
 }
 
+/// Warn and fail boundaries for a check.
+///
+/// When both are set, their relative order determines direction:
+/// `warn < fail` means higher is worse (e.g. violation counts),
+/// `warn > fail` means lower is worse (e.g. coverage percentages).
+///
+/// ```
+/// use scute_core::Thresholds;
+///
+/// // "More than 0 violations is a failure"
+/// let violations = Thresholds { warn: None, fail: Some(0) };
+///
+/// // "Coverage below 70% warns, below 50% fails"
+/// let coverage = Thresholds { warn: Some(70), fail: Some(50) };
+/// ```
 #[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
 pub struct Thresholds {
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -16,6 +51,21 @@ pub struct Thresholds {
     pub fail: Option<u64>,
 }
 
+/// Result of running a check against a target.
+///
+/// Serializes to JSON following the
+/// [check result schema](https://github.com/nomato/scute/blob/main/handbook/decisions/0001-check-result-schema.md).
+///
+/// ```
+/// use scute_core::check_commit_message;
+///
+/// let result = check_commit_message("feat: add login", None);
+///
+/// assert_eq!(result.check, "commit-message");
+/// assert_eq!(result.target, "feat: add login");
+/// assert_eq!(result.observed, 0);
+/// assert!(result.evidence.is_empty());
+/// ```
 #[derive(Debug, PartialEq, Serialize)]
 pub struct CheckResult {
     pub check: String,
@@ -27,6 +77,18 @@ pub struct CheckResult {
     pub evidence: Vec<Evidence>,
 }
 
+/// A single violation found during a check.
+///
+/// `rule` identifies what was violated, `found` shows what triggered it.
+///
+/// ```
+/// use scute_core::check_commit_message;
+///
+/// let result = check_commit_message("banana: do stuff", None);
+///
+/// assert_eq!(result.evidence[0].rule, "unknown-type");
+/// assert_eq!(result.evidence[0].found, "banana");
+/// ```
 #[derive(Debug, PartialEq, Serialize)]
 pub struct Evidence {
     pub rule: String,
@@ -42,12 +104,32 @@ impl Evidence {
     }
 }
 
+/// Configuration for a commit-message check.
+///
+/// Both fields are optional. When omitted, defaults apply:
+/// standard Conventional Commits types and `{ fail: 0 }`.
+///
+/// ```
+/// use scute_core::{Definition, Thresholds, check_commit_message, Status};
+///
+/// let def = Definition {
+///     types: Some(vec!["hotfix".into()]),
+///     thresholds: Some(Thresholds { warn: None, fail: Some(0) }),
+/// };
+///
+/// let result = check_commit_message("hotfix: urgent patch", Some(&def));
+/// assert_eq!(result.status, Status::Pass);
+///
+/// let result = check_commit_message("feat: add login", Some(&def));
+/// assert_eq!(result.status, Status::Fail);
+/// ```
 #[derive(Debug, Default)]
 pub struct Definition {
     pub types: Option<Vec<String>>,
     pub thresholds: Option<Thresholds>,
 }
 
+/// Check name used in [`CheckResult::check`] and config file lookup.
 pub const CHECK_NAME: &str = "commit-message";
 
 const DEFAULT_THRESHOLDS: Thresholds = Thresholds {
@@ -59,6 +141,26 @@ const DEFAULT_TYPES: &[&str] = &[
     "feat", "fix", "docs", "style", "refactor", "perf", "test", "build", "ci", "chore", "revert",
 ];
 
+/// Validate a commit message against the Conventional Commits spec.
+///
+/// Pass `None` for `definition` to use defaults (standard types, `{ fail: 0 }`).
+/// Git comment lines (`#`-prefixed) are stripped before validation.
+///
+/// # Examples
+///
+/// ```
+/// use scute_core::{check_commit_message, Status};
+///
+/// // Valid conventional commit
+/// let result = check_commit_message("feat(auth): add OAuth flow", None);
+/// assert_eq!(result.status, Status::Pass);
+/// assert!(result.evidence.is_empty());
+///
+/// // Multiple violations
+/// let result = check_commit_message("banana: ", None);
+/// assert_eq!(result.status, Status::Fail);
+/// assert_eq!(result.evidence.len(), 2);
+/// ```
 #[must_use]
 pub fn check_commit_message(message: &str, definition: Option<&Definition>) -> CheckResult {
     let message: String = message
