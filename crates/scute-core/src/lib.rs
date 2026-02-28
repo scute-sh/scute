@@ -160,9 +160,9 @@ impl Evidence {
 /// standard Conventional Commits types and `{ fail: 0 }`.
 ///
 /// ```
-/// use scute_core::{Definition, Thresholds, check_commit_message, Status};
+/// use scute_core::{CommitMessageDefinition, Thresholds, check_commit_message, Status};
 ///
-/// let def = Definition {
+/// let def = CommitMessageDefinition {
 ///     types: Some(vec!["hotfix".into()]),
 ///     thresholds: Some(Thresholds { warn: None, fail: Some(0) }),
 /// };
@@ -174,7 +174,7 @@ impl Evidence {
 /// assert_eq!(result.status, Status::Fail);
 /// ```
 #[derive(Debug, Default)]
-pub struct Definition {
+pub struct CommitMessageDefinition {
     pub types: Option<Vec<String>>,
     pub thresholds: Option<Thresholds>,
 }
@@ -212,7 +212,10 @@ const DEFAULT_TYPES: &[&str] = &[
 /// assert_eq!(result.evidence.len(), 2);
 /// ```
 #[must_use]
-pub fn check_commit_message(message: &str, definition: Option<&Definition>) -> CheckResult {
+pub fn check_commit_message(
+    message: &str,
+    definition: Option<&CommitMessageDefinition>,
+) -> CheckResult {
     let message: String = message
         .lines()
         .filter(|l| !l.starts_with('#'))
@@ -668,12 +671,12 @@ mod tests {
 
     #[test]
     fn definition_thresholds_are_used_in_result() {
-        let definition = Definition {
+        let definition = CommitMessageDefinition {
             thresholds: Some(Thresholds {
                 warn: Some(1),
                 fail: Some(3),
             }),
-            ..Definition::default()
+            ..CommitMessageDefinition::default()
         };
 
         let result = check_commit_message("feat: add login", Some(&definition));
@@ -699,9 +702,9 @@ mod tests {
 
     #[test]
     fn unknown_type_expected_reflects_config_types() {
-        let definition = Definition {
+        let definition = CommitMessageDefinition {
             types: Some(vec!["hotfix".into(), "deploy".into()]),
-            ..Definition::default()
+            ..CommitMessageDefinition::default()
         };
 
         let result = check_commit_message("feat: add login", Some(&definition));
@@ -741,9 +744,9 @@ mod tests {
 
     #[test]
     fn custom_types_override_defaults() {
-        let definition = Definition {
+        let definition = CommitMessageDefinition {
             types: Some(vec!["hotfix".into()]),
-            ..Definition::default()
+            ..CommitMessageDefinition::default()
         };
 
         let result = check_commit_message("hotfix: urgent patch", Some(&definition));

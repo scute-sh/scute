@@ -4,7 +4,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use scute_core::{Definition, Status, Thresholds};
+use scute_core::{CommitMessageDefinition, Status, Thresholds};
 use serde::Deserialize;
 
 #[derive(Parser)]
@@ -79,18 +79,18 @@ fn resolve_message(arg: Option<String>) -> Result<String> {
     Ok(buf)
 }
 
-fn load_definition(check_name: &str) -> Result<Definition> {
+fn load_definition(check_name: &str) -> Result<CommitMessageDefinition> {
     let path = Path::new(".scute.yml");
     if !path.exists() {
-        return Ok(Definition::default());
+        return Ok(CommitMessageDefinition::default());
     }
     let contents = std::fs::read_to_string(path)?;
     let config: ScuteConfig = serde_yml::from_str(&contents)?;
     let Some(entry) = config.checks.get(check_name) else {
-        return Ok(Definition::default());
+        return Ok(CommitMessageDefinition::default());
     };
     let types = entry.config.as_ref().and_then(|c| c.types.clone());
-    Ok(Definition {
+    Ok(CommitMessageDefinition {
         types,
         thresholds: entry.thresholds.clone(),
     })
