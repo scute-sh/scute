@@ -151,4 +151,18 @@ mod tests {
             Some(Expected::Text("0.9.0".into()))
         );
     }
+
+    #[test]
+    fn it_fails_with_more_outdated_deps_than_fail_threshold() {
+        let deps = vec![
+            dep("a", "1.0.0", "2.0.0"),
+            dep("b", "1.0.0", "2.0.0"),
+            dep("c", "1.0.0", "2.0.0"),
+        ];
+
+        let result = check(".", &deps);
+
+        assert_eq!(result.measurement.observed, 3);
+        assert_eq!(result.status, Status::Fail);
+    }
 }

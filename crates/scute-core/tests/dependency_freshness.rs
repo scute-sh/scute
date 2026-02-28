@@ -85,3 +85,22 @@ edition = "2021"
 
     assert!(deps.is_empty());
 }
+
+#[test]
+fn dev_dependencies_are_included() {
+    let dir = setup_cargo_project(
+        r#"[package]
+name = "test-project"
+version = "0.1.0"
+edition = "2021"
+
+[dev-dependencies]
+rand = "=0.7.3"
+"#,
+    );
+
+    let deps = fetch_outdated(dir.path()).unwrap();
+
+    assert_eq!(deps.len(), 1);
+    assert_eq!(deps[0].name, "rand");
+}
