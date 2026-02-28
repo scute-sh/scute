@@ -76,6 +76,14 @@ pub fn fetch_outdated(target: &Path) -> std::io::Result<Vec<OutdatedDep>> {
         .args(["outdated", "--format", "json", "--depth", "1"])
         .current_dir(target)
         .output()?;
+
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(std::io::Error::other(format!(
+            "cargo outdated failed: {stderr}"
+        )));
+    }
+
     let stdout = String::from_utf8(output.stdout)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
     Ok(parse_cargo_outdated(&stdout))
@@ -87,10 +95,10 @@ pub fn check(
     outdated: &[OutdatedDep],
     definition: Option<&Definition>,
 ) -> CheckResult {
-    let level = definition.and_then(|d| d.level);
+    let level = definition.and_then(|d| d.level).unwrap_or_default();
     let evidence: Vec<Evidence> = outdated
         .iter()
-        .filter(|dep| level.is_none_or(|l| dep.kind() >= l))
+        .filter(|dep| dep.kind() >= level)
         .map(|dep| {
             Evidence::with_expected(
                 &format!("outdated-{}", dep.kind()),
@@ -155,14 +163,6 @@ mod tests {
     use super::*;
     use crate::Status;
 
-    fn dep(name: &str, current: &str, latest: &str) -> OutdatedDep {
-        OutdatedDep {
-            name: name.into(),
-            current: current.parse().unwrap(),
-            latest: latest.parse().unwrap(),
-        }
-    }
-
     #[test]
     fn no_outdated_deps_returns_pass_with_all_fields() {
         let result = check(".", &[], None);
@@ -182,42 +182,19 @@ mod tests {
 
     #[test]
     fn reports_outdated_dep_count() {
-        let deps = vec![
-            dep("rand", "0.7.3", "0.9.0"),
-            dep("serde", "1.0.0", "1.1.0"),
-        ];
+        let deps = vec![dep("a", "1.0.0", "2.0.0"), dep("b", "2.0.0", "3.0.0")];
 
         let result = check(".", &deps, None);
 
         assert_eq!(result.measurement.observed, 2);
-        assert_eq!(result.status, Status::Fail);
-    }
-
-    #[test]
-    fn evidence_contains_dep_name_current_and_latest() {
-        let deps = vec![dep("rand", "0.7.3", "0.9.0")];
-
-        let result = check(".", &deps, None);
-
-        assert_eq!(result.evidence.len(), 1);
-        assert_eq!(result.evidence[0].found, "rand 0.7.3");
-        assert_eq!(
-            result.evidence[0].expected,
-            Some(Expected::Text("0.9.0".into()))
-        );
     }
 
     #[test]
     fn outdated_deps_above_threshold_fails() {
-        let deps = vec![
-            dep("a", "1.0.0", "2.0.0"),
-            dep("b", "1.0.0", "2.0.0"),
-            dep("c", "1.0.0", "2.0.0"),
-        ];
+        let deps = vec![dep("a", "1.0.0", "2.0.0")];
 
         let result = check(".", &deps, None);
 
-        assert_eq!(result.measurement.observed, 3);
         assert_eq!(result.status, Status::Fail);
     }
 
@@ -264,6 +241,20 @@ mod tests {
     }
 
     #[test]
+    fn evidence_contains_dep_name_current_and_latest() {
+        let deps = vec![dep("a", "1.0.0", "2.0.0")];
+
+        let result = check(".", &deps, None);
+
+        assert_eq!(result.evidence.len(), 1);
+        assert_eq!(result.evidence[0].found, "a 1.0.0");
+        assert_eq!(
+            result.evidence[0].expected,
+            Some(Expected::Text("2.0.0".into()))
+        );
+    }
+
+    #[test]
     fn evidence_rule_reflects_outdated_kind() {
         let deps = vec![dep("a", "1.0.0", "2.0.0")];
 
@@ -273,52 +264,61 @@ mod tests {
     }
 
     #[test]
-    fn major_level_excludes_minor_gap_deps() {
-        let deps = vec![dep("a", "1.0.0", "2.0.0"), dep("b", "1.0.0", "1.1.0")];
-
-        let definition = Definition {
-            level: Some(Level::Major),
-            ..Definition::default()
-        };
-
-        let result = check(".", &deps, Some(&definition));
+    fn no_definition_defaults_to_major_level() {
+        let result = check(".", &deps_at_every_level(), None);
 
         assert_eq!(result.measurement.observed, 1);
     }
 
     #[test]
-    fn patch_level_includes_all_gaps() {
-        let deps = vec![
-            dep("a", "1.0.0", "2.0.0"),
-            dep("b", "1.0.0", "1.1.0"),
-            dep("c", "1.0.0", "1.0.1"),
-        ];
-
+    fn major_level_excludes_minor_gap_deps() {
         let definition = Definition {
-            level: Some(Level::Patch),
+            level: Some(Level::Major),
             ..Definition::default()
         };
 
-        let result = check(".", &deps, Some(&definition));
+        let result = check(".", &deps_at_every_level(), Some(&definition));
 
-        assert_eq!(result.measurement.observed, 3);
+        assert_eq!(result.measurement.observed, 1);
     }
 
     #[test]
     fn minor_level_includes_major_and_minor_gaps() {
-        let deps = vec![
-            dep("a", "1.0.0", "2.0.0"),
-            dep("b", "1.0.0", "1.1.0"),
-            dep("c", "1.0.0", "1.0.1"),
-        ];
-
         let definition = Definition {
             level: Some(Level::Minor),
             ..Definition::default()
         };
 
-        let result = check(".", &deps, Some(&definition));
+        let result = check(".", &deps_at_every_level(), Some(&definition));
 
         assert_eq!(result.measurement.observed, 2);
+    }
+
+    #[test]
+    fn patch_level_includes_all_gaps() {
+        let definition = Definition {
+            level: Some(Level::Patch),
+            ..Definition::default()
+        };
+
+        let result = check(".", &deps_at_every_level(), Some(&definition));
+
+        assert_eq!(result.measurement.observed, 3);
+    }
+
+    fn dep(name: &str, current: &str, latest: &str) -> OutdatedDep {
+        OutdatedDep {
+            name: name.into(),
+            current: current.parse().unwrap(),
+            latest: latest.parse().unwrap(),
+        }
+    }
+
+    fn deps_at_every_level() -> Vec<OutdatedDep> {
+        vec![
+            dep("a", "1.0.0", "2.0.0"),
+            dep("b", "1.0.0", "1.1.0"),
+            dep("c", "1.0.0", "1.0.1"),
+        ]
     }
 }

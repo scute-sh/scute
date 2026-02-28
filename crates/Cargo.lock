@@ -383,7 +383,6 @@ name = "scute-cli"
 version = "0.1.0"
 dependencies = [
  "anyhow",
- "assert_cmd",
  "clap",
  "scute-core",
  "scute-test-utils",
@@ -406,6 +405,8 @@ dependencies = [
 name = "scute-test-utils"
 version = "0.1.0"
 dependencies = [
+ "assert_cmd",
+ "serde_json",
  "tempfile",
 ]
 

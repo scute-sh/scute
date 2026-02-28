@@ -19,5 +19,4 @@ serde_json = "1"
 serde_yml = "0.0.12"
 
 [dev-dependencies]
-assert_cmd = "2"
 scute-test-utils = { path = "../scute-test-utils" }

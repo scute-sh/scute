@@ -89,6 +89,13 @@ pub struct CheckResult {
     pub evidence: Vec<Evidence>,
 }
 
+impl CheckResult {
+    #[must_use]
+    pub fn failed(&self) -> bool {
+        self.status == Status::Fail
+    }
+}
+
 /// What a check expected to find instead of the violation.
 ///
 /// Serializes without a type tag: [`Text`](Expected::Text) becomes a JSON

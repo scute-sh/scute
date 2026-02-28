@@ -2,10 +2,10 @@ use std::collections::HashMap;
 use std::io::{IsTerminal, Read};
 use std::path::Path;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use scute_core::dependency_freshness::Level;
-use scute_core::{CommitMessageDefinition, Status, Thresholds};
+use scute_core::{CheckResult, CommitMessageDefinition, Thresholds};
 use serde::Deserialize;
 
 #[derive(Parser)]
@@ -50,28 +50,27 @@ fn main() -> Result<()> {
         Commands::Check { check } => match check {
             Checks::CommitMessage { message } => {
                 let message = resolve_message(message)?;
-                let definition = load_definition(scute_core::CHECK_NAME)?;
+                let definition = load_commit_message_definition(scute_core::CHECK_NAME)?;
                 let result = scute_core::check_commit_message(&message, Some(&definition));
-                let failed = result.status == Status::Fail;
-                println!("{}", serde_json::to_string(&result)?);
-                if failed {
-                    std::process::exit(1);
-                }
-                Ok(())
+                output(&result)
             }
             Checks::DependencyFreshness => {
                 let target = std::env::current_dir()?;
                 let definition = load_freshness_definition()?;
                 let result = scute_core::dependency_freshness::run(&target, &definition)?;
-                let failed = result.status == Status::Fail;
-                println!("{}", serde_json::to_string(&result)?);
-                if failed {
-                    std::process::exit(1);
-                }
-                Ok(())
+                output(&result)
             }
         },
     }
+}
+
+fn output(result: &CheckResult) -> Result<()> {
+    let failed = result.failed();
+    println!("{}", serde_json::to_string(&result)?);
+    if failed {
+        std::process::exit(1);
+    }
+    Ok(())
 }
 
 fn resolve_message(arg: Option<String>) -> Result<String> {
@@ -93,34 +92,32 @@ fn load_check_entry(check_name: &str) -> Result<Option<CheckEntry>> {
         return Ok(None);
     }
     let contents = std::fs::read_to_string(path)?;
-    let mut config: ScuteConfig = serde_yml::from_str(&contents)?;
+    let mut config: ScuteConfig =
+        serde_yml::from_str(&contents).context("failed to parse .scute.yml")?;
     Ok(config.checks.remove(check_name))
 }
 
 fn load_freshness_definition() -> Result<scute_core::dependency_freshness::Definition> {
     let entry = load_check_entry(scute_core::dependency_freshness::CHECK_NAME)?;
-    Ok(freshness_definition_from(entry))
+    freshness_definition_from(entry)
 }
 
 fn freshness_definition_from(
     entry: Option<CheckEntry>,
-) -> scute_core::dependency_freshness::Definition {
+) -> Result<scute_core::dependency_freshness::Definition> {
     use scute_core::dependency_freshness::Definition;
 
-    let (level, thresholds) = match entry {
-        Some(e) => {
-            let level = e
-                .config
-                .and_then(|c| serde_json::from_value::<DependencyFreshnessConfig>(c).ok())
-                .and_then(|c| c.level);
-            (level, e.thresholds)
-        }
-        None => (None, None),
+    let Some(entry) = entry else {
+        return Ok(Definition::default());
     };
-    Definition {
+    let level = match entry.config {
+        Some(c) => serde_json::from_value::<DependencyFreshnessConfig>(c)?.level,
+        None => None,
+    };
+    Ok(Definition {
         level: Some(level.unwrap_or_default()),
-        thresholds,
-    }
+        thresholds: entry.thresholds,
+    })
 }
 
 #[derive(Deserialize)]
@@ -128,14 +125,14 @@ struct DependencyFreshnessConfig {
     level: Option<Level>,
 }
 
-fn load_definition(check_name: &str) -> Result<CommitMessageDefinition> {
+fn load_commit_message_definition(check_name: &str) -> Result<CommitMessageDefinition> {
     let Some(entry) = load_check_entry(check_name)? else {
         return Ok(CommitMessageDefinition::default());
     };
-    let types = entry
-        .config
-        .and_then(|c| serde_json::from_value::<CommitMessageConfig>(c).ok())
-        .and_then(|c| c.types);
+    let types = match entry.config {
+        Some(c) => serde_json::from_value::<CommitMessageConfig>(c)?.types,
+        None => None,
+    };
     Ok(CommitMessageDefinition {
         types,
         thresholds: entry.thresholds,
@@ -161,16 +158,50 @@ mod tests {
             ",
         );
 
-        let definition = freshness_definition_from(Some(entry));
+        let definition = freshness_definition_from(Some(entry)).unwrap();
 
         assert_eq!(definition.level, Some(Level::Minor));
     }
 
     #[test]
-    fn freshness_config_defaults_to_major_level() {
-        let definition = freshness_definition_from(None);
+    fn no_entry_returns_default_definition() {
+        let definition = freshness_definition_from(None).unwrap();
+
+        assert_eq!(definition.level, None);
+        assert_eq!(definition.thresholds, None);
+    }
+
+    #[test]
+    fn freshness_config_without_level_defaults_to_major() {
+        let entry = check_entry_from_yaml(
+            r"
+            thresholds:
+              fail: 5
+            ",
+        );
+
+        let definition = freshness_definition_from(Some(entry)).unwrap();
 
         assert_eq!(definition.level, Some(Level::Major));
+        assert_eq!(
+            definition.thresholds,
+            Some(Thresholds {
+                warn: None,
+                fail: Some(5),
+            })
+        );
+    }
+
+    #[test]
+    fn freshness_config_rejects_invalid_level() {
+        let entry = check_entry_from_yaml(
+            r"
+            config:
+              level: bananas
+            ",
+        );
+
+        assert!(freshness_definition_from(Some(entry)).is_err());
     }
 
     fn check_entry_from_yaml(yaml: &str) -> CheckEntry {

@@ -3,18 +3,7 @@ use scute_test_utils::TestProject;
 
 #[test]
 fn outdated_report_excludes_transitive_dependencies() {
-    let dir = TestProject::new()
-        .cargo_toml(
-            r#"[package]
-name = "test-project"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-rand = "=0.7.3"
-"#,
-        )
-        .build();
+    let dir = TestProject::new().dependency("rand", "=0.7.3").build();
 
     let deps = fetch_outdated(dir.path()).unwrap();
 
@@ -24,18 +13,7 @@ rand = "=0.7.3"
 
 #[test]
 fn outdated_dep_reports_current_version() {
-    let dir = TestProject::new()
-        .cargo_toml(
-            r#"[package]
-name = "test-project"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-rand = "=0.7.3"
-"#,
-        )
-        .build();
+    let dir = TestProject::new().dependency("rand", "=0.7.3").build();
 
     let deps = fetch_outdated(dir.path()).unwrap();
 
@@ -44,18 +22,7 @@ rand = "=0.7.3"
 
 #[test]
 fn outdated_dep_reports_latest_available_version() {
-    let dir = TestProject::new()
-        .cargo_toml(
-            r#"[package]
-name = "test-project"
-version = "0.1.0"
-edition = "2021"
-
-[dependencies]
-rand = "=0.7.3"
-"#,
-        )
-        .build();
+    let dir = TestProject::new().dependency("rand", "=0.7.3").build();
 
     let deps = fetch_outdated(dir.path()).unwrap();
 
@@ -64,15 +31,7 @@ rand = "=0.7.3"
 
 #[test]
 fn no_dependencies_returns_empty_report() {
-    let dir = TestProject::new()
-        .cargo_toml(
-            r#"[package]
-name = "test-project"
-version = "0.1.0"
-edition = "2021"
-"#,
-        )
-        .build();
+    let dir = TestProject::new().build();
 
     let deps = fetch_outdated(dir.path()).unwrap();
 
@@ -81,18 +40,7 @@ edition = "2021"
 
 #[test]
 fn outdated_report_includes_dev_dependencies() {
-    let dir = TestProject::new()
-        .cargo_toml(
-            r#"[package]
-name = "test-project"
-version = "0.1.0"
-edition = "2021"
-
-[dev-dependencies]
-rand = "=0.7.3"
-"#,
-        )
-        .build();
+    let dir = TestProject::new().dev_dependency("rand", "=0.7.3").build();
 
     let deps = fetch_outdated(dir.path()).unwrap();
 
