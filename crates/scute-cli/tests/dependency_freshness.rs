@@ -27,7 +27,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-rand = "=0.7.3"
+itoa = "=0.4.8"
 "#,
     );
 

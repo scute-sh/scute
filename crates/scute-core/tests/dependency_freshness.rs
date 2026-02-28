@@ -35,7 +35,7 @@ rand = "=0.7.3"
 
     let deps = fetch_outdated(dir.path()).unwrap();
 
-    assert_eq!(deps[0].current, "0.7.3");
+    assert_eq!(deps[0].current.to_string(), "0.7.3");
 }
 
 #[test]
@@ -53,7 +53,6 @@ rand = "=0.7.3"
 
     let deps = fetch_outdated(dir.path()).unwrap();
 
-    assert!(!deps[0].latest.is_empty());
     assert_ne!(deps[0].latest, deps[0].current);
 }
 
