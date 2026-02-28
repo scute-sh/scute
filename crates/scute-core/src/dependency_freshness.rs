@@ -9,6 +9,7 @@ const DEFAULT_THRESHOLDS: Thresholds = Thresholds {
     fail: Some(0),
 };
 
+#[derive(Debug)]
 pub struct OutdatedDep {
     pub name: String,
     pub current: String,
@@ -20,14 +21,22 @@ pub struct OutdatedDep {
 /// Returns an error if `cargo outdated` cannot be executed or produces
 /// invalid output.
 pub fn run(target: &Path) -> std::io::Result<CheckResult> {
+    let outdated = fetch_outdated(target)?;
+    Ok(check(&target.display().to_string(), &outdated))
+}
+
+/// # Errors
+///
+/// Returns an error if `cargo outdated` cannot be executed or produces
+/// invalid output.
+pub fn fetch_outdated(target: &Path) -> std::io::Result<Vec<OutdatedDep>> {
     let output = std::process::Command::new("cargo")
-        .args(["outdated", "--format", "json"])
+        .args(["outdated", "--format", "json", "--depth", "1"])
         .current_dir(target)
         .output()?;
     let stdout = String::from_utf8(output.stdout)
         .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
-    let outdated = parse_cargo_outdated(&stdout);
-    Ok(check(&target.display().to_string(), &outdated))
+    Ok(parse_cargo_outdated(&stdout))
 }
 
 #[must_use]
