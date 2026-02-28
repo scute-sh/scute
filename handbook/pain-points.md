@@ -24,7 +24,7 @@ value.
 
 ## Tests
 
-- **Ambiguous test names.** Names don't communicate the scenario. Not
+- **Ambiguous test names.** (×1) Names don't communicate the scenario. Not
   structured around Given/When/Then or any recognizable pattern.
 - **Bloated test bodies.** Tests that are too long to scan. The story they tell
   is buried under setup noise and assertion volume.
@@ -46,11 +46,13 @@ value.
 - **Weak assertions.** Generic boolean checks instead of specific value
   comparisons. They hide the expected value and produce useless failure
   messages.
-- **Test pyramid violations.** Behavior verified at the wrong level.
-  Integration tests asserting on domain-level details that belong in unit
-  tests, or unit tests mocking so heavily they're testing wiring instead of
-  logic. Each layer should own its own concerns: unit tests verify behavior,
-  integration tests verify that layers talk to each other.
+- **Test pyramid violations.** (×1) Behavior verified at the wrong level.
+  Each layer should own its own concerns.
+  - Integration tests asserting on domain-level details that belong in unit
+    tests.
+  - Unit tests mocking so heavily they're testing wiring instead of logic.
+  - Unit tests with handcrafted external tool output testing assumptions
+    about a contract instead of border tests validating the real interaction.
 - **Core logic left untested.** Tests skipped entirely, jumping straight to
   implementation. TDD isn't mandatory, but core logic without tests is a
   fitness problem.
@@ -68,20 +70,28 @@ value.
 - **Duplicated domain strings.** The same concept hardcoded as a string
   literal in multiple places. The coupling is implicit and breaks silently
   when one occurrence changes without the other.
+- **Premature design.** (×2) Designing based on anticipated needs instead of
+  letting usage drive the shape. If nothing uses it yet, it shouldn't exist yet.
 - **Premature optimization.** Adding complexity to avoid trivial costs.
   Extra variables, match arms, or type gymnastics to save an allocation
   that doesn't matter. Simplicity wins until profiling says otherwise.
 - **Poor variable names.** Names that don't communicate intent or that mislead.
-- **Formatting and linting not enforced.** Tools exist but aren't wired into
-  the workflow. The codebase drifts from its own standards one PR at a time.
-  Trivially automatable, yet consistently overlooked.
+- **Formatting and linting not enforced.** (×2) Tools exist but aren't wired
+  into the workflow. The codebase drifts from its own standards one PR at a
+  time. Trivially automatable, yet consistently overlooked.
 
 ## Architecture
 
 - **Separation of concerns violated.** Responsibilities leak across boundaries
   (e.g. configuration logic embedded in domain code).
-- **SOLID / Tell Don't Ask violations.** Objects exposing internals instead of
-  encapsulating behavior. Dependency inversion ignored.
+- **SOLID / Tell Don't Ask violations.** (×2) Objects exposing internals
+  instead of encapsulating behavior.
+  - Dependency inversion ignored: high-level policy coupled to low-level
+    detail (e.g. check logic welded to a specific tool's output format).
+  - SRP violated: parsing, business logic, and output construction bundled
+    in one function.
+  - OCP violated: no extension point for new tool adapters, requiring
+    modification instead of extension.
 - **Layer boundary violations.** Imports that cross architectural layers
   directly. This goes beyond a single check and applies broadly across module
   boundaries.
@@ -110,6 +120,18 @@ value.
   of a single composable interface.
 - **Breaking public API changes.** Signature changes to public APIs without
   versioning discipline.
+
+## Process
+
+- **Superficial application of agreed conventions.** (×1) Convention is understood
+  in principle but applied inconsistently. Fixes address only the examples
+  explicitly called out, missing the same issue elsewhere. The pattern is
+  understood, but the rigor to apply it exhaustively is missing.
+- **Checklists skipped under momentum.** (×4) Established workflows and
+  checklists exist but get bypassed when focus is on "just get the thing done."
+  The process is known, the trigger is clear, but urgency wins over discipline.
+  Especially common with agents who optimize for task completion over process
+  compliance.
 
 ## Documentation
 
