@@ -64,16 +64,8 @@ fn main() -> Result<()> {
                 Ok(())
             }
             Checks::DependencyFreshness => {
-                let cargo_output = std::process::Command::new("cargo")
-                    .args(["outdated", "--format", "json"])
-                    .output()?;
-                let stdout = String::from_utf8(cargo_output.stdout)?;
-                let outdated = scute_core::dependency_freshness::parse_cargo_outdated(&stdout);
                 let target = std::env::current_dir()?;
-                let result = scute_core::dependency_freshness::check(
-                    &target.display().to_string(),
-                    &outdated,
-                );
+                let result = scute_core::dependency_freshness::run(&target)?;
                 let failed = result.status == Status::Fail;
                 println!("{}", serde_json::to_string(&result)?);
                 if failed {
