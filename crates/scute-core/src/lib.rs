@@ -1,19 +1,13 @@
-//! Conventional Commits validation for commit messages.
+//! Deterministic fitness checks for software delivery.
 //!
-//! Checks whether a commit message follows the
-//! [Conventional Commits 1.0.0](https://www.conventionalcommits.org/en/v1.0.0/) specification.
+//! Each check produces a [`CheckResult`] with structured evidence.
 //!
-//! # Quick start
+//! # Available checks
 //!
-//! ```
-//! use scute_core::{check_commit_message, Status};
-//!
-//! let result = check_commit_message("feat: add login", None);
-//! assert_eq!(result.status, Status::Pass);
-//!
-//! let result = check_commit_message("not conventional", None);
-//! assert_eq!(result.status, Status::Fail);
-//! ```
+//! - [`check_commit_message`] — Conventional Commits validation
+//! - [`dependency_freshness`] — Cargo dependency freshness
+
+pub mod dependency_freshness;
 
 use serde::{Deserialize, Serialize};
 
@@ -137,7 +131,8 @@ pub struct Evidence {
 }
 
 impl Evidence {
-    fn new(rule: &str, found: &str) -> Self {
+    #[must_use]
+    pub fn new(rule: &str, found: &str) -> Self {
         Self {
             rule: rule.into(),
             found: found.into(),
@@ -145,7 +140,7 @@ impl Evidence {
         }
     }
 
-    fn with_expected(rule: &str, found: &str, expected: Expected) -> Self {
+    pub(crate) fn with_expected(rule: &str, found: &str, expected: Expected) -> Self {
         Self {
             rule: rule.into(),
             found: found.into(),
@@ -352,7 +347,7 @@ fn is_footer_token(token: &str) -> bool {
         || (!token.is_empty() && token.chars().all(|c| c.is_alphanumeric() || c == '-'))
 }
 
-fn derive_status(observed: u64, thresholds: &Thresholds) -> Status {
+pub(crate) fn derive_status(observed: u64, thresholds: &Thresholds) -> Status {
     let higher_is_worse = match (thresholds.warn, thresholds.fail) {
         (Some(w), Some(f)) => w < f,
         _ => true,
