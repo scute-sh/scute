@@ -4,6 +4,7 @@ use std::path::Path;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use scute_core::dependency_freshness::Level;
 use scute_core::{CommitMessageDefinition, Status, Thresholds};
 use serde::Deserialize;
 
@@ -39,12 +40,7 @@ struct CheckEntry {
     #[serde(default)]
     thresholds: Option<Thresholds>,
     #[serde(default)]
-    config: Option<CommitMessageConfig>,
-}
-
-#[derive(Deserialize)]
-struct CommitMessageConfig {
-    types: Option<Vec<String>>,
+    config: Option<serde_json::Value>,
 }
 
 fn main() -> Result<()> {
@@ -65,7 +61,8 @@ fn main() -> Result<()> {
             }
             Checks::DependencyFreshness => {
                 let target = std::env::current_dir()?;
-                let result = scute_core::dependency_freshness::run(&target)?;
+                let definition = load_freshness_definition()?;
+                let result = scute_core::dependency_freshness::run(&target, &definition)?;
                 let failed = result.status == Status::Fail;
                 println!("{}", serde_json::to_string(&result)?);
                 if failed {
@@ -90,19 +87,93 @@ fn resolve_message(arg: Option<String>) -> Result<String> {
     Ok(buf)
 }
 
-fn load_definition(check_name: &str) -> Result<CommitMessageDefinition> {
+fn load_check_entry(check_name: &str) -> Result<Option<CheckEntry>> {
     let path = Path::new(".scute.yml");
     if !path.exists() {
-        return Ok(CommitMessageDefinition::default());
+        return Ok(None);
     }
     let contents = std::fs::read_to_string(path)?;
-    let config: ScuteConfig = serde_yml::from_str(&contents)?;
-    let Some(entry) = config.checks.get(check_name) else {
+    let mut config: ScuteConfig = serde_yml::from_str(&contents)?;
+    Ok(config.checks.remove(check_name))
+}
+
+fn load_freshness_definition() -> Result<scute_core::dependency_freshness::Definition> {
+    let entry = load_check_entry(scute_core::dependency_freshness::CHECK_NAME)?;
+    Ok(freshness_definition_from(entry))
+}
+
+fn freshness_definition_from(
+    entry: Option<CheckEntry>,
+) -> scute_core::dependency_freshness::Definition {
+    use scute_core::dependency_freshness::Definition;
+
+    let (level, thresholds) = match entry {
+        Some(e) => {
+            let level = e
+                .config
+                .and_then(|c| serde_json::from_value::<DependencyFreshnessConfig>(c).ok())
+                .and_then(|c| c.level);
+            (level, e.thresholds)
+        }
+        None => (None, None),
+    };
+    Definition {
+        level: Some(level.unwrap_or_default()),
+        thresholds,
+    }
+}
+
+#[derive(Deserialize)]
+struct DependencyFreshnessConfig {
+    level: Option<Level>,
+}
+
+fn load_definition(check_name: &str) -> Result<CommitMessageDefinition> {
+    let Some(entry) = load_check_entry(check_name)? else {
         return Ok(CommitMessageDefinition::default());
     };
-    let types = entry.config.as_ref().and_then(|c| c.types.clone());
+    let types = entry
+        .config
+        .and_then(|c| serde_json::from_value::<CommitMessageConfig>(c).ok())
+        .and_then(|c| c.types);
     Ok(CommitMessageDefinition {
         types,
-        thresholds: entry.thresholds.clone(),
+        thresholds: entry.thresholds,
     })
+}
+
+#[derive(Deserialize)]
+struct CommitMessageConfig {
+    types: Option<Vec<String>>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use scute_core::dependency_freshness::Level;
+
+    #[test]
+    fn freshness_config_reads_level_from_entry() {
+        let entry = check_entry_from_yaml(
+            r"
+            config:
+              level: minor
+            ",
+        );
+
+        let definition = freshness_definition_from(Some(entry));
+
+        assert_eq!(definition.level, Some(Level::Minor));
+    }
+
+    #[test]
+    fn freshness_config_defaults_to_major_level() {
+        let definition = freshness_definition_from(None);
+
+        assert_eq!(definition.level, Some(Level::Major));
+    }
+
+    fn check_entry_from_yaml(yaml: &str) -> CheckEntry {
+        serde_yml::from_str(yaml).unwrap()
+    }
 }

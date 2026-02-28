@@ -1,5 +1,5 @@
 use assert_cmd::cargo::cargo_bin_cmd;
-use scute_test_utils::setup_scute_config;
+use scute_test_utils::TestProject;
 use serde_json::Value;
 
 #[test]
@@ -56,7 +56,9 @@ fn failing_check_exits_with_code_1() {
 
 #[test]
 fn invalid_config_exits_with_error() {
-    let dir = setup_scute_config("not: valid: yaml: [");
+    let dir = TestProject::new()
+        .scute_config("not: valid: yaml: [")
+        .build();
 
     let output = cargo_bin_cmd!("scute")
         .args(["check", "commit-message", "feat: add login"])
@@ -108,14 +110,16 @@ fn omits_absent_expected_from_evidence() {
 
 #[test]
 fn config_types_override_defaults() {
-    let dir = setup_scute_config(
-        r"
+    let dir = TestProject::new()
+        .scute_config(
+            r"
 checks:
   commit-message:
     config:
       types: [hotfix]
 ",
-    );
+        )
+        .build();
 
     let output = cargo_bin_cmd!("scute")
         .args(["check", "commit-message", "hotfix: urgent patch"])

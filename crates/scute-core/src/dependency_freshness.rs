@@ -4,10 +4,12 @@ use crate::{CheckResult, Evidence, Expected, Measurement, Thresholds, derive_sta
 
 pub const CHECK_NAME: &str = "dependency-freshness";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
 pub enum Level {
     Patch,
     Minor,
+    #[default]
     Major,
 }
 
@@ -56,16 +58,12 @@ impl OutdatedDep {
 ///
 /// Returns an error if `cargo outdated` cannot be executed or produces
 /// invalid output.
-pub fn run(target: &Path) -> std::io::Result<CheckResult> {
+pub fn run(target: &Path, definition: &Definition) -> std::io::Result<CheckResult> {
     let outdated = fetch_outdated(target)?;
-    let definition = Definition {
-        level: Some(Level::Major),
-        ..Definition::default()
-    };
     Ok(check(
         &target.display().to_string(),
         &outdated,
-        Some(&definition),
+        Some(definition),
     ))
 }
 

@@ -1,15 +1,17 @@
 use assert_cmd::cargo::cargo_bin_cmd;
-use scute_test_utils::setup_cargo_project;
+use scute_test_utils::TestProject;
 
 #[test]
 fn passing_check_exits_with_code_0() {
-    let dir = setup_cargo_project(
-        r#"[package]
+    let dir = TestProject::new()
+        .cargo_toml(
+            r#"[package]
 name = "test-project"
 version = "0.1.0"
 edition = "2021"
 "#,
-    );
+        )
+        .build();
 
     cargo_bin_cmd!("scute")
         .args(["check", "dependency-freshness"])
@@ -20,8 +22,9 @@ edition = "2021"
 
 #[test]
 fn failing_check_exits_with_non_zero() {
-    let dir = setup_cargo_project(
-        r#"[package]
+    let dir = TestProject::new()
+        .cargo_toml(
+            r#"[package]
 name = "test-project"
 version = "0.1.0"
 edition = "2021"
@@ -29,7 +32,8 @@ edition = "2021"
 [dependencies]
 itoa = "=0.4.8"
 "#,
-    );
+        )
+        .build();
 
     cargo_bin_cmd!("scute")
         .args(["check", "dependency-freshness"])
@@ -40,13 +44,15 @@ itoa = "=0.4.8"
 
 #[test]
 fn uses_working_directory_as_target() {
-    let dir = setup_cargo_project(
-        r#"[package]
+    let dir = TestProject::new()
+        .cargo_toml(
+            r#"[package]
 name = "test-project"
 version = "0.1.0"
 edition = "2021"
 "#,
-    );
+        )
+        .build();
 
     let output = cargo_bin_cmd!("scute")
         .args(["check", "dependency-freshness"])
@@ -75,6 +81,69 @@ fn recognizes_dependency_freshness_command() {
         !stderr.contains("unrecognized subcommand"),
         "dependency-freshness should be a recognized subcommand"
     );
+}
+
+#[test]
+fn config_thresholds_override_default() {
+    let dir = TestProject::new()
+        .cargo_toml(
+            r#"[package]
+name = "test-project"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+itoa = "=0.4.8"
+"#,
+        )
+        .scute_config(
+            r"
+checks:
+  dependency-freshness:
+    thresholds:
+      fail: 5
+",
+        )
+        .build();
+
+    cargo_bin_cmd!("scute")
+        .args(["check", "dependency-freshness"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
+}
+
+#[test]
+fn config_with_both_checks_routes_correctly() {
+    let dir = TestProject::new()
+        .cargo_toml(
+            r#"[package]
+name = "test-project"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+itoa = "=0.4.8"
+"#,
+        )
+        .scute_config(
+            r"
+checks:
+  commit-message:
+    config:
+      types: [hotfix]
+  dependency-freshness:
+    thresholds:
+      fail: 5
+",
+        )
+        .build();
+
+    cargo_bin_cmd!("scute")
+        .args(["check", "dependency-freshness"])
+        .current_dir(dir.path())
+        .assert()
+        .success();
 }
 
 #[test]
