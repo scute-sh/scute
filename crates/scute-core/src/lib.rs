@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 
 /// Outcome of a threshold comparison.
 ///
-/// Derived by comparing [`CheckResult::observed`] against [`Thresholds`].
+/// Derived by comparing [`Measurement::observed`] against [`Thresholds`].
 #[derive(Debug, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Status {
@@ -51,6 +51,25 @@ pub struct Thresholds {
     pub fail: Option<u64>,
 }
 
+/// Numeric measurement and thresholds for a check.
+///
+/// Groups the observed value with the boundaries that determine
+/// [`Status`]. This keeps all trending-relevant data in one place.
+///
+/// ```
+/// use scute_core::{Measurement, Thresholds};
+///
+/// let m = Measurement {
+///     observed: 3,
+///     thresholds: Thresholds { warn: Some(1), fail: Some(10) },
+/// };
+/// ```
+#[derive(Debug, PartialEq, Serialize)]
+pub struct Measurement {
+    pub observed: u64,
+    pub thresholds: Thresholds,
+}
+
 /// Result of running a check against a target.
 ///
 /// Serializes to JSON following the
@@ -63,7 +82,7 @@ pub struct Thresholds {
 ///
 /// assert_eq!(result.check, "commit-message");
 /// assert_eq!(result.target, "feat: add login");
-/// assert_eq!(result.observed, 0);
+/// assert_eq!(result.measurement.observed, 0);
 /// assert!(result.evidence.is_empty());
 /// ```
 #[derive(Debug, PartialEq, Serialize)]
@@ -71,15 +90,34 @@ pub struct CheckResult {
     pub check: String,
     pub target: String,
     pub status: Status,
-    pub observed: u64,
-    pub expected: Thresholds,
+    pub measurement: Measurement,
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub evidence: Vec<Evidence>,
+}
+
+/// What a check expected to find instead of the violation.
+///
+/// Serializes without a type tag: [`Text`](Expected::Text) becomes a JSON
+/// string, [`List`](Expected::List) becomes a JSON array.
+///
+/// ```
+/// use scute_core::Expected;
+///
+/// let format = Expected::Text("type(scope): description".into());
+/// let types = Expected::List(vec!["feat".into(), "fix".into()]);
+/// ```
+#[derive(Clone, Debug, PartialEq, Serialize)]
+#[serde(untagged)]
+pub enum Expected {
+    Text(String),
+    List(Vec<String>),
 }
 
 /// A single violation found during a check.
 ///
 /// `rule` identifies what was violated, `found` shows what triggered it.
+/// `expected` optionally carries what the check expected instead, when
+/// the rule name alone isn't enough to act on.
 ///
 /// ```
 /// use scute_core::check_commit_message;
@@ -88,11 +126,14 @@ pub struct CheckResult {
 ///
 /// assert_eq!(result.evidence[0].rule, "unknown-type");
 /// assert_eq!(result.evidence[0].found, "banana");
+/// assert!(result.evidence[0].expected.is_some());
 /// ```
 #[derive(Debug, PartialEq, Serialize)]
 pub struct Evidence {
     pub rule: String,
     pub found: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expected: Option<Expected>,
 }
 
 impl Evidence {
@@ -100,6 +141,15 @@ impl Evidence {
         Self {
             rule: rule.into(),
             found: found.into(),
+            expected: None,
+        }
+    }
+
+    fn with_expected(rule: &str, found: &str, expected: Expected) -> Self {
+        Self {
+            rule: rule.into(),
+            found: found.into(),
+            expected: Some(expected),
         }
     }
 }
@@ -175,23 +225,29 @@ pub fn check_commit_message(message: &str, definition: Option<&Definition>) -> C
     let mut evidence = validate_subject(subject, &types);
     evidence.extend(validate_structure(&message));
     let observed = u64::from(!evidence.is_empty());
-    let expected = definition
+    let thresholds = definition
         .and_then(|d| d.thresholds.clone())
         .unwrap_or(DEFAULT_THRESHOLDS);
 
     CheckResult {
         check: CHECK_NAME.into(),
         target: subject.into(),
-        status: derive_status(observed, &expected),
-        observed,
-        expected,
+        status: derive_status(observed, &thresholds),
+        measurement: Measurement {
+            observed,
+            thresholds,
+        },
         evidence,
     }
 }
 
 fn validate_subject(subject: &str, types: &[String]) -> Vec<Evidence> {
     let Some((prefix, description)) = subject.split_once(": ") else {
-        return vec![Evidence::new("subject-format", subject)];
+        return vec![Evidence::with_expected(
+            "subject-format",
+            subject,
+            Expected::Text("type(scope): description".into()),
+        )];
     };
 
     let prefix_clean = prefix.trim_end_matches('!');
@@ -200,7 +256,11 @@ fn validate_subject(subject: &str, types: &[String]) -> Vec<Evidence> {
 
     let type_known = types.iter().any(|t| t.eq_ignore_ascii_case(type_str));
     if !type_known {
-        evidence.push(Evidence::new("unknown-type", type_str));
+        evidence.push(Evidence::with_expected(
+            "unknown-type",
+            type_str,
+            Expected::List(types.to_vec()),
+        ));
     }
 
     if prefix.contains("()") {
@@ -247,10 +307,18 @@ fn validate_footers(paragraph: &str) -> Vec<Evidence> {
                     && token != "BREAKING CHANGE"
                     && token != "BREAKING-CHANGE" =>
             {
-                evidence.push(Evidence::new("breaking-change-case", token));
+                evidence.push(Evidence::with_expected(
+                    "breaking-change-case",
+                    token,
+                    Expected::List(vec!["BREAKING CHANGE".into(), "BREAKING-CHANGE".into()]),
+                ));
             }
             None => {
-                evidence.push(Evidence::new("footer-format", line));
+                evidence.push(Evidence::with_expected(
+                    "footer-format",
+                    line,
+                    Expected::Text("token: value | token #value".into()),
+                ));
             }
             _ => {}
         }
@@ -405,11 +473,9 @@ mod tests {
         let result = check_commit_message("no separator here", None);
 
         assert_eq!(result.status, Status::Fail);
-        assert_eq!(result.observed, 1);
-        assert_eq!(
-            result.evidence,
-            [Evidence::new("subject-format", "no separator here")]
-        );
+        assert_eq!(result.measurement.observed, 1);
+        assert_eq!(result.evidence[0].rule, "subject-format");
+        assert_eq!(result.evidence[0].found, "no separator here");
     }
 
     #[test]
@@ -417,7 +483,18 @@ mod tests {
         let result = check_commit_message("banana: do something", None);
 
         assert_eq!(result.status, Status::Fail);
-        assert_eq!(result.evidence, [Evidence::new("unknown-type", "banana")]);
+        assert_eq!(result.evidence[0].rule, "unknown-type");
+        assert_eq!(result.evidence[0].found, "banana");
+    }
+
+    #[test]
+    fn unknown_type_expected_lists_valid_types() {
+        let result = check_commit_message("banana: do something", None);
+
+        assert!(matches!(
+            result.evidence[0].expected,
+            Some(Expected::List(_))
+        ));
     }
 
     #[test]
@@ -425,7 +502,7 @@ mod tests {
         let result = check_commit_message("feat: ", None);
 
         assert_eq!(result.status, Status::Fail);
-        assert_eq!(result.evidence, [Evidence::new("empty-description", "")]);
+        assert_eq!(result.evidence[0].rule, "empty-description");
     }
 
     #[test]
@@ -433,10 +510,7 @@ mod tests {
         let result = check_commit_message("feat:   \t  ", None);
 
         assert_eq!(result.status, Status::Fail);
-        assert_eq!(
-            result.evidence,
-            [Evidence::new("empty-description", "  \t  ")]
-        );
+        assert_eq!(result.evidence[0].rule, "empty-description");
     }
 
     #[test]
@@ -460,7 +534,7 @@ mod tests {
         let result = check_commit_message("feat(): add login", None);
 
         assert_eq!(result.status, Status::Fail);
-        assert_eq!(result.evidence, [Evidence::new("empty-scope", "()")]);
+        assert_eq!(result.evidence[0].rule, "empty-scope");
     }
 
     #[test]
@@ -484,14 +558,10 @@ mod tests {
         let result = check_commit_message("banana: ", None);
 
         assert_eq!(result.status, Status::Fail);
-        assert_eq!(result.observed, 1);
-        assert_eq!(
-            result.evidence,
-            [
-                Evidence::new("unknown-type", "banana"),
-                Evidence::new("empty-description", ""),
-            ]
-        );
+        assert_eq!(result.measurement.observed, 1);
+        assert_eq!(result.evidence.len(), 2);
+        assert_eq!(result.evidence[0].rule, "unknown-type");
+        assert_eq!(result.evidence[1].rule, "empty-description");
     }
 
     #[test]
@@ -499,10 +569,8 @@ mod tests {
         let result = check_commit_message("feat: add login\nThis is not separated.", None);
 
         assert_eq!(result.status, Status::Fail);
-        assert_eq!(
-            result.evidence,
-            [Evidence::new("body-separator", "This is not separated.")]
-        );
+        assert_eq!(result.evidence[0].rule, "body-separator");
+        assert_eq!(result.evidence[0].found, "This is not separated.");
     }
 
     #[test]
@@ -532,10 +600,8 @@ mod tests {
         );
 
         assert_eq!(result.status, Status::Fail);
-        assert_eq!(
-            result.evidence,
-            [Evidence::new("footer-format", "not a valid footer")]
-        );
+        assert_eq!(result.evidence[0].rule, "footer-format");
+        assert_eq!(result.evidence[0].found, "not a valid footer");
     }
 
     #[test]
@@ -544,10 +610,8 @@ mod tests {
             check_commit_message("feat!: drop API\n\nbreaking change: removed endpoint", None);
 
         assert_eq!(result.status, Status::Fail);
-        assert_eq!(
-            result.evidence,
-            [Evidence::new("breaking-change-case", "breaking change")]
-        );
+        assert_eq!(result.evidence[0].rule, "breaking-change-case");
+        assert_eq!(result.evidence[0].found, "breaking change");
     }
 
     #[test]
@@ -566,7 +630,7 @@ mod tests {
         let result = check_commit_message("", None);
 
         assert_eq!(result.status, Status::Fail);
-        assert_eq!(result.evidence, [Evidence::new("subject-format", "")]);
+        assert_eq!(result.evidence[0].rule, "subject-format");
     }
 
     #[test]
@@ -591,9 +655,9 @@ mod tests {
         assert_eq!(result.check, "commit-message");
         assert_eq!(result.target, "feat: add login");
         assert_eq!(result.status, Status::Pass);
-        assert_eq!(result.observed, 0);
+        assert_eq!(result.measurement.observed, 0);
         assert_eq!(
-            result.expected,
+            result.measurement.thresholds,
             Thresholds {
                 warn: None,
                 fail: Some(0)
@@ -615,7 +679,7 @@ mod tests {
         let result = check_commit_message("feat: add login", Some(&definition));
 
         assert_eq!(
-            result.expected,
+            result.measurement.thresholds,
             Thresholds {
                 warn: Some(1),
                 fail: Some(3),
@@ -624,16 +688,55 @@ mod tests {
     }
 
     #[test]
-    fn custom_types_reject_unlisted_defaults() {
+    fn subject_format_expected_describes_format() {
+        let result = check_commit_message("no separator here", None);
+
+        assert_eq!(
+            result.evidence[0].expected,
+            Some(Expected::Text("type(scope): description".into()))
+        );
+    }
+
+    #[test]
+    fn unknown_type_expected_reflects_config_types() {
         let definition = Definition {
-            types: Some(vec!["hotfix".into()]),
+            types: Some(vec!["hotfix".into(), "deploy".into()]),
             ..Definition::default()
         };
 
         let result = check_commit_message("feat: add login", Some(&definition));
 
-        assert_eq!(result.status, Status::Fail);
-        assert_eq!(result.evidence, [Evidence::new("unknown-type", "feat")]);
+        assert_eq!(
+            result.evidence[0].expected,
+            Some(Expected::List(vec!["hotfix".into(), "deploy".into()]))
+        );
+    }
+
+    #[test]
+    fn footer_format_expected_describes_format() {
+        let result = check_commit_message(
+            "feat: add login\n\nSome body.\n\nReviewed-by: Alice\nnot a valid footer",
+            None,
+        );
+
+        assert_eq!(
+            result.evidence[0].expected,
+            Some(Expected::Text("token: value | token #value".into()))
+        );
+    }
+
+    #[test]
+    fn breaking_change_case_expected_shows_valid_casings() {
+        let result =
+            check_commit_message("feat!: drop API\n\nbreaking change: removed endpoint", None);
+
+        assert_eq!(
+            result.evidence[0].expected,
+            Some(Expected::List(vec![
+                "BREAKING CHANGE".into(),
+                "BREAKING-CHANGE".into(),
+            ]))
+        );
     }
 
     #[test]

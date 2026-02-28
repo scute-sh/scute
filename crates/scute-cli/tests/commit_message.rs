@@ -70,6 +70,44 @@ fn invalid_config_exits_with_error() {
 }
 
 #[test]
+fn json_output_nests_observed_and_thresholds_under_measurement() {
+    let output = cargo_bin_cmd!("scute")
+        .args(["check", "commit-message", "feat: add login"])
+        .output()
+        .unwrap();
+
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+
+    assert!(result["measurement"]["observed"].is_number());
+    assert!(result["measurement"]["thresholds"].is_object());
+}
+
+#[test]
+fn evidence_includes_expected_field_when_provided() {
+    let output = cargo_bin_cmd!("scute")
+        .args(["check", "commit-message", "banana: do stuff"])
+        .output()
+        .unwrap();
+
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+
+    assert!(!result["evidence"][0]["expected"].is_null());
+}
+
+#[test]
+fn evidence_omits_expected_field_when_not_provided() {
+    let output = cargo_bin_cmd!("scute")
+        .args(["check", "commit-message", "feat: add login\nnot separated"])
+        .output()
+        .unwrap();
+
+    let result: Value = serde_json::from_slice(&output.stdout).unwrap();
+
+    assert_eq!(result["evidence"][0]["rule"], "body-separator");
+    assert!(result["evidence"][0].get("expected").is_none());
+}
+
+#[test]
 fn config_types_override_defaults() {
     let dir = tempfile::tempdir().unwrap();
     fs::write(
