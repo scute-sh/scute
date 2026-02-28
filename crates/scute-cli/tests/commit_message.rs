@@ -1,6 +1,6 @@
 use assert_cmd::cargo::cargo_bin_cmd;
+use scute_test_utils::setup_scute_config;
 use serde_json::Value;
-use std::fs;
 
 #[test]
 fn outputs_valid_json_to_stdout() {
@@ -21,7 +21,7 @@ fn passing_check_exits_with_code_0() {
 }
 
 #[test]
-fn reads_message_from_stdin_when_no_argument() {
+fn no_argument_reads_message_from_stdin() {
     let output = cargo_bin_cmd!("scute")
         .args(["check", "commit-message"])
         .write_stdin("fix: resolve crash on startup")
@@ -56,8 +56,7 @@ fn failing_check_exits_with_code_1() {
 
 #[test]
 fn invalid_config_exits_with_error() {
-    let dir = tempfile::tempdir().unwrap();
-    fs::write(dir.path().join(".scute.yml"), "not: valid: yaml: [").unwrap();
+    let dir = setup_scute_config("not: valid: yaml: [");
 
     let output = cargo_bin_cmd!("scute")
         .args(["check", "commit-message", "feat: add login"])
@@ -83,7 +82,7 @@ fn json_output_nests_observed_and_thresholds_under_measurement() {
 }
 
 #[test]
-fn evidence_includes_expected_field_when_provided() {
+fn serializes_provided_expected_in_evidence() {
     let output = cargo_bin_cmd!("scute")
         .args(["check", "commit-message", "banana: do stuff"])
         .output()
@@ -95,7 +94,7 @@ fn evidence_includes_expected_field_when_provided() {
 }
 
 #[test]
-fn evidence_omits_expected_field_when_not_provided() {
+fn omits_absent_expected_from_evidence() {
     let output = cargo_bin_cmd!("scute")
         .args(["check", "commit-message", "feat: add login\nnot separated"])
         .output()
@@ -109,12 +108,14 @@ fn evidence_omits_expected_field_when_not_provided() {
 
 #[test]
 fn config_types_override_defaults() {
-    let dir = tempfile::tempdir().unwrap();
-    fs::write(
-        dir.path().join(".scute.yml"),
-        "checks:\n  commit-message:\n    config:\n      types: [hotfix]\n",
-    )
-    .unwrap();
+    let dir = setup_scute_config(
+        r"
+checks:
+  commit-message:
+    config:
+      types: [hotfix]
+",
+    );
 
     let output = cargo_bin_cmd!("scute")
         .args(["check", "commit-message", "hotfix: urgent patch"])

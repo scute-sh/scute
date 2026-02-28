@@ -386,18 +386,25 @@ dependencies = [
  "assert_cmd",
  "clap",
  "scute-core",
+ "scute-test-utils",
  "serde",
  "serde_json",
  "serde_yml",
- "tempfile",
 ]
 
 [[package]]
 name = "scute-core"
 version = "0.1.0"
 dependencies = [
+ "scute-test-utils",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "scute-test-utils"
+version = "0.1.0"
+dependencies = [
  "tempfile",
 ]
 

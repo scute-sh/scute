@@ -1,22 +1,8 @@
 use scute_core::dependency_freshness::fetch_outdated;
-use tempfile::TempDir;
-
-fn setup_cargo_project(cargo_toml: &str) -> TempDir {
-    let dir = TempDir::new().unwrap();
-    std::fs::write(dir.path().join("Cargo.toml"), cargo_toml).unwrap();
-    let src = dir.path().join("src");
-    std::fs::create_dir(&src).unwrap();
-    std::fs::write(src.join("lib.rs"), "").unwrap();
-    std::process::Command::new("cargo")
-        .args(["generate-lockfile"])
-        .current_dir(dir.path())
-        .output()
-        .unwrap();
-    dir
-}
+use scute_test_utils::setup_cargo_project;
 
 #[test]
-fn only_direct_dependencies_are_reported() {
+fn outdated_report_excludes_transitive_dependencies() {
     let dir = setup_cargo_project(
         r#"[package]
 name = "test-project"
@@ -35,7 +21,7 @@ rand = "=0.7.3"
 }
 
 #[test]
-fn reports_current_version() {
+fn outdated_dep_reports_current_version() {
     let dir = setup_cargo_project(
         r#"[package]
 name = "test-project"
@@ -53,7 +39,7 @@ rand = "=0.7.3"
 }
 
 #[test]
-fn reports_latest_available_version() {
+fn outdated_dep_reports_latest_available_version() {
     let dir = setup_cargo_project(
         r#"[package]
 name = "test-project"
@@ -72,7 +58,7 @@ rand = "=0.7.3"
 }
 
 #[test]
-fn no_dependencies_returns_empty() {
+fn no_dependencies_returns_empty_report() {
     let dir = setup_cargo_project(
         r#"[package]
 name = "test-project"
@@ -87,7 +73,7 @@ edition = "2021"
 }
 
 #[test]
-fn dev_dependencies_are_included() {
+fn outdated_report_includes_dev_dependencies() {
     let dir = setup_cargo_project(
         r#"[package]
 name = "test-project"

@@ -383,7 +383,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn lower_is_worse_below_fail_is_fail() {
+    fn lower_is_worse_below_fail_threshold_returns_fail() {
         let thresholds = Thresholds {
             warn: Some(70),
             fail: Some(50),
@@ -395,7 +395,7 @@ mod tests {
     }
 
     #[test]
-    fn lower_is_worse_between_warn_and_fail_is_warn() {
+    fn lower_is_worse_between_thresholds_returns_warn() {
         let thresholds = Thresholds {
             warn: Some(70),
             fail: Some(50),
@@ -407,7 +407,7 @@ mod tests {
     }
 
     #[test]
-    fn lower_is_worse_above_warn_is_pass() {
+    fn lower_is_worse_above_warn_threshold_returns_pass() {
         let thresholds = Thresholds {
             warn: Some(70),
             fail: Some(50),
@@ -419,7 +419,7 @@ mod tests {
     }
 
     #[test]
-    fn observed_below_fail_with_no_warn_is_pass() {
+    fn below_fail_with_no_warn_returns_pass() {
         let thresholds = Thresholds {
             warn: None,
             fail: Some(5),
@@ -431,7 +431,7 @@ mod tests {
     }
 
     #[test]
-    fn observed_at_warn_is_pass() {
+    fn at_warn_threshold_returns_pass() {
         let thresholds = Thresholds {
             warn: Some(5),
             fail: Some(10),
@@ -443,7 +443,7 @@ mod tests {
     }
 
     #[test]
-    fn observed_above_warn_below_fail_is_warn() {
+    fn between_warn_and_fail_returns_warn() {
         let thresholds = Thresholds {
             warn: Some(3),
             fail: Some(10),
@@ -455,7 +455,7 @@ mod tests {
     }
 
     #[test]
-    fn observed_above_fail_is_fail() {
+    fn above_fail_threshold_returns_fail() {
         let thresholds = Thresholds {
             warn: None,
             fail: Some(5),
@@ -477,7 +477,7 @@ mod tests {
     }
 
     #[test]
-    fn unknown_type_is_a_violation() {
+    fn rejects_unknown_type() {
         let result = check_commit_message("banana: do something", None);
 
         assert_eq!(result.status, Status::Fail);
@@ -496,7 +496,7 @@ mod tests {
     }
 
     #[test]
-    fn empty_description_is_a_violation() {
+    fn rejects_empty_description() {
         let result = check_commit_message("feat: ", None);
 
         assert_eq!(result.status, Status::Fail);
@@ -504,7 +504,7 @@ mod tests {
     }
 
     #[test]
-    fn whitespace_only_description_is_a_violation() {
+    fn rejects_whitespace_only_description() {
         let result = check_commit_message("feat:   \t  ", None);
 
         assert_eq!(result.status, Status::Fail);
@@ -512,7 +512,7 @@ mod tests {
     }
 
     #[test]
-    fn type_matching_is_case_insensitive() {
+    fn accepts_type_regardless_of_case() {
         let result = check_commit_message("Feat: add login", None);
 
         assert_eq!(result.status, Status::Pass);
@@ -520,7 +520,7 @@ mod tests {
     }
 
     #[test]
-    fn scope_in_parentheses_is_accepted() {
+    fn accepts_scope_in_parentheses() {
         let result = check_commit_message("feat(auth): add login", None);
 
         assert_eq!(result.status, Status::Pass);
@@ -528,7 +528,7 @@ mod tests {
     }
 
     #[test]
-    fn empty_scope_is_a_violation() {
+    fn rejects_empty_scope() {
         let result = check_commit_message("feat(): add login", None);
 
         assert_eq!(result.status, Status::Fail);
@@ -536,7 +536,7 @@ mod tests {
     }
 
     #[test]
-    fn breaking_change_indicator_is_accepted() {
+    fn accepts_breaking_change_indicator() {
         let result = check_commit_message("feat!: breaking change", None);
 
         assert_eq!(result.status, Status::Pass);
@@ -544,7 +544,7 @@ mod tests {
     }
 
     #[test]
-    fn scope_with_breaking_change_is_accepted() {
+    fn accepts_scope_with_breaking_change() {
         let result = check_commit_message("feat(api)!: remove endpoint", None);
 
         assert_eq!(result.status, Status::Pass);
@@ -563,7 +563,7 @@ mod tests {
     }
 
     #[test]
-    fn body_not_separated_by_blank_line_is_a_violation() {
+    fn rejects_body_not_separated_by_blank_line() {
         let result = check_commit_message("feat: add login\nThis is not separated.", None);
 
         assert_eq!(result.status, Status::Fail);
@@ -583,7 +583,7 @@ mod tests {
     }
 
     #[test]
-    fn footer_with_hash_value_format_is_accepted() {
+    fn accepts_footer_with_hash_value_format() {
         let result = check_commit_message("fix: resolve bug\n\nFixes #123", None);
 
         assert_eq!(result.status, Status::Pass);
@@ -591,7 +591,7 @@ mod tests {
     }
 
     #[test]
-    fn malformed_footer_is_a_violation() {
+    fn rejects_malformed_footer() {
         let result = check_commit_message(
             "feat: add login\n\nSome body.\n\nReviewed-by: Alice\nnot a valid footer",
             None,
@@ -603,7 +603,7 @@ mod tests {
     }
 
     #[test]
-    fn breaking_change_footer_must_be_uppercase() {
+    fn rejects_lowercase_breaking_change_footer() {
         let result =
             check_commit_message("feat!: drop API\n\nbreaking change: removed endpoint", None);
 
@@ -613,7 +613,7 @@ mod tests {
     }
 
     #[test]
-    fn git_comment_lines_are_stripped() {
+    fn strips_git_comment_lines() {
         let result = check_commit_message(
             "feat: add login\n# This is a git comment\n\nBody here.",
             None,
@@ -624,7 +624,7 @@ mod tests {
     }
 
     #[test]
-    fn empty_input_is_a_violation() {
+    fn rejects_empty_commit_message() {
         let result = check_commit_message("", None);
 
         assert_eq!(result.status, Status::Fail);
@@ -632,7 +632,7 @@ mod tests {
     }
 
     #[test]
-    fn whitespace_only_input_is_a_violation() {
+    fn rejects_whitespace_only_commit_message() {
         let result = check_commit_message("   \n  \n ", None);
 
         assert_eq!(result.status, Status::Fail);
@@ -665,7 +665,7 @@ mod tests {
     }
 
     #[test]
-    fn definition_thresholds_are_used_in_result() {
+    fn result_thresholds_match_definition() {
         let definition = CommitMessageDefinition {
             thresholds: Some(Thresholds {
                 warn: Some(1),

@@ -1,22 +1,8 @@
 use assert_cmd::cargo::cargo_bin_cmd;
-use tempfile::TempDir;
-
-fn setup_cargo_project(cargo_toml: &str) -> TempDir {
-    let dir = TempDir::new().unwrap();
-    std::fs::write(dir.path().join("Cargo.toml"), cargo_toml).unwrap();
-    let src = dir.path().join("src");
-    std::fs::create_dir(&src).unwrap();
-    std::fs::write(src.join("lib.rs"), "").unwrap();
-    std::process::Command::new("cargo")
-        .args(["generate-lockfile"])
-        .current_dir(dir.path())
-        .output()
-        .unwrap();
-    dir
-}
+use scute_test_utils::setup_cargo_project;
 
 #[test]
-fn pass_exits_with_code_0() {
+fn passing_check_exits_with_code_0() {
     let dir = setup_cargo_project(
         r#"[package]
 name = "test-project"
@@ -33,7 +19,7 @@ edition = "2021"
 }
 
 #[test]
-fn fail_exits_with_non_zero() {
+fn failing_check_exits_with_non_zero() {
     let dir = setup_cargo_project(
         r#"[package]
 name = "test-project"
@@ -53,7 +39,7 @@ rand = "=0.7.3"
 }
 
 #[test]
-fn target_is_the_working_directory() {
+fn uses_working_directory_as_target() {
     let dir = setup_cargo_project(
         r#"[package]
 name = "test-project"
@@ -78,7 +64,7 @@ edition = "2021"
 }
 
 #[test]
-fn dependency_freshness_is_a_recognized_command() {
+fn recognizes_dependency_freshness_command() {
     let output = cargo_bin_cmd!("scute")
         .args(["check", "dependency-freshness"])
         .output()

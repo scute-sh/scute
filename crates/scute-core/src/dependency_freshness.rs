@@ -125,7 +125,7 @@ mod tests {
     }
 
     #[test]
-    fn observed_counts_outdated_deps() {
+    fn reports_outdated_dep_count() {
         let deps = vec![
             dep("rand", "0.7.3", "0.9.0"),
             dep("serde", "1.0.0", "1.1.0"),
@@ -138,7 +138,7 @@ mod tests {
     }
 
     #[test]
-    fn evidence_carries_name_current_and_latest() {
+    fn evidence_contains_dep_name_current_and_latest() {
         let deps = vec![dep("rand", "0.7.3", "0.9.0")];
 
         let result = check(".", &deps);
@@ -153,7 +153,7 @@ mod tests {
     }
 
     #[test]
-    fn it_fails_with_more_outdated_deps_than_fail_threshold() {
+    fn outdated_deps_above_threshold_fails() {
         let deps = vec![
             dep("a", "1.0.0", "2.0.0"),
             dep("b", "1.0.0", "2.0.0"),
