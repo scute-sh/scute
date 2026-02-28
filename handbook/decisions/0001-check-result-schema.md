@@ -30,9 +30,11 @@ static/dynamic result distinction and the atomic/holistic scope distinction.
   "check": "string",
   "target": "string",
   "status": "pass | warn | fail",
-  "observed": "number",
-  "expected": { "warn?": "number", "fail?": "number" },
-  "evidence?": [{ "location?": "string", "rule?": "string", "found": "any" }],
+  "measurement": {
+    "observed": "number",
+    "thresholds": { "warn?": "number", "fail?": "number" }
+  },
+  "evidence?": [{ "location?": "string", "rule?": "string", "found": "any", "expected?": "any" }],
   "baseline?": { "observed": "number", "commit": "string" },
   "delta?": "number"
 }
@@ -53,17 +55,19 @@ static/dynamic result distinction and the atomic/holistic scope distinction.
 
 ## Design Decisions
 
-### `observed` + `expected`
+### `measurement` groups observed value and thresholds
 
-Every check *observes* something and compares it to an *expectation*. `observed` is
-the check's measurement, in whatever unit is natural to it. The schema doesn't
-prescribe the unit; the check does. Coverage observes a percentage. Layer violations
-observe a count of violations, so thresholds like `{ warn: 3, fail: 10 }` allow
+Every check *observes* something and compares it to *thresholds*. The `measurement`
+object groups these together so all trending-relevant data lives in one place, with
+room for future fields like `baseline` and `delta`.
+
+`observed` is the check's measurement, in whatever unit is natural to it. The schema
+doesn't prescribe the unit; the check does. Coverage observes a percentage. Layer
+violations observe a count, so thresholds like `{ warn: 3, fail: 10 }` allow
 controlled tolerance during migrations. Commit-message validity observes 0 or 1,
-because the check's scope is a single message. `evidence` carries the detailed
-breakdown regardless of `observed`.
+because the check's scope is a single message.
 
-`expected` is always the *resolved* threshold for this evaluation, whether it came
+`thresholds` is always the *resolved* threshold for this evaluation, whether it came
 from static config or dynamic computation (e.g., acceptable latency shifting with
 concurrent user count).
 
@@ -77,10 +81,14 @@ investigate, stop and fix.
 
 ### `evidence` as agent-readable structured findings
 
-Each evidence item is a structured object with optional `location`, optional `rule`,
-and required `found`. `found` carries what was observed at that location: the
+Each evidence item describes a single violation. `found` is what triggered it: the
 import that violated a layer rule, the identifier that broke a naming convention,
-the cycle path. An agent uses this to know exactly what to change and where.
+the cycle path. `rule` identifies which rule was violated. `location` pinpoints where.
+
+`expected` carries what the check wanted instead, when the rule name alone isn't
+enough to act on. For example, an `unknown-type` violation includes the list of valid
+types so the agent can fix it without external lookup. Self-explanatory rules like
+`body-separator` omit `expected` — the name says it all.
 
 ### `rule` as identifier, not prose
 
@@ -134,8 +142,8 @@ from the start.
 Instead of a uniform schema, have different result shapes for metric checks,
 violation checks, assertion checks, etc. Rejected because it fragments the consumer
 interface. An agent would need to handle N schemas instead of one. The uniform
-`observed` + `expected` + `evidence` pattern handles all current check types without
-type branching.
+`measurement` + `evidence` pattern handles all current check types without type
+branching.
 
 ### Human-readable `message` field
 
