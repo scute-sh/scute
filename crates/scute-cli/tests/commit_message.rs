@@ -29,28 +29,6 @@ fn failing_check_exits_with_code_1() {
 }
 
 #[test]
-fn json_output_nests_observed_and_thresholds_under_measurement() {
-    Scute::cli()
-        .check(&["commit-message", "feat: add login"])
-        .expect_observed(0);
-}
-
-#[test]
-fn serializes_provided_expected_in_evidence() {
-    Scute::cli()
-        .check(&["commit-message", "banana: do stuff"])
-        .expect_evidence_has_expected(0);
-}
-
-#[test]
-fn omits_absent_expected_from_evidence() {
-    Scute::cli()
-        .check(&["commit-message", "feat: add login\nnot separated"])
-        .expect_evidence_rule(0, "body-separator")
-        .expect_evidence_no_expected(0);
-}
-
-#[test]
 fn config_types_override_defaults() {
     Scute::cli()
         .scute_config(

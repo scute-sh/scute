@@ -134,6 +134,17 @@ impl ScuteResult {
         self
     }
 
+    pub fn expect_warn(&self) -> &Self {
+        let json = self.json();
+        assert_eq!(json["status"], "warn", "got: {json}");
+        assert!(
+            self.exit_success,
+            "expected exit 0 for warn, stderr: {}",
+            self.stderr
+        );
+        self
+    }
+
     pub fn expect_fail(&self) -> &Self {
         let json = self.json();
         assert_eq!(json["status"], "fail", "got: {json}");

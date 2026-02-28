@@ -576,6 +576,7 @@ mod tests {
         assert_eq!(result.status, Status::Fail);
         assert_eq!(result.evidence[0].rule, "body-separator");
         assert_eq!(result.evidence[0].found, "This is not separated.");
+        assert_eq!(result.evidence[0].expected, None);
     }
 
     #[test]

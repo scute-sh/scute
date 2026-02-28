@@ -21,6 +21,23 @@ fn uses_working_directory_as_target() {
 }
 
 #[test]
+fn outdated_deps_between_warn_and_fail_produces_warn() {
+    Scute::cli()
+        .dependency("itoa", "=0.4.8")
+        .scute_config(
+            r"
+checks:
+  dependency-freshness:
+    thresholds:
+      warn: 0
+      fail: 5
+",
+        )
+        .check(&["dependency-freshness"])
+        .expect_warn();
+}
+
+#[test]
 fn config_thresholds_override_default() {
     Scute::cli()
         .dependency("itoa", "=0.4.8")
