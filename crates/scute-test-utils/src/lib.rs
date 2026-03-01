@@ -129,7 +129,7 @@ impl Scute {
 
         ScuteResult {
             dir,
-            exit_success: output.status.success(),
+            exit_code: output.status.code().unwrap_or(-1),
             json: serde_json::from_str(&stdout).ok(),
             stderr,
         }
@@ -138,38 +138,38 @@ impl Scute {
 
 pub struct ScuteResult {
     dir: TempDir,
-    exit_success: bool,
+    exit_code: i32,
     json: Option<serde_json::Value>,
     stderr: String,
 }
 
 impl ScuteResult {
-    pub fn expect_pass(&self) -> &Self {
+    pub fn expect_check_pass(&self) -> &Self {
         let json = self.json();
         assert_eq!(json["status"], "pass", "got: {json}");
-        assert!(
-            self.exit_success,
+        assert_eq!(
+            self.exit_code, 0,
             "expected exit 0, stderr: {}",
             self.stderr
         );
         self
     }
 
-    pub fn expect_warn(&self) -> &Self {
+    pub fn expect_check_warn(&self) -> &Self {
         let json = self.json();
         assert_eq!(json["status"], "warn", "got: {json}");
-        assert!(
-            self.exit_success,
+        assert_eq!(
+            self.exit_code, 0,
             "expected exit 0 for warn, stderr: {}",
             self.stderr
         );
         self
     }
 
-    pub fn expect_fail(&self) -> &Self {
+    pub fn expect_check_fail(&self) -> &Self {
         let json = self.json();
         assert_eq!(json["status"], "fail", "got: {json}");
-        assert!(!self.exit_success, "expected non-zero exit");
+        assert_eq!(self.exit_code, 1, "expected exit 1 for fail");
         self
     }
 
@@ -216,7 +216,7 @@ impl ScuteResult {
     }
 
     pub fn expect_error_containing(&self, needle: &str) -> &Self {
-        assert!(!self.exit_success, "expected non-zero exit");
+        assert_ne!(self.exit_code, 0, "expected non-zero exit");
         assert!(
             self.stderr.contains(needle),
             "expected stderr to contain {needle:?}, got: {}",

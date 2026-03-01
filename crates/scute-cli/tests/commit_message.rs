@@ -4,7 +4,7 @@ use scute_test_utils::Scute;
 fn passing_check_exits_with_code_0() {
     Scute::cli()
         .check(&["commit-message", "feat: add login"])
-        .expect_pass();
+        .expect_check_pass();
 }
 
 #[test]
@@ -25,7 +25,7 @@ fn cli_argument_becomes_target() {
 fn failing_check_exits_with_code_1() {
     Scute::cli()
         .check(&["commit-message", "not a conventional commit"])
-        .expect_fail();
+        .expect_check_fail();
 }
 
 #[test]
@@ -40,5 +40,5 @@ checks:
 ",
         )
         .check(&["commit-message", "hotfix: urgent patch"])
-        .expect_pass();
+        .expect_check_pass();
 }
