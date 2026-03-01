@@ -58,12 +58,12 @@ impl OutdatedDep {
 ///
 /// Returns an error if `cargo outdated` cannot be executed or produces
 /// invalid output.
-pub fn run(target: &Path, definition: &Definition) -> std::io::Result<CheckOutcome> {
+pub fn check(target: &Path, definition: &Definition) -> std::io::Result<CheckOutcome> {
     let outdated = fetch_outdated(target)?;
-    Ok(check(
+    Ok(evaluate(
         &target.display().to_string(),
         &outdated,
-        Some(definition),
+        definition,
     ))
 }
 
@@ -71,6 +71,7 @@ pub fn run(target: &Path, definition: &Definition) -> std::io::Result<CheckOutco
 ///
 /// Returns an error if `cargo outdated` cannot be executed or produces
 /// invalid output.
+#[doc(hidden)]
 pub fn fetch_outdated(target: &Path) -> std::io::Result<Vec<OutdatedDep>> {
     let output = std::process::Command::new("cargo")
         .args(["outdated", "--format", "json", "--depth", "1"])
@@ -90,12 +91,8 @@ pub fn fetch_outdated(target: &Path) -> std::io::Result<Vec<OutdatedDep>> {
 }
 
 #[must_use]
-pub fn check(
-    target: &str,
-    outdated: &[OutdatedDep],
-    definition: Option<&Definition>,
-) -> CheckOutcome {
-    let level = definition.and_then(|d| d.level).unwrap_or_default();
+fn evaluate(target: &str, outdated: &[OutdatedDep], definition: &Definition) -> CheckOutcome {
+    let level = definition.level.unwrap_or_default();
     let evidence: Vec<Evidence> = outdated
         .iter()
         .filter(|dep| dep.kind() >= level)
@@ -108,9 +105,7 @@ pub fn check(
         })
         .collect();
     let observed = evidence.len() as u64;
-    let thresholds = definition
-        .and_then(|d| d.thresholds.clone())
-        .unwrap_or(DEFAULT_THRESHOLDS);
+    let thresholds = definition.thresholds.clone().unwrap_or(DEFAULT_THRESHOLDS);
 
     CheckOutcome {
         check: CHECK_NAME.into(),
@@ -127,7 +122,7 @@ pub fn check(
 }
 
 #[must_use]
-pub fn parse_cargo_outdated(output: &str) -> Vec<OutdatedDep> {
+fn parse_cargo_outdated(output: &str) -> Vec<OutdatedDep> {
     let mut deps = Vec::new();
     for line in output.lines() {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
@@ -163,12 +158,11 @@ pub fn parse_cargo_outdated(output: &str) -> Vec<OutdatedDep> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Status;
     use googletest::prelude::*;
 
     #[test]
     fn no_outdated_deps_returns_pass_with_all_fields() {
-        let result = check(".", &[], None);
+        let result = evaluate(".", &[], &Definition::default());
 
         assert_eq!(result.check, "dependency-freshness");
         assert!(result.is_pass());
@@ -187,7 +181,7 @@ mod tests {
     fn reports_outdated_dep_count() {
         let deps = vec![dep("a", "1.0.0", "2.0.0"), dep("b", "2.0.0", "3.0.0")];
 
-        let result = check(".", &deps, None);
+        let result = evaluate(".", &deps, &Definition::default());
 
         assert_eq!(result.observed(), 2);
     }
@@ -196,7 +190,7 @@ mod tests {
     fn outdated_deps_above_threshold_fails() {
         let deps = vec![dep("a", "1.0.0", "2.0.0")];
 
-        let result = check(".", &deps, None);
+        let result = evaluate(".", &deps, &Definition::default());
 
         assert!(result.is_fail());
     }
@@ -220,7 +214,7 @@ mod tests {
             ..Definition::default()
         };
 
-        let result = check(".", &deps, Some(&definition));
+        let result = evaluate(".", &deps, &definition);
 
         assert_eq!(result.observed(), 5);
         assert!(result.is_fail());
@@ -237,7 +231,7 @@ mod tests {
             ..Definition::default()
         };
 
-        let result = check(".", &deps, Some(&definition));
+        let result = evaluate(".", &deps, &definition);
 
         assert_eq!(result.observed(), 2);
         assert!(result.is_pass());
@@ -247,7 +241,7 @@ mod tests {
     fn evidence_contains_dep_name_current_and_latest() {
         let deps = vec![dep("a", "1.0.0", "2.0.0")];
 
-        let result = check(".", &deps, None);
+        let result = evaluate(".", &deps, &Definition::default());
 
         assert_eq!(result.evidence().len(), 1);
         assert_eq!(result.evidence()[0].found, "a 1.0.0");
@@ -261,14 +255,14 @@ mod tests {
     fn evidence_rule_reflects_outdated_kind() {
         let deps = vec![dep("a", "1.0.0", "2.0.0")];
 
-        let result = check(".", &deps, None);
+        let result = evaluate(".", &deps, &Definition::default());
 
         assert_that!(result.evidence()[0].rule, some(eq("outdated-major")));
     }
 
     #[test]
     fn no_definition_defaults_to_major_level() {
-        let result = check(".", &deps_at_every_level(), None);
+        let result = evaluate(".", &deps_at_every_level(), &Definition::default());
 
         assert_eq!(result.observed(), 1);
     }
@@ -280,7 +274,7 @@ mod tests {
             ..Definition::default()
         };
 
-        let result = check(".", &deps_at_every_level(), Some(&definition));
+        let result = evaluate(".", &deps_at_every_level(), &definition);
 
         assert_eq!(result.observed(), 1);
     }
@@ -292,7 +286,7 @@ mod tests {
             ..Definition::default()
         };
 
-        let result = check(".", &deps_at_every_level(), Some(&definition));
+        let result = evaluate(".", &deps_at_every_level(), &definition);
 
         assert_eq!(result.observed(), 2);
     }
@@ -304,7 +298,7 @@ mod tests {
             ..Definition::default()
         };
 
-        let result = check(".", &deps_at_every_level(), Some(&definition));
+        let result = evaluate(".", &deps_at_every_level(), &definition);
 
         assert_eq!(result.observed(), 3);
     }

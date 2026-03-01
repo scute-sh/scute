@@ -4,8 +4,7 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use scute_core::dependency_freshness::Level;
-use scute_core::{CheckOutcome, CommitMessageDefinition, Thresholds};
+use scute_core::{CheckOutcome, Thresholds, commit_message, dependency_freshness};
 use serde::Deserialize;
 
 #[derive(Parser)]
@@ -50,8 +49,8 @@ fn main() -> Result<()> {
         Commands::Check { check } => match check {
             Checks::CommitMessage { message } => {
                 let message = resolve_message(message)?;
-                let definition = load_commit_message_definition(scute_core::CHECK_NAME)?;
-                let result = scute_core::check_commit_message(&message, Some(&definition));
+                let definition = load_commit_message_definition(commit_message::CHECK_NAME)?;
+                let result = commit_message::check(&message, &definition);
                 output(&result)
             }
             Checks::DependencyFreshness { path } => {
@@ -61,8 +60,8 @@ fn main() -> Result<()> {
                         .with_context(|| format!("can't resolve path: {p}"))?,
                     None => std::env::current_dir()?,
                 };
-                let definition = load_freshness_definition()?;
-                let result = scute_core::dependency_freshness::run(&target, &definition)?;
+                let definition = load_freshness_definition(dependency_freshness::CHECK_NAME)?;
+                let result = dependency_freshness::check(&target, &definition)?;
                 output(&result)
             }
         },
@@ -102,15 +101,15 @@ fn load_check_entry(check_name: &str) -> Result<Option<CheckEntry>> {
     Ok(config.checks.remove(check_name))
 }
 
-fn load_freshness_definition() -> Result<scute_core::dependency_freshness::Definition> {
-    let entry = load_check_entry(scute_core::dependency_freshness::CHECK_NAME)?;
+fn load_freshness_definition(check_name: &str) -> Result<dependency_freshness::Definition> {
+    let entry = load_check_entry(check_name)?;
     freshness_definition_from(entry)
 }
 
 fn freshness_definition_from(
     entry: Option<CheckEntry>,
-) -> Result<scute_core::dependency_freshness::Definition> {
-    use scute_core::dependency_freshness::Definition;
+) -> Result<dependency_freshness::Definition> {
+    use dependency_freshness::Definition;
 
     let Some(entry) = entry else {
         return Ok(Definition::default());
@@ -127,18 +126,20 @@ fn freshness_definition_from(
 
 #[derive(Deserialize)]
 struct DependencyFreshnessConfig {
-    level: Option<Level>,
+    level: Option<dependency_freshness::Level>,
 }
 
-fn load_commit_message_definition(check_name: &str) -> Result<CommitMessageDefinition> {
+fn load_commit_message_definition(check_name: &str) -> Result<commit_message::Definition> {
+    use commit_message::Definition;
+
     let Some(entry) = load_check_entry(check_name)? else {
-        return Ok(CommitMessageDefinition::default());
+        return Ok(Definition::default());
     };
     let types = match entry.config {
         Some(c) => serde_json::from_value::<CommitMessageConfig>(c)?.types,
         None => None,
     };
-    Ok(CommitMessageDefinition {
+    Ok(Definition {
         types,
         thresholds: entry.thresholds,
     })
@@ -152,7 +153,7 @@ struct CommitMessageConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use scute_core::dependency_freshness::Level;
+    use dependency_freshness::Level;
 
     #[test]
     fn freshness_config_reads_level_from_entry() {
