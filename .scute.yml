@@ -2,3 +2,9 @@ checks:
   commit-message:
     thresholds:
       fail: 0
+  dependency-freshness:
+    thresholds:
+      warn: 5
+      fail: 8
+    config:
+      level: minor
