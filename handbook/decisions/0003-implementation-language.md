@@ -19,11 +19,11 @@ must run entirely on the user's machine with no runtime dependency. A self-conta
 binary eliminates "install Node/Python/Go first" as a prerequisite and simplifies
 CI caching, container images, and air-gapped environments.
 
-**Type system alignment with the check contract.** The check result schema (ADR-0001)
-is the product. `status: pass | warn | fail` is a sum type. `observed` is always
-numeric. `evidence` is an optional array of structured items. The implementation
-language should enforce this contract at compile time, not through runtime validation
-and convention.
+**Type system alignment with the check contract.** The check outcome schema
+([ADR-0001](0001-check-result-schema.md)) is the product. `status: pass | warn | fail`
+is a sum type. `observed` is always numeric. `evidence` is an optional array of
+structured items. The implementation language should enforce this contract at compile
+time, not through runtime validation and convention.
 
 **Multi-language code parsing.** Built-in checks (cyclomatic complexity, circular
 dependencies, layer violations) require parsing source code across many languages.
@@ -45,11 +45,12 @@ sub-millisecond. For a tool that may run multiple checks per commit, this compou
 
 ### Type system enforces the check contract
 
-ADR-0001's check result schema maps directly to Rust's type system:
+[ADR-0001](0001-check-result-schema.md)'s check outcome schema maps directly to
+Rust's type system:
 
 - `status: pass | warn | fail` → `enum Status { Pass, Warn, Fail }`
 - `observed: number` → `f64`
-- `expected: { warn?, fail? }` → `struct Expected { warn: Option<f64>, fail: Option<f64> }`
+- `thresholds: { warn?, fail? }` → `struct Thresholds { warn: Option<f64>, fail: Option<f64> }`
 - `evidence?: [...]` → `Option<Vec<Evidence>>`
 
 Check authors get schema violations at compile time. Serde handles JSON serialization
@@ -81,12 +82,12 @@ exist; implementing directly is also straightforward.
 Fast startup (~5-10ms), single binary, trivial cross-compilation, simple language with
 a broad contributor base. Strong CLI ecosystem (cobra, kong).
 
-Rejected because: Go's type system cannot express the check result schema as precisely.
-No sum types means `status` becomes a string with runtime validation. Error handling
-verbosity (`if err != nil`) accumulates across many check implementations.
-tree-sitter bindings are second-class. The simplicity advantage is real but is
-offset by ADR-0004's executable protocol, which makes contributor accessibility
-language-agnostic.
+Rejected because: Go's type system cannot express the check outcome schema as
+precisely. No sum types means `status` becomes a string with runtime validation.
+Error handling verbosity (`if err != nil`) accumulates across many check
+implementations. tree-sitter bindings are second-class. The simplicity advantage is
+real but is offset by [ADR-0004](0004-check-implementation-architecture.md)'s
+executable protocol, which makes contributor accessibility language-agnostic.
 
 ### TypeScript (Node / Deno / Bun)
 
@@ -101,8 +102,9 @@ across large codebases.
 
 ## Consequences
 
-- **Steeper contributor learning curve** for the core engine. Mitigated by ADR-0004's
-  executable protocol, which allows check implementations in any language.
+- **Steeper contributor learning curve** for the core engine. Mitigated by
+  [ADR-0004](0004-check-implementation-architecture.md)'s executable protocol, which
+  allows check implementations in any language.
 - **Slower Phase 1 development velocity** compared to Go or TypeScript. Accepted as a
   tradeoff for long-term correctness and performance.
 - **Compile times** add development friction. Incremental compilation and workspace
