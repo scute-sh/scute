@@ -145,8 +145,8 @@ pub struct ScuteResult {
 
 impl ScuteResult {
     pub fn expect_check_pass(&self) -> &Self {
-        let json = self.json();
-        assert_eq!(json["status"], "pass", "got: {json}");
+        let evaluation = &self.json()["evaluation"];
+        assert_eq!(evaluation["status"], "pass", "got: {}", self.json());
         assert_eq!(
             self.exit_code, 0,
             "expected exit 0, stderr: {}",
@@ -156,8 +156,8 @@ impl ScuteResult {
     }
 
     pub fn expect_check_warn(&self) -> &Self {
-        let json = self.json();
-        assert_eq!(json["status"], "warn", "got: {json}");
+        let evaluation = &self.json()["evaluation"];
+        assert_eq!(evaluation["status"], "warn", "got: {}", self.json());
         assert_eq!(
             self.exit_code, 0,
             "expected exit 0 for warn, stderr: {}",
@@ -167,8 +167,8 @@ impl ScuteResult {
     }
 
     pub fn expect_check_fail(&self) -> &Self {
-        let json = self.json();
-        assert_eq!(json["status"], "fail", "got: {json}");
+        let evaluation = &self.json()["evaluation"];
+        assert_eq!(evaluation["status"], "fail", "got: {}", self.json());
         assert_eq!(self.exit_code, 1, "expected exit 1 for fail");
         self
     }
@@ -190,18 +190,21 @@ impl ScuteResult {
     }
 
     pub fn expect_observed(&self, expected: u64) -> &Self {
-        assert_eq!(self.json()["measurement"]["observed"], expected);
+        assert_eq!(
+            self.json()["evaluation"]["measurement"]["observed"],
+            expected
+        );
         self
     }
 
     pub fn expect_evidence_rule(&self, index: usize, rule: &str) -> &Self {
-        assert_eq!(self.json()["evidence"][index]["rule"], rule);
+        assert_eq!(self.json()["evaluation"]["evidence"][index]["rule"], rule);
         self
     }
 
     pub fn expect_evidence_has_expected(&self, index: usize) -> &Self {
         assert!(
-            !self.json()["evidence"][index]["expected"].is_null(),
+            !self.json()["evaluation"]["evidence"][index]["expected"].is_null(),
             "expected evidence[{index}].expected to be present"
         );
         self
@@ -209,7 +212,9 @@ impl ScuteResult {
 
     pub fn expect_evidence_no_expected(&self, index: usize) -> &Self {
         assert!(
-            self.json()["evidence"][index].get("expected").is_none(),
+            self.json()["evaluation"]["evidence"][index]
+                .get("expected")
+                .is_none(),
             "expected evidence[{index}].expected to be absent"
         );
         self

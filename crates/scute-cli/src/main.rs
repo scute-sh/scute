@@ -5,7 +5,7 @@ use std::path::Path;
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
 use scute_core::dependency_freshness::Level;
-use scute_core::{CheckResult, CommitMessageDefinition, Thresholds};
+use scute_core::{CheckOutcome, CommitMessageDefinition, Thresholds};
 use serde::Deserialize;
 
 #[derive(Parser)]
@@ -69,8 +69,8 @@ fn main() -> Result<()> {
     }
 }
 
-fn output(result: &CheckResult) -> Result<()> {
-    let failed = result.failed();
+fn output(result: &CheckOutcome) -> Result<()> {
+    let failed = result.is_fail();
     println!("{}", serde_json::to_string(&result)?);
     if failed {
         std::process::exit(1);

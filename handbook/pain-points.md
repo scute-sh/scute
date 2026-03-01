@@ -84,7 +84,7 @@ value.
 
 - **Separation of concerns violated.** Responsibilities leak across boundaries
   (e.g. configuration logic embedded in domain code).
-- **SOLID / Tell Don't Ask violations.** (×2) Objects exposing internals
+- **SOLID / Tell Don't Ask violations.** (×3) Objects exposing internals
   instead of encapsulating behavior.
   - Dependency inversion ignored: high-level policy coupled to low-level
     detail (e.g. check logic welded to a specific tool's output format).
@@ -92,6 +92,10 @@ value.
     in one function.
   - OCP violated: no extension point for new tool adapters, requiring
     modification instead of extension.
+  - Law of Demeter violated: callers reaching through chains of fields
+    (`result.evaluation.status`) instead of asking the object what they
+    actually need (`result.is_fail()`). Exposes internal structure and
+    breaks when it changes.
 - **Layer boundary violations.** Imports that cross architectural layers
   directly. This goes beyond a single check and applies broadly across module
   boundaries.
@@ -127,7 +131,7 @@ value.
   in principle but applied inconsistently. Fixes address only the examples
   explicitly called out, missing the same issue elsewhere. The pattern is
   understood, but the rigor to apply it exhaustively is missing.
-- **Checklists skipped under momentum.** (×4) Established workflows and
+- **Checklists skipped under momentum.** (×5) Established workflows and
   checklists exist but get bypassed when focus is on "just get the thing done."
   The process is known, the trigger is clear, but urgency wins over discipline.
   Especially common with agents who optimize for task completion over process

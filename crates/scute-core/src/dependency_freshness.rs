@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::{CheckResult, Evidence, Expected, Measurement, Thresholds, derive_status};
+use crate::{CheckOutcome, Evaluation, Evidence, Expected, Measurement, Thresholds, derive_status};
 
 pub const CHECK_NAME: &str = "dependency-freshness";
 
@@ -58,7 +58,7 @@ impl OutdatedDep {
 ///
 /// Returns an error if `cargo outdated` cannot be executed or produces
 /// invalid output.
-pub fn run(target: &Path, definition: &Definition) -> std::io::Result<CheckResult> {
+pub fn run(target: &Path, definition: &Definition) -> std::io::Result<CheckOutcome> {
     let outdated = fetch_outdated(target)?;
     Ok(check(
         &target.display().to_string(),
@@ -94,7 +94,7 @@ pub fn check(
     target: &str,
     outdated: &[OutdatedDep],
     definition: Option<&Definition>,
-) -> CheckResult {
+) -> CheckOutcome {
     let level = definition.and_then(|d| d.level).unwrap_or_default();
     let evidence: Vec<Evidence> = outdated
         .iter()
@@ -112,15 +112,17 @@ pub fn check(
         .and_then(|d| d.thresholds.clone())
         .unwrap_or(DEFAULT_THRESHOLDS);
 
-    CheckResult {
+    CheckOutcome {
         check: CHECK_NAME.into(),
         target: target.into(),
-        status: derive_status(observed, &thresholds),
-        measurement: Measurement {
-            observed,
-            thresholds,
-        },
-        evidence,
+        evaluation: Evaluation::new(
+            derive_status(observed, &thresholds),
+            Measurement {
+                observed,
+                thresholds,
+            },
+            evidence,
+        ),
     }
 }
 
@@ -162,22 +164,23 @@ pub fn parse_cargo_outdated(output: &str) -> Vec<OutdatedDep> {
 mod tests {
     use super::*;
     use crate::Status;
+    use googletest::prelude::*;
 
     #[test]
     fn no_outdated_deps_returns_pass_with_all_fields() {
         let result = check(".", &[], None);
 
         assert_eq!(result.check, "dependency-freshness");
-        assert_eq!(result.status, Status::Pass);
-        assert_eq!(result.measurement.observed, 0);
+        assert!(result.is_pass());
+        assert_eq!(result.observed(), 0);
         assert_eq!(
-            result.measurement.thresholds,
+            *result.thresholds(),
             Thresholds {
                 warn: None,
                 fail: Some(0)
             }
         );
-        assert!(result.evidence.is_empty());
+        assert!(result.evidence().is_empty());
     }
 
     #[test]
@@ -186,7 +189,7 @@ mod tests {
 
         let result = check(".", &deps, None);
 
-        assert_eq!(result.measurement.observed, 2);
+        assert_eq!(result.observed(), 2);
     }
 
     #[test]
@@ -195,7 +198,7 @@ mod tests {
 
         let result = check(".", &deps, None);
 
-        assert_eq!(result.status, Status::Fail);
+        assert!(result.is_fail());
     }
 
     #[test]
@@ -219,8 +222,8 @@ mod tests {
 
         let result = check(".", &deps, Some(&definition));
 
-        assert_eq!(result.measurement.observed, 5);
-        assert_eq!(result.status, Status::Fail);
+        assert_eq!(result.observed(), 5);
+        assert!(result.is_fail());
     }
 
     #[test]
@@ -236,8 +239,8 @@ mod tests {
 
         let result = check(".", &deps, Some(&definition));
 
-        assert_eq!(result.measurement.observed, 2);
-        assert_eq!(result.status, Status::Pass);
+        assert_eq!(result.observed(), 2);
+        assert!(result.is_pass());
     }
 
     #[test]
@@ -246,10 +249,10 @@ mod tests {
 
         let result = check(".", &deps, None);
 
-        assert_eq!(result.evidence.len(), 1);
-        assert_eq!(result.evidence[0].found, "a 1.0.0");
+        assert_eq!(result.evidence().len(), 1);
+        assert_eq!(result.evidence()[0].found, "a 1.0.0");
         assert_eq!(
-            result.evidence[0].expected,
+            result.evidence()[0].expected,
             Some(Expected::Text("2.0.0".into()))
         );
     }
@@ -260,14 +263,14 @@ mod tests {
 
         let result = check(".", &deps, None);
 
-        assert_eq!(result.evidence[0].rule, "outdated-major");
+        assert_that!(result.evidence()[0].rule, some(eq("outdated-major")));
     }
 
     #[test]
     fn no_definition_defaults_to_major_level() {
         let result = check(".", &deps_at_every_level(), None);
 
-        assert_eq!(result.measurement.observed, 1);
+        assert_eq!(result.observed(), 1);
     }
 
     #[test]
@@ -279,7 +282,7 @@ mod tests {
 
         let result = check(".", &deps_at_every_level(), Some(&definition));
 
-        assert_eq!(result.measurement.observed, 1);
+        assert_eq!(result.observed(), 1);
     }
 
     #[test]
@@ -291,7 +294,7 @@ mod tests {
 
         let result = check(".", &deps_at_every_level(), Some(&definition));
 
-        assert_eq!(result.measurement.observed, 2);
+        assert_eq!(result.observed(), 2);
     }
 
     #[test]
@@ -303,7 +306,7 @@ mod tests {
 
         let result = check(".", &deps_at_every_level(), Some(&definition));
 
-        assert_eq!(result.measurement.observed, 3);
+        assert_eq!(result.observed(), 3);
     }
 
     fn dep(name: &str, current: &str, latest: &str) -> OutdatedDep {
