@@ -6,16 +6,35 @@
 
 use tempfile::TempDir;
 
-#[derive(Default)]
+enum ProjectKind {
+    Empty,
+    Cargo,
+}
+
 pub struct TestProject {
+    kind: ProjectKind,
     dependencies: Vec<(String, String)>,
     dev_dependencies: Vec<(String, String)>,
     scute_config: Option<String>,
 }
 
 impl TestProject {
-    pub fn new() -> Self {
-        Self::default()
+    pub fn empty() -> Self {
+        Self {
+            kind: ProjectKind::Empty,
+            dependencies: Vec::new(),
+            dev_dependencies: Vec::new(),
+            scute_config: None,
+        }
+    }
+
+    pub fn cargo() -> Self {
+        Self {
+            kind: ProjectKind::Cargo,
+            dependencies: Vec::new(),
+            dev_dependencies: Vec::new(),
+            scute_config: None,
+        }
     }
 
     pub fn dependency(mut self, name: &str, version: &str) -> Self {
@@ -35,7 +54,9 @@ impl TestProject {
 
     pub fn build(self) -> TempDir {
         let dir = TempDir::new().unwrap();
-        setup_cargo_project(&dir, &self.dependencies, &self.dev_dependencies);
+        if matches!(self.kind, ProjectKind::Cargo) {
+            setup_cargo_project(&dir, &self.dependencies, &self.dev_dependencies);
+        }
         write_scute_config(&dir, self.scute_config.as_ref());
         dir
     }
@@ -55,7 +76,7 @@ impl Scute {
     fn with_mode(mode: ScuteMode) -> Self {
         Self {
             mode,
-            project: TestProject::new(),
+            project: TestProject::cargo(),
         }
     }
 

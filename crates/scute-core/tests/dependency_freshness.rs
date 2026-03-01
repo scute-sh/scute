@@ -3,7 +3,7 @@ use scute_test_utils::TestProject;
 
 #[test]
 fn outdated_report_excludes_transitive_dependencies() {
-    let dir = TestProject::new().dependency("rand", "=0.7.3").build();
+    let dir = TestProject::cargo().dependency("rand", "=0.7.3").build();
 
     let deps = fetch_outdated(dir.path()).unwrap();
 
@@ -13,7 +13,7 @@ fn outdated_report_excludes_transitive_dependencies() {
 
 #[test]
 fn outdated_dep_reports_current_version() {
-    let dir = TestProject::new().dependency("rand", "=0.7.3").build();
+    let dir = TestProject::cargo().dependency("rand", "=0.7.3").build();
 
     let deps = fetch_outdated(dir.path()).unwrap();
 
@@ -22,7 +22,7 @@ fn outdated_dep_reports_current_version() {
 
 #[test]
 fn outdated_dep_reports_latest_available_version() {
-    let dir = TestProject::new().dependency("rand", "=0.7.3").build();
+    let dir = TestProject::cargo().dependency("rand", "=0.7.3").build();
 
     let deps = fetch_outdated(dir.path()).unwrap();
 
@@ -31,7 +31,7 @@ fn outdated_dep_reports_latest_available_version() {
 
 #[test]
 fn no_dependencies_returns_empty_report() {
-    let dir = TestProject::new().build();
+    let dir = TestProject::cargo().build();
 
     let deps = fetch_outdated(dir.path()).unwrap();
 
@@ -39,8 +39,22 @@ fn no_dependencies_returns_empty_report() {
 }
 
 #[test]
+fn fetch_from_non_cargo_directory_reports_error() {
+    let dir = TestProject::empty().build();
+
+    let err = fetch_outdated(dir.path()).unwrap_err();
+
+    assert!(
+        err.to_string().contains("cargo outdated failed"),
+        "expected helpful error, got: {err}"
+    );
+}
+
+#[test]
 fn outdated_report_includes_dev_dependencies() {
-    let dir = TestProject::new().dev_dependency("rand", "=0.7.3").build();
+    let dir = TestProject::cargo()
+        .dev_dependency("rand", "=0.7.3")
+        .build();
 
     let deps = fetch_outdated(dir.path()).unwrap();
 

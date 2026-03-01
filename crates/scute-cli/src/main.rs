@@ -26,7 +26,7 @@ enum Commands {
 #[derive(Subcommand)]
 enum Checks {
     CommitMessage { message: Option<String> },
-    DependencyFreshness,
+    DependencyFreshness { path: Option<String> },
 }
 
 #[derive(Deserialize)]
@@ -54,8 +54,13 @@ fn main() -> Result<()> {
                 let result = scute_core::check_commit_message(&message, Some(&definition));
                 output(&result)
             }
-            Checks::DependencyFreshness => {
-                let target = std::env::current_dir()?;
+            Checks::DependencyFreshness { path } => {
+                let target = match path {
+                    Some(ref p) => std::path::PathBuf::from(p)
+                        .canonicalize()
+                        .with_context(|| format!("can't resolve path: {p}"))?,
+                    None => std::env::current_dir()?,
+                };
                 let definition = load_freshness_definition()?;
                 let result = scute_core::dependency_freshness::run(&target, &definition)?;
                 output(&result)

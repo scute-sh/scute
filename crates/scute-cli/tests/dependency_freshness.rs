@@ -1,4 +1,4 @@
-use scute_test_utils::Scute;
+use scute_test_utils::{Scute, TestProject};
 
 #[test]
 fn passing_check_exits_with_code_0() {
@@ -35,6 +35,24 @@ checks:
         )
         .check(&["dependency-freshness"])
         .expect_warn();
+}
+
+#[test]
+fn path_argument_resolves_to_provided_directory() {
+    let project = TestProject::cargo().build();
+    let canonical = project.path().canonicalize().unwrap();
+
+    Scute::cli()
+        .check(&["dependency-freshness", project.path().to_str().unwrap()])
+        .expect_pass()
+        .expect_target(canonical.to_str().unwrap());
+}
+
+#[test]
+fn nonexistent_path_exits_non_zero_with_error() {
+    Scute::cli()
+        .check(&["dependency-freshness", "/nonexistent/path"])
+        .expect_error_containing("/nonexistent/path");
 }
 
 #[test]
