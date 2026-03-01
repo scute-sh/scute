@@ -14,7 +14,7 @@ use serde::{Deserialize, Serialize};
 
 /// Outcome of a threshold comparison.
 ///
-/// Derived by comparing [`Measurement::observed`] against [`Thresholds`].
+/// Derived by comparing [`Evaluation::observed`] against [`Thresholds`].
 #[derive(Debug, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Status {
@@ -46,40 +46,22 @@ pub struct Thresholds {
     pub fail: Option<u64>,
 }
 
-/// Numeric measurement and thresholds for a check.
-///
-/// Groups the observed value with the boundaries that determine
-/// [`Status`]. This keeps all trending-relevant data in one place.
-///
-/// ```
-/// use scute_core::{Measurement, Thresholds};
-///
-/// let m = Measurement {
-///     observed: 3,
-///     thresholds: Thresholds { warn: Some(1), fail: Some(10) },
-/// };
-/// ```
-#[derive(Debug, PartialEq, Serialize)]
-pub struct Measurement {
-    pub observed: u64,
-    pub thresholds: Thresholds,
-}
-
 /// Fitness assessment produced when a check executes successfully.
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(Debug, PartialEq)]
 pub struct Evaluation {
     pub status: Status,
-    pub measurement: Measurement,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub observed: u64,
+    pub thresholds: Thresholds,
     pub evidence: Vec<Evidence>,
 }
 
 impl Evaluation {
     #[must_use]
-    pub fn new(status: Status, measurement: Measurement, evidence: Vec<Evidence>) -> Self {
+    pub fn new(observed: u64, thresholds: Thresholds, evidence: Vec<Evidence>) -> Self {
         Self {
-            status,
-            measurement,
+            status: derive_status(observed, &thresholds),
+            observed,
+            thresholds,
             evidence,
         }
     }
@@ -87,54 +69,55 @@ impl Evaluation {
 
 /// Outcome of invoking a check against a target.
 ///
+/// The `result` carries either a successful [`Evaluation`] or an
+/// [`ExecutionError`] explaining why the check couldn't run.
+///
 /// ```
 /// use scute_core::commit_message;
 /// use scute_core::commit_message::Definition;
 ///
-/// let result = commit_message::check("feat: add login", &Definition::default());
+/// let outcome = commit_message::check("feat: add login", &Definition::default());
+/// assert_eq!(outcome.target, "feat: add login");
+/// assert!(outcome.is_pass());
 ///
-/// assert_eq!(result.check, "commit-message");
-/// assert_eq!(result.target, "feat: add login");
-/// assert_eq!(result.observed(), 0);
-/// assert!(result.evidence().is_empty());
+/// let evaluation = outcome.result.unwrap();
+/// assert_eq!(evaluation.observed, 0);
+/// assert!(evaluation.evidence.is_empty());
 /// ```
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(Debug, PartialEq)]
 pub struct CheckOutcome {
-    pub check: String,
     pub target: String,
-    pub evaluation: Evaluation,
+    pub result: Result<Evaluation, ExecutionError>,
 }
 
 impl CheckOutcome {
     #[must_use]
     pub fn is_pass(&self) -> bool {
-        self.evaluation.status == Status::Pass
+        self.result.as_ref().is_ok_and(|e| e.status == Status::Pass)
     }
 
     #[must_use]
     pub fn is_warn(&self) -> bool {
-        self.evaluation.status == Status::Warn
+        self.result.as_ref().is_ok_and(|e| e.status == Status::Warn)
     }
 
     #[must_use]
     pub fn is_fail(&self) -> bool {
-        self.evaluation.status == Status::Fail
+        self.result.as_ref().is_ok_and(|e| e.status == Status::Fail)
     }
 
     #[must_use]
-    pub fn observed(&self) -> u64 {
-        self.evaluation.measurement.observed
+    pub fn is_error(&self) -> bool {
+        self.result.is_err()
     }
+}
 
-    #[must_use]
-    pub fn evidence(&self) -> &[Evidence] {
-        &self.evaluation.evidence
-    }
-
-    #[must_use]
-    pub fn thresholds(&self) -> &Thresholds {
-        &self.evaluation.measurement.thresholds
-    }
+/// Structured error when a check cannot execute.
+#[derive(Debug, PartialEq, Serialize)]
+pub struct ExecutionError {
+    pub code: String,
+    pub message: String,
+    pub recovery: String,
 }
 
 /// What a check expected to find instead of the violation.
@@ -165,11 +148,12 @@ pub enum Expected {
 /// use scute_core::commit_message;
 /// use scute_core::commit_message::Definition;
 ///
-/// let result = commit_message::check("banana: do stuff", &Definition::default());
+/// let outcome = commit_message::check("banana: do stuff", &Definition::default());
+/// let evaluation = outcome.result.unwrap();
 ///
-/// assert_eq!(result.evidence()[0].rule.as_deref(), Some("unknown-type"));
-/// assert_eq!(result.evidence()[0].found, "banana");
-/// assert!(result.evidence()[0].expected.is_some());
+/// assert_eq!(evaluation.evidence[0].rule.as_deref(), Some("unknown-type"));
+/// assert_eq!(evaluation.evidence[0].found, "banana");
+/// assert!(evaluation.evidence[0].expected.is_some());
 /// ```
 #[derive(Debug, PartialEq, Serialize)]
 pub struct Evidence {

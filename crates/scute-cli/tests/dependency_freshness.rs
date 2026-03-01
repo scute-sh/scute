@@ -58,6 +58,15 @@ fn nonexistent_path_exits_non_zero_with_error() {
 }
 
 #[test]
+fn non_cargo_directory_produces_error_with_invalid_target() {
+    let dir = TestProject::empty().build();
+
+    Scute::cli()
+        .check(&["dependency-freshness", dir.path().to_str().unwrap()])
+        .expect_check_error("invalid_target");
+}
+
+#[test]
 fn config_thresholds_override_default() {
     Scute::cli()
         .dependency("itoa", "=0.4.8")

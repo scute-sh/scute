@@ -220,6 +220,21 @@ impl ScuteResult {
         self
     }
 
+    pub fn expect_check_error(&self, code: &str) -> &Self {
+        let error = &self.json()["error"];
+        assert_eq!(error["code"], code, "got: {}", self.json());
+        assert!(
+            error["message"].is_string(),
+            "error.message should be present"
+        );
+        assert!(
+            error["recovery"].is_string(),
+            "error.recovery should be present"
+        );
+        assert_eq!(self.exit_code, 2, "expected exit 2 for error");
+        self
+    }
+
     pub fn expect_error_containing(&self, needle: &str) -> &Self {
         assert_ne!(self.exit_code, 0, "expected non-zero exit");
         assert!(

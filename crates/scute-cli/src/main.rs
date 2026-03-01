@@ -4,8 +4,11 @@ use std::path::Path;
 
 use anyhow::{Context, Result};
 use clap::{Parser, Subcommand};
-use scute_core::{CheckOutcome, Thresholds, commit_message, dependency_freshness};
-use serde::Deserialize;
+use scute_core::{
+    CheckOutcome, Evidence, ExecutionError, Status, Thresholds, commit_message,
+    dependency_freshness,
+};
+use serde::{Deserialize, Serialize};
 
 #[derive(Parser)]
 #[command(name = "scute")]
@@ -42,6 +45,29 @@ struct CheckEntry {
     config: Option<serde_json::Value>,
 }
 
+#[derive(Serialize)]
+struct CheckOutcomeJson<'a> {
+    check: &'a str,
+    target: &'a str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    evaluation: Option<EvaluationJson<'a>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    error: Option<&'a ExecutionError>,
+}
+
+#[derive(Serialize)]
+struct EvaluationJson<'a> {
+    status: &'a Status,
+    measurement: MeasurementJson<'a>,
+    evidence: &'a [Evidence],
+}
+
+#[derive(Serialize)]
+struct MeasurementJson<'a> {
+    observed: u64,
+    thresholds: &'a Thresholds,
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -50,8 +76,8 @@ fn main() -> Result<()> {
             Checks::CommitMessage { message } => {
                 let message = resolve_message(message)?;
                 let definition = load_commit_message_definition(commit_message::CHECK_NAME)?;
-                let result = commit_message::check(&message, &definition);
-                output(&result)
+                let outcome = commit_message::check(&message, &definition);
+                output(commit_message::CHECK_NAME, &outcome)
             }
             Checks::DependencyFreshness { path } => {
                 let target = match path {
@@ -61,20 +87,47 @@ fn main() -> Result<()> {
                     None => std::env::current_dir()?,
                 };
                 let definition = load_freshness_definition(dependency_freshness::CHECK_NAME)?;
-                let result = dependency_freshness::check(&target, &definition)?;
-                output(&result)
+                let outcome = dependency_freshness::check(&target, &definition);
+                output(dependency_freshness::CHECK_NAME, &outcome)
             }
         },
     }
 }
 
-fn output(result: &CheckOutcome) -> Result<()> {
-    let failed = result.is_fail();
-    println!("{}", serde_json::to_string(&result)?);
-    if failed {
+fn output(check_name: &str, outcome: &CheckOutcome) -> Result<()> {
+    let json = to_check_json(check_name, outcome);
+    println!("{}", serde_json::to_string(&json)?);
+    if outcome.is_error() {
+        std::process::exit(2);
+    }
+    if outcome.is_fail() {
         std::process::exit(1);
     }
     Ok(())
+}
+
+fn to_check_json<'a>(check_name: &'a str, outcome: &'a CheckOutcome) -> CheckOutcomeJson<'a> {
+    match &outcome.result {
+        Ok(evaluation) => CheckOutcomeJson {
+            check: check_name,
+            target: &outcome.target,
+            evaluation: Some(EvaluationJson {
+                status: &evaluation.status,
+                measurement: MeasurementJson {
+                    observed: evaluation.observed,
+                    thresholds: &evaluation.thresholds,
+                },
+                evidence: &evaluation.evidence,
+            }),
+            error: None,
+        },
+        Err(error) => CheckOutcomeJson {
+            check: check_name,
+            target: &outcome.target,
+            evaluation: None,
+            error: Some(error),
+        },
+    }
 }
 
 fn resolve_message(arg: Option<String>) -> Result<String> {

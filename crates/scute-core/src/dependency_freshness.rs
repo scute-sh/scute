@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::{CheckOutcome, Evaluation, Evidence, Expected, Measurement, Thresholds, derive_status};
+use crate::{CheckOutcome, Evaluation, Evidence, Expected, Thresholds};
 
 pub const CHECK_NAME: &str = "dependency-freshness";
 
@@ -54,44 +54,98 @@ impl OutdatedDep {
     }
 }
 
-/// # Errors
+/// Run the dependency-freshness check against a Cargo project.
 ///
-/// Returns an error if `cargo outdated` cannot be executed or produces
-/// invalid output.
-pub fn check(target: &Path, definition: &Definition) -> std::io::Result<CheckOutcome> {
-    let outdated = fetch_outdated(target)?;
-    Ok(evaluate(
-        &target.display().to_string(),
-        &outdated,
-        definition,
-    ))
+/// Always returns a [`CheckOutcome`]. If the external tooling can't run
+/// (missing tool, invalid target, crash), the outcome carries a structured
+/// [`ExecutionError`](crate::ExecutionError) instead of an evaluation.
+#[must_use]
+pub fn check(target: &Path, definition: &Definition) -> CheckOutcome {
+    let result = match fetch_outdated(target) {
+        Ok(outdated) => Ok(evaluate(&outdated, definition)),
+        Err(err) => Err(classify_error(err)),
+    };
+
+    CheckOutcome {
+        target: target.display().to_string(),
+        result,
+    }
 }
 
-/// # Errors
-///
-/// Returns an error if `cargo outdated` cannot be executed or produces
-/// invalid output.
+#[derive(Debug)]
 #[doc(hidden)]
-pub fn fetch_outdated(target: &Path) -> std::io::Result<Vec<OutdatedDep>> {
+pub enum FetchError {
+    NotFound(std::io::Error),
+    ToolFailed(String),
+}
+
+impl std::fmt::Display for FetchError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::NotFound(e) => write!(f, "cargo-outdated not found: {e}"),
+            Self::ToolFailed(msg) => write!(f, "cargo outdated failed: {msg}"),
+        }
+    }
+}
+
+fn classify_error(err: FetchError) -> crate::ExecutionError {
+    match err {
+        FetchError::NotFound(io_err) => {
+            if io_err.kind() == std::io::ErrorKind::NotFound {
+                crate::ExecutionError {
+                    code: "missing_tool".into(),
+                    message: "cargo-outdated is not installed".into(),
+                    recovery: "install it with: cargo install cargo-outdated".into(),
+                }
+            } else {
+                crate::ExecutionError {
+                    code: "tool_failed".into(),
+                    message: format!("could not run cargo-outdated: {io_err}"),
+                    recovery:
+                        "check that cargo-outdated is installed: cargo install cargo-outdated"
+                            .into(),
+                }
+            }
+        }
+        FetchError::ToolFailed(stderr) => {
+            if stderr.contains("not a cargo project")
+                || stderr.contains("could not find `Cargo.toml`")
+            {
+                crate::ExecutionError {
+                    code: "invalid_target".into(),
+                    message: "target is not a valid Cargo project".into(),
+                    recovery: "pass a directory containing a Cargo.toml".into(),
+                }
+            } else {
+                crate::ExecutionError {
+                    code: "tool_failed".into(),
+                    message: format!("cargo-outdated failed: {stderr}"),
+                    recovery: "verify cargo-outdated works by running: cargo outdated --format json --depth 1".into(),
+                }
+            }
+        }
+    }
+}
+
+#[doc(hidden)]
+pub fn fetch_outdated(target: &Path) -> Result<Vec<OutdatedDep>, FetchError> {
     let output = std::process::Command::new("cargo")
         .args(["outdated", "--format", "json", "--depth", "1"])
         .current_dir(target)
-        .output()?;
+        .output()
+        .map_err(FetchError::NotFound)?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(std::io::Error::other(format!(
-            "cargo outdated failed: {stderr}"
-        )));
+        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
+        return Err(FetchError::ToolFailed(stderr));
     }
 
-    let stdout = String::from_utf8(output.stdout)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::InvalidData, e))?;
+    let stdout =
+        String::from_utf8(output.stdout).map_err(|e| FetchError::ToolFailed(e.to_string()))?;
     Ok(parse_cargo_outdated(&stdout))
 }
 
-#[must_use]
-fn evaluate(target: &str, outdated: &[OutdatedDep], definition: &Definition) -> CheckOutcome {
+fn evaluate(outdated: &[OutdatedDep], definition: &Definition) -> Evaluation {
     let level = definition.level.unwrap_or_default();
     let evidence: Vec<Evidence> = outdated
         .iter()
@@ -107,18 +161,7 @@ fn evaluate(target: &str, outdated: &[OutdatedDep], definition: &Definition) -> 
     let observed = evidence.len() as u64;
     let thresholds = definition.thresholds.clone().unwrap_or(DEFAULT_THRESHOLDS);
 
-    CheckOutcome {
-        check: CHECK_NAME.into(),
-        target: target.into(),
-        evaluation: Evaluation::new(
-            derive_status(observed, &thresholds),
-            Measurement {
-                observed,
-                thresholds,
-            },
-            evidence,
-        ),
-    }
+    Evaluation::new(observed, thresholds, evidence)
 }
 
 #[must_use]
@@ -158,41 +201,41 @@ fn parse_cargo_outdated(output: &str) -> Vec<OutdatedDep> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Status;
     use googletest::prelude::*;
 
     #[test]
     fn no_outdated_deps_returns_pass_with_all_fields() {
-        let result = evaluate(".", &[], &Definition::default());
+        let evaluation = evaluate(&[], &Definition::default());
 
-        assert_eq!(result.check, "dependency-freshness");
-        assert!(result.is_pass());
-        assert_eq!(result.observed(), 0);
+        assert_eq!(evaluation.status, Status::Pass);
+        assert_eq!(evaluation.observed, 0);
         assert_eq!(
-            *result.thresholds(),
+            evaluation.thresholds,
             Thresholds {
                 warn: None,
                 fail: Some(0)
             }
         );
-        assert!(result.evidence().is_empty());
+        assert!(evaluation.evidence.is_empty());
     }
 
     #[test]
     fn reports_outdated_dep_count() {
         let deps = vec![dep("a", "1.0.0", "2.0.0"), dep("b", "2.0.0", "3.0.0")];
 
-        let result = evaluate(".", &deps, &Definition::default());
+        let evaluation = evaluate(&deps, &Definition::default());
 
-        assert_eq!(result.observed(), 2);
+        assert_eq!(evaluation.observed, 2);
     }
 
     #[test]
     fn outdated_deps_above_threshold_fails() {
         let deps = vec![dep("a", "1.0.0", "2.0.0")];
 
-        let result = evaluate(".", &deps, &Definition::default());
+        let evaluation = evaluate(&deps, &Definition::default());
 
-        assert!(result.is_fail());
+        assert_eq!(evaluation.status, Status::Fail);
     }
 
     #[test]
@@ -214,10 +257,10 @@ mod tests {
             ..Definition::default()
         };
 
-        let result = evaluate(".", &deps, &definition);
+        let evaluation = evaluate(&deps, &definition);
 
-        assert_eq!(result.observed(), 5);
-        assert!(result.is_fail());
+        assert_eq!(evaluation.observed, 5);
+        assert_eq!(evaluation.status, Status::Fail);
     }
 
     #[test]
@@ -231,22 +274,22 @@ mod tests {
             ..Definition::default()
         };
 
-        let result = evaluate(".", &deps, &definition);
+        let evaluation = evaluate(&deps, &definition);
 
-        assert_eq!(result.observed(), 2);
-        assert!(result.is_pass());
+        assert_eq!(evaluation.observed, 2);
+        assert_eq!(evaluation.status, Status::Pass);
     }
 
     #[test]
     fn evidence_contains_dep_name_current_and_latest() {
         let deps = vec![dep("a", "1.0.0", "2.0.0")];
 
-        let result = evaluate(".", &deps, &Definition::default());
+        let evaluation = evaluate(&deps, &Definition::default());
 
-        assert_eq!(result.evidence().len(), 1);
-        assert_eq!(result.evidence()[0].found, "a 1.0.0");
+        assert_eq!(evaluation.evidence.len(), 1);
+        assert_eq!(evaluation.evidence[0].found, "a 1.0.0");
         assert_eq!(
-            result.evidence()[0].expected,
+            evaluation.evidence[0].expected,
             Some(Expected::Text("2.0.0".into()))
         );
     }
@@ -255,16 +298,16 @@ mod tests {
     fn evidence_rule_reflects_outdated_kind() {
         let deps = vec![dep("a", "1.0.0", "2.0.0")];
 
-        let result = evaluate(".", &deps, &Definition::default());
+        let evaluation = evaluate(&deps, &Definition::default());
 
-        assert_that!(result.evidence()[0].rule, some(eq("outdated-major")));
+        assert_that!(evaluation.evidence[0].rule, some(eq("outdated-major")));
     }
 
     #[test]
     fn no_definition_defaults_to_major_level() {
-        let result = evaluate(".", &deps_at_every_level(), &Definition::default());
+        let evaluation = evaluate(&deps_at_every_level(), &Definition::default());
 
-        assert_eq!(result.observed(), 1);
+        assert_eq!(evaluation.observed, 1);
     }
 
     #[test]
@@ -274,9 +317,9 @@ mod tests {
             ..Definition::default()
         };
 
-        let result = evaluate(".", &deps_at_every_level(), &definition);
+        let evaluation = evaluate(&deps_at_every_level(), &definition);
 
-        assert_eq!(result.observed(), 1);
+        assert_eq!(evaluation.observed, 1);
     }
 
     #[test]
@@ -286,9 +329,9 @@ mod tests {
             ..Definition::default()
         };
 
-        let result = evaluate(".", &deps_at_every_level(), &definition);
+        let evaluation = evaluate(&deps_at_every_level(), &definition);
 
-        assert_eq!(result.observed(), 2);
+        assert_eq!(evaluation.observed, 2);
     }
 
     #[test]
@@ -298,9 +341,9 @@ mod tests {
             ..Definition::default()
         };
 
-        let result = evaluate(".", &deps_at_every_level(), &definition);
+        let evaluation = evaluate(&deps_at_every_level(), &definition);
 
-        assert_eq!(result.observed(), 3);
+        assert_eq!(evaluation.observed, 3);
     }
 
     fn dep(name: &str, current: &str, latest: &str) -> OutdatedDep {
@@ -317,5 +360,35 @@ mod tests {
             dep("b", "1.0.0", "1.1.0"),
             dep("c", "1.0.0", "1.0.1"),
         ]
+    }
+
+    #[test]
+    fn command_not_found_classifies_as_missing_tool() {
+        let err = FetchError::NotFound(std::io::Error::new(
+            std::io::ErrorKind::NotFound,
+            "No such file or directory",
+        ));
+
+        let result = classify_error(err);
+
+        assert_eq!(result.code, "missing_tool");
+    }
+
+    #[test]
+    fn cargo_toml_not_found_classifies_as_invalid_target() {
+        let err = FetchError::ToolFailed("could not find `Cargo.toml`".into());
+
+        let result = classify_error(err);
+
+        assert_eq!(result.code, "invalid_target");
+    }
+
+    #[test]
+    fn unknown_tool_failure_classifies_as_tool_failed() {
+        let err = FetchError::ToolFailed("segfault or something".into());
+
+        let result = classify_error(err);
+
+        assert_eq!(result.code, "tool_failed");
     }
 }
