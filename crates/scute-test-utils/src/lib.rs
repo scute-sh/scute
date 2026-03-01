@@ -103,7 +103,17 @@ impl Scute {
         self
     }
 
+    pub fn run(self, args: &[&str]) -> ScuteResult {
+        self.execute(args)
+    }
+
     pub fn check(self, args: &[&str]) -> ScuteResult {
+        let mut full_args = vec!["check"];
+        full_args.extend_from_slice(args);
+        self.execute(&full_args)
+    }
+
+    fn execute(self, args: &[&str]) -> ScuteResult {
         let dir = TempDir::new().unwrap();
         setup_cargo_project(
             &dir,
@@ -114,12 +124,11 @@ impl Scute {
 
         let bin = scute_bin();
         let mut cmd = assert_cmd::Command::new(&bin);
-        cmd.arg("check").args(args).current_dir(dir.path());
+        cmd.args(args).current_dir(dir.path());
         if matches!(self.mode, ScuteMode::CliStdin) {
             let message = args.last().expect("CliStdin requires message in args");
             cmd = assert_cmd::Command::new(&bin);
-            cmd.arg("check")
-                .args(&args[..args.len() - 1])
+            cmd.args(&args[..args.len() - 1])
                 .current_dir(dir.path())
                 .write_stdin(message.to_string());
         }
@@ -220,7 +229,19 @@ impl ScuteResult {
         self
     }
 
-    pub fn expect_check_error(&self, code: &str) -> &Self {
+    pub fn debug(&self) -> &Self {
+        eprintln!("exit_code: {}", self.exit_code);
+        eprintln!(
+            "stdout: {}",
+            self.json
+                .as_ref()
+                .map_or("(none)".into(), std::string::ToString::to_string)
+        );
+        eprintln!("stderr: {}", self.stderr);
+        self
+    }
+
+    pub fn expect_error(&self, code: &str) -> &Self {
         let error = &self.json()["error"];
         assert_eq!(error["code"], code, "got: {}", self.json());
         assert!(
@@ -232,16 +253,6 @@ impl ScuteResult {
             "error.recovery should be present"
         );
         assert_eq!(self.exit_code, 2, "expected exit 2 for error");
-        self
-    }
-
-    pub fn expect_error_containing(&self, needle: &str) -> &Self {
-        assert_ne!(self.exit_code, 0, "expected non-zero exit");
-        assert!(
-            self.stderr.contains(needle),
-            "expected stderr to contain {needle:?}, got: {}",
-            self.stderr
-        );
         self
     }
 

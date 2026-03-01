@@ -51,19 +51,12 @@ fn path_argument_resolves_to_provided_directory() {
 }
 
 #[test]
-fn nonexistent_path_exits_non_zero_with_error() {
-    Scute::cli()
-        .check(&["dependency-freshness", "/nonexistent/path"])
-        .expect_error_containing("/nonexistent/path");
-}
-
-#[test]
 fn non_cargo_directory_produces_error_with_invalid_target() {
     let dir = TestProject::empty().build();
 
     Scute::cli()
         .check(&["dependency-freshness", dir.path().to_str().unwrap()])
-        .expect_check_error("invalid_target");
+        .expect_error("invalid_target");
 }
 
 #[test]

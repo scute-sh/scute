@@ -61,13 +61,24 @@ impl OutdatedDep {
 /// [`ExecutionError`](crate::ExecutionError) instead of an evaluation.
 #[must_use]
 pub fn check(target: &Path, definition: &Definition) -> CheckOutcome {
-    let result = match fetch_outdated(target) {
+    let Ok(resolved) = target.canonicalize() else {
+        return CheckOutcome {
+            target: target.display().to_string(),
+            result: Err(crate::ExecutionError {
+                code: "invalid_target".into(),
+                message: format!("path does not exist: {}", target.display()),
+                recovery: "provide a valid directory path".into(),
+            }),
+        };
+    };
+
+    let result = match fetch_outdated(&resolved) {
         Ok(outdated) => Ok(evaluate(&outdated, definition)),
         Err(err) => Err(classify_error(err)),
     };
 
     CheckOutcome {
-        target: target.display().to_string(),
+        target: resolved.display().to_string(),
         result,
     }
 }
@@ -360,6 +371,14 @@ mod tests {
             dep("b", "1.0.0", "1.1.0"),
             dep("c", "1.0.0", "1.0.1"),
         ]
+    }
+
+    #[test]
+    fn nonexistent_path_produces_invalid_target_error() {
+        let outcome = check(Path::new("/nonexistent/path"), &Definition::default());
+
+        assert!(outcome.is_error());
+        assert_eq!(outcome.result.unwrap_err().code, "invalid_target");
     }
 
     #[test]
