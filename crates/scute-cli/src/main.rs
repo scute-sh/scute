@@ -64,7 +64,7 @@ fn run(cli: Cli) -> Result<()> {
             }
             Checks::DependencyFreshness { path } => {
                 let target = match path {
-                    Some(ref p) => std::path::PathBuf::from(p),
+                    Some(p) => p.into(),
                     None => std::env::current_dir()?,
                 };
                 let definition = load_freshness_definition(dependency_freshness::CHECK_NAME)
@@ -139,6 +139,7 @@ struct CheckOutcomeJson<'a> {
 struct EvaluationJson<'a> {
     status: &'a Status,
     measurement: MeasurementJson<'a>,
+    #[serde(skip_serializing_if = "<[Evidence]>::is_empty")]
     evidence: &'a [Evidence],
 }
 

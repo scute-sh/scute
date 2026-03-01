@@ -114,23 +114,19 @@ impl Scute {
     }
 
     fn execute(self, args: &[&str]) -> ScuteResult {
-        let dir = TempDir::new().unwrap();
-        setup_cargo_project(
-            &dir,
-            &self.project.dependencies,
-            &self.project.dev_dependencies,
-        );
-        write_scute_config(&dir, self.project.scute_config.as_ref());
-
+        let dir = self.project.build();
         let bin = scute_bin();
         let mut cmd = assert_cmd::Command::new(&bin);
-        cmd.args(args).current_dir(dir.path());
-        if matches!(self.mode, ScuteMode::CliStdin) {
-            let message = args.last().expect("CliStdin requires message in args");
-            cmd = assert_cmd::Command::new(&bin);
-            cmd.args(&args[..args.len() - 1])
-                .current_dir(dir.path())
-                .write_stdin(message.to_string());
+        cmd.current_dir(dir.path());
+        match self.mode {
+            ScuteMode::Cli => {
+                cmd.args(args);
+            }
+            ScuteMode::CliStdin => {
+                let message = args.last().expect("CliStdin requires message in args");
+                cmd.args(&args[..args.len() - 1])
+                    .write_stdin(message.to_string());
+            }
         }
         let output = cmd.output().unwrap();
         let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
@@ -225,6 +221,15 @@ impl ScuteResult {
                 .get("expected")
                 .is_none(),
             "expected evidence[{index}].expected to be absent"
+        );
+        self
+    }
+
+    pub fn expect_no_evidences(&self) -> &Self {
+        assert!(
+            self.json()["evaluation"].get("evidence").is_none(),
+            "expected evidence key to be absent, got: {}",
+            self.json()["evaluation"]
         );
         self
     }

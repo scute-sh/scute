@@ -231,15 +231,27 @@ mod tests {
     }
 
     #[test]
-    fn lower_is_worse_between_thresholds_returns_warn() {
+    fn lower_is_worse_at_fail_threshold_with_warn_returns_warn() {
         let thresholds = Thresholds {
             warn: Some(70),
             fail: Some(50),
         };
 
-        let status = derive_status(60, &thresholds);
+        let status = derive_status(50, &thresholds);
 
         assert_eq!(status, Status::Warn);
+    }
+
+    #[test]
+    fn lower_is_worse_at_warn_threshold_returns_pass() {
+        let thresholds = Thresholds {
+            warn: Some(70),
+            fail: Some(50),
+        };
+
+        let status = derive_status(70, &thresholds);
+
+        assert_eq!(status, Status::Pass);
     }
 
     #[test]
@@ -279,13 +291,13 @@ mod tests {
     }
 
     #[test]
-    fn between_warn_and_fail_returns_warn() {
+    fn at_fail_threshold_with_warn_returns_warn() {
         let thresholds = Thresholds {
             warn: Some(3),
             fail: Some(10),
         };
 
-        let status = derive_status(5, &thresholds);
+        let status = derive_status(10, &thresholds);
 
         assert_eq!(status, Status::Warn);
     }
@@ -300,5 +312,17 @@ mod tests {
         let status = derive_status(10, &thresholds);
 
         assert_eq!(status, Status::Fail);
+    }
+
+    #[test]
+    fn at_fail_threshold_without_warn_returns_pass() {
+        let thresholds = Thresholds {
+            warn: None,
+            fail: Some(5),
+        };
+
+        let status = derive_status(5, &thresholds);
+
+        assert_eq!(status, Status::Pass);
     }
 }

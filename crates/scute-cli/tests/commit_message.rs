@@ -29,6 +29,14 @@ fn failing_check_exits_with_code_1() {
 }
 
 #[test]
+fn passing_check_omits_evidence_from_json() {
+    Scute::cli()
+        .check(&["commit-message", "feat: add login"])
+        .expect_check_pass()
+        .expect_no_evidences();
+}
+
+#[test]
 fn config_types_override_defaults() {
     Scute::cli()
         .scute_config(
