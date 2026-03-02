@@ -274,32 +274,20 @@ impl McpConnection {
     }
 
     pub fn notify(&mut self, method: &str, params: &serde_json::Value) {
-        use std::io::Write;
-
-        let msg = serde_json::json!({
+        self.send_message(&serde_json::json!({
             "jsonrpc": "2.0",
             "method": method,
             "params": params,
-        });
-
-        let stdin = self.child.stdin.as_mut().expect("stdin");
-        writeln!(stdin, "{msg}").unwrap();
-        stdin.flush().unwrap();
+        }));
     }
 
     fn send_request(&mut self, id: u64, method: &str, params: &serde_json::Value) {
-        use std::io::Write;
-
-        let msg = serde_json::json!({
+        self.send_message(&serde_json::json!({
             "jsonrpc": "2.0",
             "id": id,
             "method": method,
             "params": params,
-        });
-
-        let stdin = self.child.stdin.as_mut().expect("stdin");
-        writeln!(stdin, "{msg}").unwrap();
-        stdin.flush().unwrap();
+        }));
     }
 
     fn read_response(&mut self) -> serde_json::Value {
@@ -323,8 +311,6 @@ impl McpConnection {
     }
 
     fn handle_server_request(&mut self, request: &serde_json::Value) {
-        use std::io::Write;
-
         let method = request["method"].as_str().unwrap();
         let id = &request["id"];
 
@@ -340,11 +326,15 @@ impl McpConnection {
             _ => panic!("unexpected server request: {method}"),
         };
 
-        let msg = serde_json::json!({
+        self.send_message(&serde_json::json!({
             "jsonrpc": "2.0",
             "id": id,
             "result": result,
-        });
+        }));
+    }
+
+    fn send_message(&mut self, msg: &serde_json::Value) {
+        use std::io::Write;
 
         let stdin = self.child.stdin.as_mut().expect("stdin");
         writeln!(stdin, "{msg}").unwrap();

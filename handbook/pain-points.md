@@ -136,7 +136,11 @@ value.
   The process is known, the trigger is clear, but urgency wins over discipline.
   Especially common with agents who optimize for task completion over process
   compliance.
-- **Docs/examples not consulted before building.** (×1) Framework documentation
+- **Exploratory poking instead of testing.** (×1) When exploring how something
+  behaves (an API, an edge case, a library quirk), the agent reads source or
+  writes throwaway scripts instead of writing a test. The test harness gives
+  faster feedback and the answer persists as documentation.
+- **Docs/examples not consulted before building.** (×2) Framework documentation
   and official examples show the idiomatic pattern, but the agent invents a
   manual approach instead of reading the docs first. Wastes time and produces
   non-idiomatic code that needs to be redone.

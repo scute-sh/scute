@@ -15,6 +15,10 @@
    - Focus on the core problem, not the details
    - Group in logical categories
 
+## Explore by testing, not by poking
+
+When you need to understand how something behaves (an API, an edge case, a library), write a test and run it. Don't poke around with throwaway scripts or read source to guess. The test harness gives you a faster feedback loop and the answer sticks around as documentation.
+
 ## Before committing
 
 Run all three, in this order: `cargo fmt`, `cargo clippy`, `cargo test`. All must pass. Don't treat "tests pass" as "ready to commit."
