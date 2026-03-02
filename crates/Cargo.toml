@@ -1,12 +1,16 @@
 [workspace]
 resolver = "2"
 members = ["scute-core", "scute-config", "scute-cli", "scute-mcp", "scute-test-utils"]
+default-members = ["scute-core", "scute-config", "scute-cli", "scute-mcp"]
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }
 
 [workspace.dependencies]
 googletest = "0.14.2"
+rmcp = "0.17"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

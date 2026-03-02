@@ -169,7 +169,7 @@ fn outcome_to_result(
     }
 }
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let service = ScuteMcp::new().serve(stdio()).await?;
     service.waiting().await?;
