@@ -5,8 +5,23 @@ use crate::{Backend, CheckResult, ListChecksResult, target_bin};
 pub(crate) struct McpBackend;
 
 impl Backend for McpBackend {
-    fn check(&self, _dir: TempDir, _args: &[&str]) -> Box<dyn CheckResult> {
-        todo!("MCP check execution")
+    fn check(&self, dir: TempDir, args: &[&str]) -> Box<dyn CheckResult> {
+        let check_name = args.get(1).expect("check name required");
+        let tool_name = format!("check_{}", check_name.replace('-', "_"));
+        let tool_args = build_tool_args(check_name, &args[2..]);
+
+        let mut mcp = McpConnection::start(dir.path());
+        mcp.initialize();
+        let response = mcp.request(
+            "tools/call",
+            &serde_json::json!({
+                "name": tool_name,
+                "arguments": tool_args,
+            }),
+        );
+
+        let json = response["result"]["structuredContent"].clone();
+        Box::new(McpCheckResult { json })
     }
 
     fn list_checks(&self, dir: TempDir) -> Box<dyn ListChecksResult> {
@@ -41,6 +56,114 @@ impl ListChecksResult for McpListChecksResult {
             "expected check '{name}' in {:?}",
             self.checks
         );
+        self
+    }
+}
+
+fn build_tool_args(check_name: &str, args: &[&str]) -> serde_json::Value {
+    match check_name {
+        "commit-message" => {
+            let message = args.first().copied().unwrap_or("");
+            serde_json::json!({ "message": message })
+        }
+        _ => serde_json::json!({}),
+    }
+}
+
+struct McpCheckResult {
+    json: serde_json::Value,
+}
+
+impl CheckResult for McpCheckResult {
+    fn expect_pass(&self) -> &dyn CheckResult {
+        assert_eq!(
+            self.json["evaluation"]["status"], "pass",
+            "got: {}",
+            self.json
+        );
+        self
+    }
+
+    fn expect_warn(&self) -> &dyn CheckResult {
+        assert_eq!(
+            self.json["evaluation"]["status"], "warn",
+            "got: {}",
+            self.json
+        );
+        self
+    }
+
+    fn expect_fail(&self) -> &dyn CheckResult {
+        assert_eq!(
+            self.json["evaluation"]["status"], "fail",
+            "got: {}",
+            self.json
+        );
+        self
+    }
+
+    fn expect_target(&self, expected: &str) -> &dyn CheckResult {
+        assert_eq!(self.json["target"], expected);
+        self
+    }
+
+    fn expect_target_matches_dir(&self) -> &dyn CheckResult {
+        todo!("MCP target dir matching")
+    }
+
+    fn expect_observed(&self, expected: u64) -> &dyn CheckResult {
+        assert_eq!(self.json["evaluation"]["measurement"]["observed"], expected);
+        self
+    }
+
+    fn expect_evidence_rule(&self, index: usize, rule: &str) -> &dyn CheckResult {
+        assert_eq!(self.json["evaluation"]["evidence"][index]["rule"], rule);
+        self
+    }
+
+    fn expect_evidence_has_expected(&self, index: usize) -> &dyn CheckResult {
+        assert!(
+            !self.json["evaluation"]["evidence"][index]["expected"].is_null(),
+            "expected evidence[{index}].expected to be present"
+        );
+        self
+    }
+
+    fn expect_evidence_no_expected(&self, index: usize) -> &dyn CheckResult {
+        assert!(
+            self.json["evaluation"]["evidence"][index]
+                .get("expected")
+                .is_none(),
+            "expected evidence[{index}].expected to be absent"
+        );
+        self
+    }
+
+    fn expect_no_evidences(&self) -> &dyn CheckResult {
+        assert!(
+            self.json["evaluation"].get("evidence").is_none(),
+            "expected evidence key to be absent, got: {}",
+            self.json["evaluation"]
+        );
+        self
+    }
+
+    fn expect_error(&self, code: &str) -> &dyn CheckResult {
+        let error = &self.json["error"];
+        assert_eq!(error["code"], code, "got: {}", self.json);
+        assert!(
+            error["message"].is_string(),
+            "error.message should be present"
+        );
+        assert!(
+            error["recovery"].is_string(),
+            "error.recovery should be present"
+        );
+        self
+    }
+
+    fn debug(&self) -> &dyn CheckResult {
+        eprintln!("json: {}", self.json);
         self
     }
 }
