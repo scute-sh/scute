@@ -34,10 +34,56 @@ fn fresh_project_passes_dependency_freshness() {
 }
 
 #[test]
+fn uses_working_directory_as_target() {
+    Scute::mcp()
+        .check(&["dependency-freshness"])
+        .expect_target_matches_dir();
+}
+
+#[test]
 fn nonexistent_path_produces_invalid_target_error() {
     Scute::mcp()
         .check(&["dependency-freshness", "/nonexistent/path"])
         .expect_error("invalid_target");
+}
+
+#[test]
+fn config_thresholds_override_default_for_dependency_freshness() {
+    Scute::mcp()
+        .dependency("itoa", "=0.4.8")
+        .scute_config(
+            r"
+checks:
+  dependency-freshness:
+    thresholds:
+      fail: 5
+",
+        )
+        .check(&["dependency-freshness"])
+        .expect_pass();
+}
+
+#[test]
+fn config_types_override_default_for_commit_message() {
+    Scute::mcp()
+        .scute_config(
+            r"
+checks:
+  commit-message:
+    config:
+      types: [hotfix]
+",
+        )
+        .check(&["commit-message", "hotfix: urgent patch"])
+        .expect_pass();
+}
+
+#[test]
+fn malformed_config_produces_error() {
+    Scute::mcp()
+        .scute_config("not: valid: yaml: [")
+        .check(&["commit-message", "feat: add login"])
+        .expect_error("invalid_config");
 }
 
 #[test_case("check_commit_message")]

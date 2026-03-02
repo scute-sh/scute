@@ -1,16 +1,20 @@
 mod schema;
 
+use std::path::PathBuf;
+
 use rmcp::{
-    ErrorData, ServerHandler, ServiceExt,
+    ErrorData, RoleServer, ServerHandler, ServiceExt,
     handler::server::router::tool::ToolRouter,
     handler::server::tool::schema_for_output,
     handler::server::wrapper::Parameters,
     model::{CallToolResult, ServerCapabilities, ServerInfo},
-    schemars, tool, tool_handler, tool_router,
+    schemars,
+    service::Peer,
+    tool, tool_handler, tool_router,
     transport::stdio,
 };
 use schema::CheckOutcomeSchema;
-use scute_core::{CheckOutcome, commit_message, dependency_freshness};
+use scute_core::{CheckOutcome, ExecutionError, commit_message, dependency_freshness};
 
 const INSTRUCTIONS: &str = "\
 Scute gives you a feedback loop to catch problems as you work, not after. \
@@ -63,9 +67,14 @@ impl ScuteMcp {
     )]
     async fn check_commit_message(
         &self,
+        peer: Peer<RoleServer>,
         Parameters(input): Parameters<CheckCommitMessageInput>,
     ) -> Result<CallToolResult, ErrorData> {
-        let definition = commit_message::Definition::default();
+        let project_root = resolve_project_root(&peer).await?;
+        let definition = match scute_config::load_commit_message_definition(&project_root) {
+            Ok(def) => def,
+            Err(e) => return config_error(commit_message::CHECK_NAME, &e),
+        };
         let outcome = commit_message::check(&input.message, &definition);
         outcome_to_result(commit_message::CHECK_NAME, &outcome)
     }
@@ -86,14 +95,18 @@ impl ScuteMcp {
     )]
     async fn check_dependency_freshness(
         &self,
+        peer: Peer<RoleServer>,
         Parameters(input): Parameters<CheckDependencyFreshnessInput>,
     ) -> Result<CallToolResult, ErrorData> {
+        let project_root = resolve_project_root(&peer).await?;
         let path = match input.path {
-            Some(p) => std::path::PathBuf::from(p),
-            None => std::env::current_dir()
-                .map_err(|e| ErrorData::internal_error(e.to_string(), None))?,
+            Some(p) => PathBuf::from(p),
+            None => project_root.clone(),
         };
-        let definition = dependency_freshness::Definition::default();
+        let definition = match scute_config::load_freshness_definition(&project_root) {
+            Ok(def) => def,
+            Err(e) => return config_error(dependency_freshness::CHECK_NAME, &e),
+        };
         let outcome = dependency_freshness::check(&path, &definition);
         outcome_to_result(dependency_freshness::CHECK_NAME, &outcome)
     }
@@ -108,6 +121,37 @@ impl ServerHandler for ScuteMcp {
             ..Default::default()
         }
     }
+}
+
+async fn resolve_project_root(peer: &Peer<RoleServer>) -> Result<PathBuf, ErrorData> {
+    let roots = peer
+        .list_roots()
+        .await
+        .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
+    match roots.roots.first() {
+        Some(root) => root
+            .uri
+            .strip_prefix("file://")
+            .map(PathBuf::from)
+            .ok_or_else(|| ErrorData::invalid_params("root URI must use file:// scheme", None)),
+        None => std::env::current_dir().map_err(|e| ErrorData::internal_error(e.to_string(), None)),
+    }
+}
+
+fn config_error(
+    check_name: &str,
+    err: &scute_config::ConfigError,
+) -> Result<CallToolResult, ErrorData> {
+    let outcome = CheckOutcome {
+        target: String::new(),
+        result: Err(ExecutionError {
+            code: "invalid_config".into(),
+            message: format!("{err}"),
+            recovery: "check your .scute.yml syntax".into(),
+        }),
+    };
+    outcome_to_result(check_name, &outcome)
 }
 
 fn outcome_to_result(

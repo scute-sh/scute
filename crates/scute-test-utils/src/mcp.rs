@@ -9,7 +9,12 @@ impl Backend for McpBackend {
         let check_name = args.get(1).expect("check name required");
         let tool_name = format!("check_{}", check_name.replace('-', "_"));
         let tool_args = build_tool_args(check_name, &args[2..]);
-        let mut mcp = McpConnection::start(dir.path());
+        let project_dir = dir.path().canonicalize().unwrap();
+
+        let mut mcp = McpConnection::start_with_roots(
+            std::env::temp_dir().as_path(),
+            &[project_dir.to_str().unwrap()],
+        );
         mcp.initialize();
         let response = mcp.request(
             "tools/call",
@@ -20,7 +25,11 @@ impl Backend for McpBackend {
         );
 
         let result = response["result"].clone();
-        Box::new(McpCheckResult { result })
+        Box::new(McpCheckResult {
+            _dir: dir,
+            project_dir,
+            result,
+        })
     }
 
     fn list_checks(&self, dir: TempDir) -> Box<dyn ListChecksResult> {
@@ -74,6 +83,8 @@ fn build_tool_args(check_name: &str, args: &[&str]) -> serde_json::Value {
 }
 
 struct McpCheckResult {
+    _dir: TempDir,
+    project_dir: std::path::PathBuf,
     result: serde_json::Value,
 }
 
@@ -127,7 +138,14 @@ impl CheckResult for McpCheckResult {
     }
 
     fn expect_target_matches_dir(&self) -> &dyn CheckResult {
-        todo!("MCP target dir matching")
+        let target = self.content()["target"]
+            .as_str()
+            .expect("target should be a string");
+        assert_eq!(
+            std::path::Path::new(target).canonicalize().unwrap(),
+            self.project_dir
+        );
+        self
     }
 
     fn expect_observed(&self, expected: u64) -> &dyn CheckResult {
@@ -198,10 +216,19 @@ pub struct McpConnection {
     child: std::process::Child,
     reader: std::io::BufReader<std::process::ChildStdout>,
     next_id: u64,
+    roots: Vec<String>,
 }
 
 impl McpConnection {
     pub fn start(working_dir: &std::path::Path) -> Self {
+        Self::spawn(working_dir, Vec::new())
+    }
+
+    pub fn start_with_roots(working_dir: &std::path::Path, roots: &[&str]) -> Self {
+        Self::spawn(working_dir, roots.iter().map(|&r| r.into()).collect())
+    }
+
+    fn spawn(working_dir: &std::path::Path, roots: Vec<String>) -> Self {
         use std::process::{Command, Stdio};
 
         let mut child = Command::new(target_bin("scute-mcp"))
@@ -219,15 +246,21 @@ impl McpConnection {
             child,
             reader,
             next_id: 0,
+            roots,
         }
     }
 
     pub fn initialize(&mut self) {
+        let capabilities = if self.roots.is_empty() {
+            serde_json::json!({})
+        } else {
+            serde_json::json!({ "roots": { "listChanged": false } })
+        };
         self.request(
             "initialize",
             &serde_json::json!({
                 "protocolVersion": "2025-03-26",
-                "capabilities": {},
+                "capabilities": capabilities,
                 "clientInfo": { "name": "scute-test", "version": "0.0.0" }
             }),
         );
@@ -235,25 +268,9 @@ impl McpConnection {
     }
 
     pub fn request(&mut self, method: &str, params: &serde_json::Value) -> serde_json::Value {
-        use std::io::{BufRead, Write};
-
         self.next_id += 1;
-        let msg = serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": self.next_id,
-            "method": method,
-            "params": params,
-        });
-
-        let stdin = self.child.stdin.as_mut().expect("stdin");
-        writeln!(stdin, "{msg}").unwrap();
-        stdin.flush().unwrap();
-
-        let mut line = String::new();
-        self.reader.read_line(&mut line).expect("read response");
-
-        serde_json::from_str(&line)
-            .unwrap_or_else(|e| panic!("invalid JSON from MCP server: {e}\nraw: {line}"))
+        self.send_request(self.next_id, method, params);
+        self.read_response()
     }
 
     pub fn notify(&mut self, method: &str, params: &serde_json::Value) {
@@ -263,6 +280,70 @@ impl McpConnection {
             "jsonrpc": "2.0",
             "method": method,
             "params": params,
+        });
+
+        let stdin = self.child.stdin.as_mut().expect("stdin");
+        writeln!(stdin, "{msg}").unwrap();
+        stdin.flush().unwrap();
+    }
+
+    fn send_request(&mut self, id: u64, method: &str, params: &serde_json::Value) {
+        use std::io::Write;
+
+        let msg = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": method,
+            "params": params,
+        });
+
+        let stdin = self.child.stdin.as_mut().expect("stdin");
+        writeln!(stdin, "{msg}").unwrap();
+        stdin.flush().unwrap();
+    }
+
+    fn read_response(&mut self) -> serde_json::Value {
+        loop {
+            let msg = self.read_message();
+            if msg.get("method").is_some() {
+                self.handle_server_request(&msg);
+                continue;
+            }
+            return msg;
+        }
+    }
+
+    fn read_message(&mut self) -> serde_json::Value {
+        use std::io::BufRead;
+
+        let mut line = String::new();
+        self.reader.read_line(&mut line).expect("read response");
+        serde_json::from_str(&line)
+            .unwrap_or_else(|e| panic!("invalid JSON from MCP server: {e}\nraw: {line}"))
+    }
+
+    fn handle_server_request(&mut self, request: &serde_json::Value) {
+        use std::io::Write;
+
+        let method = request["method"].as_str().unwrap();
+        let id = &request["id"];
+
+        let result = match method {
+            "roots/list" => {
+                let roots: Vec<_> = self
+                    .roots
+                    .iter()
+                    .map(|r| serde_json::json!({ "uri": format!("file://{r}") }))
+                    .collect();
+                serde_json::json!({ "roots": roots })
+            }
+            _ => panic!("unexpected server request: {method}"),
+        };
+
+        let msg = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "result": result,
         });
 
         let stdin = self.child.stdin.as_mut().expect("stdin");
