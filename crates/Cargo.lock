@@ -853,8 +853,18 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "clap",
+ "scute-config",
  "scute-core",
  "scute-test-utils",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "scute-config"
+version = "0.1.0"
+dependencies = [
+ "scute-core",
  "serde",
  "serde_json",
  "serde_yml",
