@@ -6,7 +6,7 @@ use rmcp::{
     schemars, tool, tool_handler, tool_router,
     transport::stdio,
 };
-use scute_core::{commit_message, output::to_check_json};
+use scute_core::{CheckOutcome, commit_message, output::to_check_json};
 
 const INSTRUCTIONS: &str = "\
 Scute runs deterministic fitness checks and returns structured results.
@@ -61,15 +61,7 @@ impl ScuteMcp {
     ) -> Result<CallToolResult, ErrorData> {
         let definition = commit_message::Definition::default();
         let outcome = commit_message::check(&input.message, &definition);
-        let json_model = to_check_json(commit_message::CHECK_NAME, &outcome);
-        let value = serde_json::to_value(&json_model)
-            .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-
-        if outcome.is_fail() || outcome.is_error() {
-            Ok(CallToolResult::structured_error(value))
-        } else {
-            Ok(CallToolResult::structured(value))
-        }
+        outcome_to_result(commit_message::CHECK_NAME, &outcome)
     }
 }
 
@@ -81,6 +73,21 @@ impl ServerHandler for ScuteMcp {
             capabilities: ServerCapabilities::builder().enable_tools().build(),
             ..Default::default()
         }
+    }
+}
+
+fn outcome_to_result(
+    check_name: &str,
+    outcome: &CheckOutcome,
+) -> Result<CallToolResult, ErrorData> {
+    let json = to_check_json(check_name, outcome);
+    let value =
+        serde_json::to_value(&json).map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+
+    if outcome.is_fail() || outcome.is_error() {
+        Ok(CallToolResult::structured_error(value))
+    } else {
+        Ok(CallToolResult::structured(value))
     }
 }
 
