@@ -20,8 +20,8 @@ impl Backend for McpBackend {
             }),
         );
 
-        let json = response["result"]["structuredContent"].clone();
-        Box::new(McpCheckResult { json })
+        let result = response["result"].clone();
+        Box::new(McpCheckResult { result })
     }
 
     fn list_checks(&self, dir: TempDir) -> Box<dyn ListChecksResult> {
@@ -71,39 +71,55 @@ fn build_tool_args(check_name: &str, args: &[&str]) -> serde_json::Value {
 }
 
 struct McpCheckResult {
-    json: serde_json::Value,
+    result: serde_json::Value,
+}
+
+impl McpCheckResult {
+    fn content(&self) -> &serde_json::Value {
+        &self.result["structuredContent"]
+    }
+
+    fn is_error(&self) -> bool {
+        self.result["isError"].as_bool().unwrap_or(false)
+    }
 }
 
 impl CheckResult for McpCheckResult {
     fn expect_pass(&self) -> &dyn CheckResult {
         assert_eq!(
-            self.json["evaluation"]["status"], "pass",
+            self.content()["evaluation"]["status"],
+            "pass",
             "got: {}",
-            self.json
+            self.result
         );
+        assert!(!self.is_error(), "pass should not set isError");
         self
     }
 
     fn expect_warn(&self) -> &dyn CheckResult {
         assert_eq!(
-            self.json["evaluation"]["status"], "warn",
+            self.content()["evaluation"]["status"],
+            "warn",
             "got: {}",
-            self.json
+            self.result
         );
+        assert!(!self.is_error(), "warn should not set isError");
         self
     }
 
     fn expect_fail(&self) -> &dyn CheckResult {
         assert_eq!(
-            self.json["evaluation"]["status"], "fail",
+            self.content()["evaluation"]["status"],
+            "fail",
             "got: {}",
-            self.json
+            self.result
         );
+        assert!(self.is_error(), "fail should set isError");
         self
     }
 
     fn expect_target(&self, expected: &str) -> &dyn CheckResult {
-        assert_eq!(self.json["target"], expected);
+        assert_eq!(self.content()["target"], expected);
         self
     }
 
@@ -112,18 +128,24 @@ impl CheckResult for McpCheckResult {
     }
 
     fn expect_observed(&self, expected: u64) -> &dyn CheckResult {
-        assert_eq!(self.json["evaluation"]["measurement"]["observed"], expected);
+        assert_eq!(
+            self.content()["evaluation"]["measurement"]["observed"],
+            expected
+        );
         self
     }
 
     fn expect_evidence_rule(&self, index: usize, rule: &str) -> &dyn CheckResult {
-        assert_eq!(self.json["evaluation"]["evidence"][index]["rule"], rule);
+        assert_eq!(
+            self.content()["evaluation"]["evidence"][index]["rule"],
+            rule
+        );
         self
     }
 
     fn expect_evidence_has_expected(&self, index: usize) -> &dyn CheckResult {
         assert!(
-            !self.json["evaluation"]["evidence"][index]["expected"].is_null(),
+            !self.content()["evaluation"]["evidence"][index]["expected"].is_null(),
             "expected evidence[{index}].expected to be present"
         );
         self
@@ -131,7 +153,7 @@ impl CheckResult for McpCheckResult {
 
     fn expect_evidence_no_expected(&self, index: usize) -> &dyn CheckResult {
         assert!(
-            self.json["evaluation"]["evidence"][index]
+            self.content()["evaluation"]["evidence"][index]
                 .get("expected")
                 .is_none(),
             "expected evidence[{index}].expected to be absent"
@@ -141,16 +163,16 @@ impl CheckResult for McpCheckResult {
 
     fn expect_no_evidences(&self) -> &dyn CheckResult {
         assert!(
-            self.json["evaluation"].get("evidence").is_none(),
+            self.content()["evaluation"].get("evidence").is_none(),
             "expected evidence key to be absent, got: {}",
-            self.json["evaluation"]
+            self.content()["evaluation"]
         );
         self
     }
 
     fn expect_error(&self, code: &str) -> &dyn CheckResult {
-        let error = &self.json["error"];
-        assert_eq!(error["code"], code, "got: {}", self.json);
+        let error = &self.content()["error"];
+        assert_eq!(error["code"], code, "got: {}", self.result);
         assert!(
             error["message"].is_string(),
             "error.message should be present"
@@ -159,23 +181,24 @@ impl CheckResult for McpCheckResult {
             error["recovery"].is_string(),
             "error.recovery should be present"
         );
+        assert!(self.is_error(), "execution error should set isError");
         self
     }
 
     fn debug(&self) -> &dyn CheckResult {
-        eprintln!("json: {}", self.json);
+        eprintln!("result: {}", self.result);
         self
     }
 }
 
-struct McpConnection {
+pub struct McpConnection {
     child: std::process::Child,
     reader: std::io::BufReader<std::process::ChildStdout>,
     next_id: u64,
 }
 
 impl McpConnection {
-    fn start(working_dir: &std::path::Path) -> Self {
+    pub fn start(working_dir: &std::path::Path) -> Self {
         use std::process::{Command, Stdio};
 
         let mut child = Command::new(target_bin("scute-mcp"))
@@ -196,7 +219,7 @@ impl McpConnection {
         }
     }
 
-    fn initialize(&mut self) {
+    pub fn initialize(&mut self) {
         self.request(
             "initialize",
             &serde_json::json!({
@@ -208,7 +231,7 @@ impl McpConnection {
         self.notify("notifications/initialized", &serde_json::json!({}));
     }
 
-    fn request(&mut self, method: &str, params: &serde_json::Value) -> serde_json::Value {
+    pub fn request(&mut self, method: &str, params: &serde_json::Value) -> serde_json::Value {
         use std::io::{BufRead, Write};
 
         self.next_id += 1;
@@ -230,7 +253,7 @@ impl McpConnection {
             .unwrap_or_else(|e| panic!("invalid JSON from MCP server: {e}\nraw: {line}"))
     }
 
-    fn notify(&mut self, method: &str, params: &serde_json::Value) {
+    pub fn notify(&mut self, method: &str, params: &serde_json::Value) {
         use std::io::Write;
 
         let msg = serde_json::json!({

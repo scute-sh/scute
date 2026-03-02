@@ -1,12 +1,16 @@
+mod schema;
+
 use rmcp::{
     ErrorData, ServerHandler, ServiceExt,
     handler::server::router::tool::ToolRouter,
+    handler::server::tool::schema_for_output,
     handler::server::wrapper::Parameters,
     model::{CallToolResult, ServerCapabilities, ServerInfo},
     schemars, tool, tool_handler, tool_router,
     transport::stdio,
 };
-use scute_core::{CheckOutcome, commit_message, output::to_check_json};
+use schema::CheckOutcomeSchema;
+use scute_core::{CheckOutcome, commit_message};
 
 const INSTRUCTIONS: &str = "\
 Scute gives you a feedback loop to catch problems as you work, not after. \
@@ -43,6 +47,7 @@ impl ScuteMcp {
     /// footer syntax, and breaking change markers against the Conventional Commits spec.
     #[tool(
         name = "check_commit_message",
+        output_schema = schema_for_output::<CheckOutcomeSchema>().unwrap(),
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -75,9 +80,9 @@ fn outcome_to_result(
     check_name: &str,
     outcome: &CheckOutcome,
 ) -> Result<CallToolResult, ErrorData> {
-    let json = to_check_json(check_name, outcome);
-    let value =
-        serde_json::to_value(&json).map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
+    let schema = CheckOutcomeSchema::from_outcome(check_name, outcome);
+    let value = serde_json::to_value(&schema)
+        .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
     if outcome.is_fail() || outcome.is_error() {
         Ok(CallToolResult::structured_error(value))

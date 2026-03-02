@@ -9,7 +9,6 @@
 
 pub mod commit_message;
 pub mod dependency_freshness;
-pub mod output;
 
 use serde::{Deserialize, Serialize};
 
@@ -22,6 +21,16 @@ pub enum Status {
     Pass,
     Warn,
     Fail,
+}
+
+impl std::fmt::Display for Status {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Pass => write!(f, "pass"),
+            Self::Warn => write!(f, "warn"),
+            Self::Fail => write!(f, "fail"),
+        }
+    }
 }
 
 /// Warn and fail boundaries for a check.
@@ -178,7 +187,8 @@ impl Evidence {
         }
     }
 
-    pub(crate) fn with_expected(rule: &str, found: &str, expected: Expected) -> Self {
+    #[must_use]
+    pub fn with_expected(rule: &str, found: &str, expected: Expected) -> Self {
         Self {
             rule: Some(rule.into()),
             location: None,

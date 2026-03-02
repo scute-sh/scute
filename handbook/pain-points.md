@@ -136,6 +136,10 @@ value.
   The process is known, the trigger is clear, but urgency wins over discipline.
   Especially common with agents who optimize for task completion over process
   compliance.
+- **Docs/examples not consulted before building.** (×1) Framework documentation
+  and official examples show the idiomatic pattern, but the agent invents a
+  manual approach instead of reading the docs first. Wastes time and produces
+  non-idiomatic code that needs to be redone.
 - **Available tools not used contextually.** (×1) A tool exists, is described,
   and is clearly relevant to the current action, but the agent doesn't reach
   for it because it's not on a written checklist. The tool descriptions are in

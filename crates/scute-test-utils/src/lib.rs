@@ -5,7 +5,7 @@
 )]
 
 mod cli;
-mod mcp;
+pub mod mcp;
 mod project;
 
 use cli::CliBackend;

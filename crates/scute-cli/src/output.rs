@@ -1,28 +1,8 @@
-//! JSON output contract for [`CheckOutcome`] (ADR-0001 + ADR-0005).
-//!
-//! These view models define the serialization shape shared by all consumers:
-//! CLI, MCP server, and future reporters. The contract is decoupled from
-//! the domain model so serialization concerns don't leak into core types.
-//!
-//! Use [`to_check_json`] to convert a domain [`CheckOutcome`] into its
-//! serializable representation.
-//!
-//! ```
-//! use scute_core::commit_message;
-//! use scute_core::output::to_check_json;
-//!
-//! let outcome = commit_message::check("feat: add login", &commit_message::Definition::default());
-//! let json = to_check_json("commit-message", &outcome);
-//! let output = serde_json::to_string(&json).unwrap();
-//!
-//! assert!(output.contains("\"status\":\"pass\""));
-//! ```
-
 use serde::Serialize;
 
-use crate::{CheckOutcome, Evidence, ExecutionError, Status, Thresholds};
+use scute_core::{CheckOutcome, Evidence, ExecutionError, Status, Thresholds};
 
-/// Serializable [`CheckOutcome`] per ADR-0001.
+/// Serializable [`CheckOutcome`](scute_core::CheckOutcome).
 ///
 /// Contains either [`evaluation`](Self::evaluation) (check ran successfully)
 /// or [`error`](Self::error) (check couldn't execute), never both.
@@ -61,7 +41,8 @@ pub struct MeasurementJson<'a> {
     pub thresholds: &'a Thresholds,
 }
 
-/// Convert a domain [`CheckOutcome`] into its JSON contract representation.
+/// Convert a domain [`CheckOutcome`](scute_core::CheckOutcome) into its
+/// JSON contract representation.
 ///
 /// The resulting [`CheckOutcomeJson`] borrows from both `check_name` and
 /// `outcome`, so it must be serialized before either is dropped.
@@ -93,7 +74,7 @@ pub fn to_check_json<'a>(check_name: &'a str, outcome: &'a CheckOutcome) -> Chec
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Evaluation, Expected};
+    use scute_core::{Evaluation, Expected};
 
     fn serialize(check_name: &str, outcome: &CheckOutcome) -> serde_json::Value {
         let json = to_check_json(check_name, outcome);

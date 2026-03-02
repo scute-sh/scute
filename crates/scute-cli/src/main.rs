@@ -4,9 +4,10 @@ use std::path::Path;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use scute_core::{
-    ExecutionError, Thresholds, commit_message, dependency_freshness, output::to_check_json,
-};
+mod output;
+
+use output::to_check_json;
+use scute_core::{ExecutionError, Thresholds, commit_message, dependency_freshness};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Parser)]
