@@ -9,6 +9,7 @@
 
 pub mod commit_message;
 pub mod dependency_freshness;
+pub mod output;
 
 use serde::{Deserialize, Serialize};
 

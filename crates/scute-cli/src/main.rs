@@ -5,8 +5,7 @@ use std::path::Path;
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use scute_core::{
-    CheckOutcome, Evidence, ExecutionError, Status, Thresholds, commit_message,
-    dependency_freshness,
+    ExecutionError, Thresholds, commit_message, dependency_freshness, output::to_check_json,
 };
 use serde::{Deserialize, Serialize};
 
@@ -125,31 +124,7 @@ fn engine_error(error: &ExecutionError) -> ! {
     std::process::exit(2);
 }
 
-#[derive(Serialize)]
-struct CheckOutcomeJson<'a> {
-    check: &'a str,
-    target: &'a str,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    evaluation: Option<EvaluationJson<'a>>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    error: Option<&'a ExecutionError>,
-}
-
-#[derive(Serialize)]
-struct EvaluationJson<'a> {
-    status: &'a Status,
-    measurement: MeasurementJson<'a>,
-    #[serde(skip_serializing_if = "<[Evidence]>::is_empty")]
-    evidence: &'a [Evidence],
-}
-
-#[derive(Serialize)]
-struct MeasurementJson<'a> {
-    observed: u64,
-    thresholds: &'a Thresholds,
-}
-
-fn output(check_name: &str, outcome: &CheckOutcome) -> Result<()> {
+fn output(check_name: &str, outcome: &scute_core::CheckOutcome) -> Result<()> {
     let json = to_check_json(check_name, outcome);
     println!("{}", serde_json::to_string(&json)?);
     if outcome.is_error() {
@@ -159,30 +134,6 @@ fn output(check_name: &str, outcome: &CheckOutcome) -> Result<()> {
         std::process::exit(1);
     }
     Ok(())
-}
-
-fn to_check_json<'a>(check_name: &'a str, outcome: &'a CheckOutcome) -> CheckOutcomeJson<'a> {
-    match &outcome.result {
-        Ok(evaluation) => CheckOutcomeJson {
-            check: check_name,
-            target: &outcome.target,
-            evaluation: Some(EvaluationJson {
-                status: &evaluation.status,
-                measurement: MeasurementJson {
-                    observed: evaluation.observed,
-                    thresholds: &evaluation.thresholds,
-                },
-                evidence: &evaluation.evidence,
-            }),
-            error: None,
-        },
-        Err(error) => CheckOutcomeJson {
-            check: check_name,
-            target: &outcome.target,
-            evaluation: None,
-            error: Some(error),
-        },
-    }
 }
 
 fn resolve_message(arg: Option<String>) -> Result<String> {
@@ -299,173 +250,6 @@ fn load_commit_message_definition(check_name: &str) -> Result<commit_message::De
 mod tests {
     use super::*;
     use dependency_freshness::Level;
-
-    mod json_contract {
-        use super::*;
-        use scute_core::{CheckOutcome, Evaluation, Evidence, Expected, Thresholds};
-
-        fn serialize(check_name: &str, outcome: &CheckOutcome) -> serde_json::Value {
-            let json = to_check_json(check_name, outcome);
-            serde_json::to_value(&json).expect("serializes to JSON")
-        }
-
-        #[test]
-        fn passing_evaluation_nests_observed_and_thresholds_under_measurement() {
-            let outcome = CheckOutcome {
-                target: "feat: add login".into(),
-                result: Ok(Evaluation::new(
-                    0,
-                    Thresholds {
-                        warn: None,
-                        fail: Some(0),
-                    },
-                    vec![],
-                )),
-            };
-
-            let json = serialize("commit-message", &outcome);
-
-            assert_eq!(json["check"], "commit-message");
-            assert_eq!(json["target"], "feat: add login");
-            assert_eq!(json["evaluation"]["status"], "pass");
-            assert_eq!(json["evaluation"]["measurement"]["observed"], 0);
-            assert_eq!(json["evaluation"]["measurement"]["thresholds"]["fail"], 0);
-            assert!(json.get("error").is_none());
-        }
-
-        #[test]
-        fn passing_evaluation_omits_evidence_key() {
-            let outcome = CheckOutcome {
-                target: "feat: add login".into(),
-                result: Ok(Evaluation::new(
-                    0,
-                    Thresholds {
-                        warn: None,
-                        fail: Some(0),
-                    },
-                    vec![],
-                )),
-            };
-
-            let json = serialize("commit-message", &outcome);
-
-            assert!(json["evaluation"].get("evidence").is_none());
-        }
-
-        #[test]
-        fn failing_evaluation_includes_evidence_with_rule_and_expected() {
-            let evidence = vec![Evidence {
-                rule: Some("unknown-type".into()),
-                location: None,
-                found: "banana".into(),
-                expected: Some(Expected::List(vec!["feat".into(), "fix".into()])),
-            }];
-            let outcome = CheckOutcome {
-                target: "banana: stuff".into(),
-                result: Ok(Evaluation::new(
-                    1,
-                    Thresholds {
-                        warn: None,
-                        fail: Some(0),
-                    },
-                    evidence,
-                )),
-            };
-
-            let json = serialize("commit-message", &outcome);
-
-            assert_eq!(json["evaluation"]["status"], "fail");
-            assert_eq!(json["evaluation"]["evidence"][0]["rule"], "unknown-type");
-            assert_eq!(json["evaluation"]["evidence"][0]["found"], "banana");
-            assert_eq!(
-                json["evaluation"]["evidence"][0]["expected"],
-                serde_json::json!(["feat", "fix"])
-            );
-        }
-
-        #[test]
-        fn evidence_without_expected_omits_expected_key() {
-            let evidence = vec![Evidence::new("body-separator", "missing blank line")];
-            let outcome = CheckOutcome {
-                target: "feat: add login\nno blank line".into(),
-                result: Ok(Evaluation::new(
-                    1,
-                    Thresholds {
-                        warn: None,
-                        fail: Some(0),
-                    },
-                    evidence,
-                )),
-            };
-
-            let json = serialize("commit-message", &outcome);
-
-            assert!(json["evaluation"]["evidence"][0].get("expected").is_none());
-        }
-
-        #[test]
-        fn execution_error_includes_code_message_recovery_without_evaluation() {
-            let outcome = CheckOutcome {
-                target: "/nonexistent".into(),
-                result: Err(ExecutionError {
-                    code: "invalid_target".into(),
-                    message: "not a Cargo project".into(),
-                    recovery: "point to a directory containing a Cargo.toml".into(),
-                }),
-            };
-
-            let json = serialize("dependency-freshness", &outcome);
-
-            assert_eq!(json["error"]["code"], "invalid_target");
-            assert_eq!(json["error"]["message"], "not a Cargo project");
-            assert_eq!(
-                json["error"]["recovery"],
-                "point to a directory containing a Cargo.toml"
-            );
-            assert!(json.get("evaluation").is_none());
-        }
-
-        #[test]
-        fn thresholds_omits_absent_warn_and_fail() {
-            let outcome = CheckOutcome {
-                target: "test".into(),
-                result: Ok(Evaluation::new(
-                    0,
-                    Thresholds {
-                        warn: None,
-                        fail: None,
-                    },
-                    vec![],
-                )),
-            };
-
-            let json = serialize("test-check", &outcome);
-
-            let thresholds = &json["evaluation"]["measurement"]["thresholds"];
-            assert!(thresholds.get("warn").is_none());
-            assert!(thresholds.get("fail").is_none());
-        }
-
-        #[test]
-        fn thresholds_includes_both_warn_and_fail_when_present() {
-            let outcome = CheckOutcome {
-                target: "src/".into(),
-                result: Ok(Evaluation::new(
-                    3,
-                    Thresholds {
-                        warn: Some(5),
-                        fail: Some(8),
-                    },
-                    vec![],
-                )),
-            };
-
-            let json = serialize("dependency-freshness", &outcome);
-
-            assert_eq!(json["evaluation"]["measurement"]["thresholds"]["warn"], 5);
-            assert_eq!(json["evaluation"]["measurement"]["thresholds"]["fail"], 8);
-        }
-    }
 
     #[test]
     fn freshness_config_reads_level_from_entry() {
