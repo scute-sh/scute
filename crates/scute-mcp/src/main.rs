@@ -10,7 +10,7 @@ use rmcp::{
     transport::stdio,
 };
 use schema::CheckOutcomeSchema;
-use scute_core::{CheckOutcome, commit_message};
+use scute_core::{CheckOutcome, commit_message, dependency_freshness};
 
 const INSTRUCTIONS: &str = "\
 Scute gives you a feedback loop to catch problems as you work, not after. \
@@ -24,6 +24,12 @@ and self-correct before proceeding.";
 struct CheckCommitMessageInput {
     /// The full commit message to validate against Conventional Commits.
     message: String,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+struct CheckDependencyFreshnessInput {
+    /// Path to the project directory. Defaults to the current working directory.
+    path: Option<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -62,6 +68,34 @@ impl ScuteMcp {
         let definition = commit_message::Definition::default();
         let outcome = commit_message::check(&input.message, &definition);
         outcome_to_result(commit_message::CHECK_NAME, &outcome)
+    }
+
+    /// Find outdated dependencies in your project.
+    ///
+    /// Reports which packages are behind their latest version, how far behind
+    /// (patch, minor, major), and what to update to.
+    #[tool(
+        name = "check_dependency_freshness",
+        output_schema = schema_for_output::<CheckOutcomeSchema>().unwrap(),
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = true,
+        )
+    )]
+    async fn check_dependency_freshness(
+        &self,
+        Parameters(input): Parameters<CheckDependencyFreshnessInput>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let path = match input.path {
+            Some(p) => std::path::PathBuf::from(p),
+            None => std::env::current_dir()
+                .map_err(|e| ErrorData::internal_error(e.to_string(), None))?,
+        };
+        let definition = dependency_freshness::Definition::default();
+        let outcome = dependency_freshness::check(&path, &definition);
+        outcome_to_result(dependency_freshness::CHECK_NAME, &outcome)
     }
 }
 

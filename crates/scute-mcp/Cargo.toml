@@ -19,3 +19,4 @@ tokio = { version = "1", features = ["full"] }
 
 [dev-dependencies]
 scute-test-utils = { path = "../scute-test-utils" }
+test-case = "3"

@@ -9,7 +9,6 @@ impl Backend for McpBackend {
         let check_name = args.get(1).expect("check name required");
         let tool_name = format!("check_{}", check_name.replace('-', "_"));
         let tool_args = build_tool_args(check_name, &args[2..]);
-
         let mut mcp = McpConnection::start(dir.path());
         mcp.initialize();
         let response = mcp.request(
@@ -66,6 +65,10 @@ fn build_tool_args(check_name: &str, args: &[&str]) -> serde_json::Value {
             let message = args.first().copied().unwrap_or("");
             serde_json::json!({ "message": message })
         }
+        "dependency-freshness" => match args.first() {
+            Some(path) => serde_json::json!({ "path": path }),
+            None => serde_json::json!({}),
+        },
         _ => serde_json::json!({}),
     }
 }
