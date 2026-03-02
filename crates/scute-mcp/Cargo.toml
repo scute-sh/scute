@@ -18,5 +18,4 @@ serde_json = "1"
 tokio = { version = "1", features = ["full"] }
 
 [dev-dependencies]
-googletest = { workspace = true }
 scute-test-utils = { path = "../scute-test-utils" }

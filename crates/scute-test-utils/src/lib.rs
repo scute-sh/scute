@@ -108,28 +108,32 @@ impl Scute {
         self
     }
 
-    pub fn list_checks(self) -> Vec<String> {
-        assert!(
-            matches!(self.mode, ScuteMode::Mcp),
-            "list_checks is only supported in MCP mode"
-        );
+    pub fn list_checks(self) -> Box<dyn ListChecksResult> {
         let dir = self.project.build();
-        let mut mcp = McpConnection::start(dir.path());
-        mcp.initialize();
-        let response = mcp.request("tools/list", &serde_json::json!({}));
-        response["result"]["tools"]
-            .as_array()
-            .expect("tools array")
-            .iter()
-            .map(|t| {
-                t["name"]
-                    .as_str()
-                    .expect("tool name")
-                    .strip_prefix("check_")
-                    .expect("tool name starts with check_")
-                    .replace('_', "-")
-            })
-            .collect()
+        match self.mode {
+            ScuteMode::Cli | ScuteMode::CliStdin => {
+                todo!("CLI list_checks")
+            }
+            ScuteMode::Mcp => {
+                let mut mcp = McpConnection::start(dir.path());
+                mcp.initialize();
+                let response = mcp.request("tools/list", &serde_json::json!({}));
+                let checks = response["result"]["tools"]
+                    .as_array()
+                    .expect("tools array")
+                    .iter()
+                    .map(|t| {
+                        t["name"]
+                            .as_str()
+                            .expect("tool name")
+                            .strip_prefix("check_")
+                            .expect("tool name starts with check_")
+                            .replace('_', "-")
+                    })
+                    .collect();
+                Box::new(McpListChecksResult { checks })
+            }
+        }
     }
 
     pub fn check(self, args: &[&str]) -> Box<dyn CheckResult> {
@@ -145,6 +149,25 @@ impl Scute {
                 todo!("MCP check execution")
             }
         }
+    }
+}
+
+pub trait ListChecksResult {
+    fn expect_contains(&self, name: &str) -> &dyn ListChecksResult;
+}
+
+struct McpListChecksResult {
+    checks: Vec<String>,
+}
+
+impl ListChecksResult for McpListChecksResult {
+    fn expect_contains(&self, name: &str) -> &dyn ListChecksResult {
+        assert!(
+            self.checks.iter().any(|c| c == name),
+            "expected check '{name}' in {:?}",
+            self.checks
+        );
+        self
     }
 }
 
