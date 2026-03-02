@@ -12,5 +12,5 @@ serde = { version = "1.0.228", features = ["derive"] }
 serde_json = "1"
 
 [dev-dependencies]
-googletest = "0.14.2"
+googletest = { workspace = true }
 scute-test-utils = { path = "../scute-test-utils" }
