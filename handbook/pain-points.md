@@ -136,6 +136,12 @@ value.
   The process is known, the trigger is clear, but urgency wins over discipline.
   Especially common with agents who optimize for task completion over process
   compliance.
+- **Available tools not used contextually.** (×1) A tool exists, is described,
+  and is clearly relevant to the current action, but the agent doesn't reach
+  for it because it's not on a written checklist. The tool descriptions are in
+  context but treated as reference material instead of active capabilities.
+  Agents follow static lists instead of thinking "what tools do I have for
+  this?"
 
 ## Documentation
 

@@ -9,16 +9,12 @@ use rmcp::{
 use scute_core::{CheckOutcome, commit_message, output::to_check_json};
 
 const INSTRUCTIONS: &str = "\
-Scute runs deterministic fitness checks and returns structured results.
+Scute gives you a feedback loop to catch problems as you work, not after. \
+Run checks proactively: if you're about to take an action and a relevant check \
+exists, use it first. Don't wait to be asked.
 
-Every tool returns a CheckOutcome JSON object with this shape:
-
-- On success: { check, target, evaluation: { status, measurement: { observed, thresholds }, evidence? } }
-- On error:   { check, target, error: { code, message, recovery } }
-
-`status` is \"pass\", \"warn\", or \"fail\". `evidence` lists individual violations \
-with `rule`, `found`, and optionally `expected`. When status is \"fail\", use the \
-evidence to understand what went wrong and how to fix it.";
+When a check fails, use the `evidence` entries to understand exactly what went wrong \
+and self-correct before proceeding.";
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 struct CheckCommitMessageInput {
@@ -41,11 +37,10 @@ impl ScuteMcp {
 
 #[tool_router]
 impl ScuteMcp {
-    /// Validate a commit message against the Conventional Commits specification.
+    /// Validate a commit message before committing.
     ///
     /// Checks subject format (type, optional scope, description), body separation,
-    /// footer syntax, and breaking change markers. Returns a structured `CheckOutcome`
-    /// with evidence for each violation found.
+    /// footer syntax, and breaking change markers against the Conventional Commits spec.
     #[tool(
         name = "check_commit_message",
         annotations(
