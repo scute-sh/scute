@@ -21,6 +21,7 @@ enum Commands {
         #[command(subcommand)]
         check: Checks,
     },
+    Mcp,
 }
 
 #[derive(Debug, Subcommand)]
@@ -51,27 +52,30 @@ fn main() {
 }
 
 fn run(cli: Cli) -> Result<()> {
-    let cwd = std::env::current_dir()?;
     match cli.command {
-        Commands::Check { check } => match check {
-            Checks::CommitMessage { message } => {
-                let message = resolve_message(message)?;
-                let definition = scute_config::load_commit_message_definition(&cwd)
-                    .unwrap_or_else(|e| invalid_config(&e));
-                let outcome = commit_message::check(&message, &definition);
-                output(commit_message::CHECK_NAME, &outcome)
+        Commands::Mcp => scute_mcp::run().map_err(|e| anyhow::anyhow!(e)),
+        Commands::Check { check } => {
+            let cwd = std::env::current_dir()?;
+            match check {
+                Checks::CommitMessage { message } => {
+                    let message = resolve_message(message)?;
+                    let definition = scute_config::load_commit_message_definition(&cwd)
+                        .unwrap_or_else(|e| invalid_config(&e));
+                    let outcome = commit_message::check(&message, &definition);
+                    output(commit_message::CHECK_NAME, &outcome)
+                }
+                Checks::DependencyFreshness { path } => {
+                    let target = match path {
+                        Some(p) => p.into(),
+                        None => cwd.clone(),
+                    };
+                    let definition = scute_config::load_freshness_definition(&cwd)
+                        .unwrap_or_else(|e| invalid_config(&e));
+                    let outcome = dependency_freshness::check(&target, &definition);
+                    output(dependency_freshness::CHECK_NAME, &outcome)
+                }
             }
-            Checks::DependencyFreshness { path } => {
-                let target = match path {
-                    Some(p) => p.into(),
-                    None => cwd.clone(),
-                };
-                let definition = scute_config::load_freshness_definition(&cwd)
-                    .unwrap_or_else(|e| invalid_config(&e));
-                let outcome = dependency_freshness::check(&target, &definition);
-                output(dependency_freshness::CHECK_NAME, &outcome)
-            }
-        },
+        }
     }
 }
 

@@ -1,7 +1,6 @@
 [workspace]
 resolver = "2"
 members = ["scute-core", "scute-config", "scute-cli", "scute-mcp", "scute-test-utils"]
-default-members = ["scute-core", "scute-config", "scute-cli", "scute-mcp"]
 
 [workspace.lints.clippy]
 pedantic = { level = "warn", priority = -1 }

@@ -50,7 +50,7 @@ impl Backend for McpBackend {
     }
 }
 
-/// An MCP client connected to a running `scute-mcp` server.
+/// An MCP client connected to a running Scute MCP server.
 ///
 /// Wraps rmcp's client with its own tokio runtime so callers don't need async.
 /// Use for protocol-level tests that need direct access beyond the `Scute` harness.
@@ -73,15 +73,16 @@ impl McpTestClient {
         let service = rt
             .block_on(async {
                 let transport = TokioChildProcess::new({
-                    let mut cmd = Command::new(target_bin("scute-mcp"));
+                    let mut cmd = Command::new(target_bin("scute"));
+                    cmd.arg("mcp");
                     cmd.current_dir(std::env::temp_dir());
                     cmd
                 })
-                .expect("failed to spawn scute-mcp");
+                .expect("failed to spawn scute mcp");
 
                 RootsProvider(vec![root]).serve(transport).await
             })
-            .expect("failed to connect to scute-mcp");
+            .expect("failed to connect to scute mcp");
 
         Self { service, rt }
     }

@@ -842,9 +842,11 @@ dependencies = [
  "clap",
  "scute-config",
  "scute-core",
+ "scute-mcp",
  "scute-test-utils",
  "serde",
  "serde_json",
+ "test-case",
 ]
 
 [[package]]
@@ -875,10 +877,8 @@ dependencies = [
  "rmcp",
  "scute-config",
  "scute-core",
- "scute-test-utils",
  "serde",
  "serde_json",
- "test-case",
  "tokio",
 ]
 

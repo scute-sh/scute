@@ -169,9 +169,22 @@ fn outcome_to_result(
     }
 }
 
-#[tokio::main(flavor = "current_thread")]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let service = ScuteMcp::new().serve(stdio()).await?;
-    service.waiting().await?;
-    Ok(())
+/// Start the MCP server on stdio.
+///
+/// Blocks until the client disconnects. Handles its own async runtime
+/// so callers don't need tokio.
+///
+/// # Errors
+///
+/// Returns an error if the tokio runtime fails to start, the MCP
+/// handshake fails, or the server exits abnormally.
+pub fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let rt = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()?;
+    rt.block_on(async {
+        let service = ScuteMcp::new().serve(stdio()).await?;
+        service.waiting().await?;
+        Ok(())
+    })
 }
