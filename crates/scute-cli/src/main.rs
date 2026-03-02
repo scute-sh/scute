@@ -9,7 +9,10 @@ use scute_core::{ExecutionError, commit_message, dependency_freshness};
 use serde::Serialize;
 
 #[derive(Debug, Parser)]
-#[command(name = "scute")]
+#[command(
+    name = "scute",
+    about = "Define the boundaries. Let your code evolve freely within them."
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -17,17 +20,27 @@ struct Cli {
 
 #[derive(Debug, Subcommand)]
 enum Commands {
+    /// Run a fitness check
     Check {
         #[command(subcommand)]
         check: Checks,
     },
+    /// Serve checks to coding agents
     Mcp,
 }
 
 #[derive(Debug, Subcommand)]
 enum Checks {
-    CommitMessage { message: Option<String> },
-    DependencyFreshness { path: Option<String> },
+    /// Validate a commit message
+    CommitMessage {
+        /// Commit message to check
+        message: Option<String>,
+    },
+    /// Find outdated dependencies
+    DependencyFreshness {
+        /// Path to the project directory (defaults to working directory)
+        path: Option<String>,
+    },
 }
 
 fn main() {

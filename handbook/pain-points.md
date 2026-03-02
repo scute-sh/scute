@@ -157,6 +157,10 @@ value.
   empty or missing on public interfaces.
 - **CLI docs drift from implementation.** The documented CLI commands don't
   match what the tool actually does. The source of truth and the docs diverge.
+- **User-facing copy written without verifying behavior.** (×1) Help text,
+  descriptions, or argument docs describe behavior the code doesn't actually
+  have. The copy is plausible but wrong because nobody checked the
+  implementation before writing it.
 
 ---
 
