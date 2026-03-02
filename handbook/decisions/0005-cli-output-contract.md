@@ -20,9 +20,8 @@ the data looks like. This ADR defines *how* it reaches the consumer.
 
 ### Output streams
 
-**stdout** carries all structured output: CheckOutcomes, WorkflowOutcomes, and
-engine-level errors. Always JSON. A consumer reads one stream and always gets
-parseable data.
+**stdout** carries all structured output: CheckOutcomes and engine-level errors.
+Always JSON. A consumer reads one stream and always gets parseable data.
 
 **stderr** is reserved for human-facing diagnostics: verbose/debug logging, progress
 indicators, deprecation warnings. Agents ignore it. It is never JSON.

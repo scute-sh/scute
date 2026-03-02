@@ -2,9 +2,13 @@
 
 **Status:** Accepted
 **Date:** 2026-02-26
-**Revised:** 2026-03-01 — introduced CheckOutcome wrapper with mutually exclusive
-evaluation/error branches; renamed inner result to Evaluation; renamed Run Envelope
-to WorkflowOutcome.
+**Revisions:**
+- 2026-03-01 — introduced CheckOutcome wrapper with mutually exclusive
+  evaluation/error branches; renamed inner result to Evaluation; renamed Run Envelope
+  to WorkflowOutcome.
+- 2026-03-02 — removed WorkflowOutcome; aggregation of multiple check outcomes is an
+  unsolved problem that needs proper design (see
+  [ADR-0006](0006-atomic-checks-and-target-resolution.md)).
 
 ## Context
 
@@ -128,31 +132,6 @@ ExecutionError {
 
 The error code taxonomy is defined in
 [ADR-0005](0005-cli-output-contract.md).
-
-### WorkflowOutcome
-
-When multiple checks run together, their CheckOutcomes are aggregated into a
-WorkflowOutcome. A CheckOutcome from `scute check` is structurally identical to a
-single item in the `outcomes` array, so consumers parse one shape everywhere.
-
-```
-WorkflowOutcome {
-  version:   string
-  run_id:    string
-  timestamp: string          // ISO 8601
-  commit?:   string
-  outcomes:  CheckOutcome[]
-  summary:   Summary
-}
-
-Summary {
-  pass:  number
-  warn:  number
-  fail:  number
-  error: number
-  total: number
-}
-```
 
 ## Design Decisions
 
@@ -299,9 +278,9 @@ into one structure with mostly-null fields is worse than a clean union type.
 ### Separate error schema, not integrated in CheckOutcome
 
 Having check evaluations and execution errors as completely separate, unrelated
-structures. Rejected because it fragments the workflow aggregation story. A
-WorkflowOutcome needs to collect both successful evaluations and execution errors
-in one array. The CheckOutcome wrapper makes this natural.
+structures. Rejected because consumers need a single type to handle any check
+invocation result. The CheckOutcome wrapper makes this natural: one type, two
+possible branches, same handling code everywhere.
 
 ## Consequences
 
