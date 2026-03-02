@@ -1,0 +1,165 @@
+use tempfile::TempDir;
+
+use crate::{Backend, CheckResult, ListChecksResult, target_bin};
+
+pub(crate) struct CliBackend {
+    pub(crate) stdin: bool,
+}
+
+impl Backend for CliBackend {
+    fn check(&self, dir: TempDir, args: &[&str]) -> Box<dyn CheckResult> {
+        Box::new(CliCheckResult::run(dir, args, self.stdin))
+    }
+
+    fn list_checks(&self, _dir: TempDir) -> Box<dyn ListChecksResult> {
+        todo!("CLI list_checks")
+    }
+}
+
+struct CliCheckResult {
+    dir: TempDir,
+    exit_code: i32,
+    json: Option<serde_json::Value>,
+    stderr: String,
+}
+
+impl CliCheckResult {
+    fn run(dir: TempDir, args: &[&str], stdin: bool) -> Self {
+        let mut cmd = assert_cmd::Command::new(target_bin("scute"));
+        cmd.current_dir(dir.path());
+        if stdin {
+            let message = args.last().expect("CliStdin requires message in args");
+            cmd.args(&args[..args.len() - 1])
+                .write_stdin(message.to_string());
+        } else {
+            cmd.args(args);
+        }
+        let output = cmd.output().unwrap();
+        Self {
+            dir,
+            exit_code: output.status.code().unwrap_or(-1),
+            json: serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).ok(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        }
+    }
+
+    fn json(&self) -> &serde_json::Value {
+        self.json
+            .as_ref()
+            .expect("expected valid JSON in stdout, got none")
+    }
+}
+
+impl CheckResult for CliCheckResult {
+    fn expect_pass(&self) -> &dyn CheckResult {
+        let evaluation = &self.json()["evaluation"];
+        assert_eq!(evaluation["status"], "pass", "got: {}", self.json());
+        assert_eq!(
+            self.exit_code, 0,
+            "expected exit 0, stderr: {}",
+            self.stderr
+        );
+        self
+    }
+
+    fn expect_warn(&self) -> &dyn CheckResult {
+        let evaluation = &self.json()["evaluation"];
+        assert_eq!(evaluation["status"], "warn", "got: {}", self.json());
+        assert_eq!(
+            self.exit_code, 0,
+            "expected exit 0 for warn, stderr: {}",
+            self.stderr
+        );
+        self
+    }
+
+    fn expect_fail(&self) -> &dyn CheckResult {
+        let evaluation = &self.json()["evaluation"];
+        assert_eq!(evaluation["status"], "fail", "got: {}", self.json());
+        assert_eq!(self.exit_code, 1, "expected exit 1 for fail");
+        self
+    }
+
+    fn expect_target(&self, expected: &str) -> &dyn CheckResult {
+        assert_eq!(self.json()["target"], expected);
+        self
+    }
+
+    fn expect_target_matches_dir(&self) -> &dyn CheckResult {
+        let target = self.json()["target"]
+            .as_str()
+            .expect("target should be a string");
+        assert_eq!(
+            std::path::Path::new(target).canonicalize().unwrap(),
+            self.dir.path().canonicalize().unwrap()
+        );
+        self
+    }
+
+    fn expect_observed(&self, expected: u64) -> &dyn CheckResult {
+        assert_eq!(
+            self.json()["evaluation"]["measurement"]["observed"],
+            expected
+        );
+        self
+    }
+
+    fn expect_evidence_rule(&self, index: usize, rule: &str) -> &dyn CheckResult {
+        assert_eq!(self.json()["evaluation"]["evidence"][index]["rule"], rule);
+        self
+    }
+
+    fn expect_evidence_has_expected(&self, index: usize) -> &dyn CheckResult {
+        assert!(
+            !self.json()["evaluation"]["evidence"][index]["expected"].is_null(),
+            "expected evidence[{index}].expected to be present"
+        );
+        self
+    }
+
+    fn expect_evidence_no_expected(&self, index: usize) -> &dyn CheckResult {
+        assert!(
+            self.json()["evaluation"]["evidence"][index]
+                .get("expected")
+                .is_none(),
+            "expected evidence[{index}].expected to be absent"
+        );
+        self
+    }
+
+    fn expect_no_evidences(&self) -> &dyn CheckResult {
+        assert!(
+            self.json()["evaluation"].get("evidence").is_none(),
+            "expected evidence key to be absent, got: {}",
+            self.json()["evaluation"]
+        );
+        self
+    }
+
+    fn expect_error(&self, code: &str) -> &dyn CheckResult {
+        let error = &self.json()["error"];
+        assert_eq!(error["code"], code, "got: {}", self.json());
+        assert!(
+            error["message"].is_string(),
+            "error.message should be present"
+        );
+        assert!(
+            error["recovery"].is_string(),
+            "error.recovery should be present"
+        );
+        assert_eq!(self.exit_code, 2, "expected exit 2 for error");
+        self
+    }
+
+    fn debug(&self) -> &dyn CheckResult {
+        eprintln!("exit_code: {}", self.exit_code);
+        eprintln!(
+            "stdout: {}",
+            self.json
+                .as_ref()
+                .map_or("(none)".into(), std::string::ToString::to_string)
+        );
+        eprintln!("stderr: {}", self.stderr);
+        self
+    }
+}

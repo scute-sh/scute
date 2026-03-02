@@ -875,7 +875,6 @@ dependencies = [
 name = "scute-mcp"
 version = "0.1.0"
 dependencies = [
- "googletest",
  "rmcp",
  "scute-core",
  "scute-test-utils",
