@@ -1,4 +1,16 @@
+use std::path::PathBuf;
+
+use rmcp::{
+    ClientHandler, ErrorData, ServiceExt,
+    model::{
+        CallToolRequestParams, CallToolResult, ClientCapabilities, ClientInfo, ListRootsResult,
+        Root, Tool,
+    },
+    service::{RequestContext, RoleClient, RunningService},
+    transport::TokioChildProcess,
+};
 use tempfile::TempDir;
+use tokio::process::Command;
 
 use crate::{Backend, CheckResult, ListChecksResult, target_bin};
 
@@ -11,20 +23,9 @@ impl Backend for McpBackend {
         let tool_args = build_tool_args(check_name, &args[2..]);
         let project_dir = dir.path().canonicalize().unwrap();
 
-        let mut mcp = McpConnection::start_with_roots(
-            std::env::temp_dir().as_path(),
-            &[project_dir.to_str().unwrap()],
-        );
-        mcp.initialize();
-        let response = mcp.request(
-            "tools/call",
-            &serde_json::json!({
-                "name": tool_name,
-                "arguments": tool_args,
-            }),
-        );
+        let client = McpTestClient::connect(&project_dir);
+        let result = client.call_tool(&tool_name, &tool_args);
 
-        let result = response["result"].clone();
         Box::new(McpCheckResult {
             _dir: dir,
             project_dir,
@@ -33,38 +34,94 @@ impl Backend for McpBackend {
     }
 
     fn list_checks(&self, dir: TempDir) -> Box<dyn ListChecksResult> {
-        let mut mcp = McpConnection::start(dir.path());
-        mcp.initialize();
-        let response = mcp.request("tools/list", &serde_json::json!({}));
-        let checks = response["result"]["tools"]
-            .as_array()
-            .expect("tools array")
+        let project_dir = dir.path().canonicalize().unwrap_or(dir.path().into());
+        let client = McpTestClient::connect(&project_dir);
+        let checks = client
+            .list_tools()
             .iter()
             .map(|t| {
-                t["name"]
-                    .as_str()
-                    .expect("tool name")
+                t.name
                     .strip_prefix("check_")
                     .expect("tool name starts with check_")
                     .replace('_', "-")
             })
             .collect();
-        Box::new(McpListChecksResult { checks })
+        Box::new(McpListChecksResult { _dir: dir, checks })
     }
 }
 
-struct McpListChecksResult {
-    checks: Vec<String>,
+/// An MCP client connected to a running `scute-mcp` server.
+///
+/// Wraps rmcp's client with its own tokio runtime so callers don't need async.
+/// Use for protocol-level tests that need direct access beyond the `Scute` harness.
+pub struct McpTestClient {
+    service: RunningService<RoleClient, RootsProvider>,
+    rt: tokio::runtime::Runtime,
 }
 
-impl ListChecksResult for McpListChecksResult {
-    fn expect_contains(&self, name: &str) -> &dyn ListChecksResult {
-        assert!(
-            self.checks.iter().any(|c| c == name),
-            "expected check '{name}' in {:?}",
-            self.checks
-        );
-        self
+impl McpTestClient {
+    pub fn connect(project_root: &std::path::Path) -> Self {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+
+        let root = Root {
+            uri: format!("file://{}", project_root.display()),
+            name: None,
+        };
+        let service = rt
+            .block_on(async {
+                let transport = TokioChildProcess::new({
+                    let mut cmd = Command::new(target_bin("scute-mcp"));
+                    cmd.current_dir(std::env::temp_dir());
+                    cmd
+                })
+                .expect("failed to spawn scute-mcp");
+
+                RootsProvider(vec![root]).serve(transport).await
+            })
+            .expect("failed to connect to scute-mcp");
+
+        Self { service, rt }
+    }
+
+    pub fn call_tool(&self, name: &str, args: &serde_json::Value) -> CallToolResult {
+        self.rt
+            .block_on(self.service.call_tool(CallToolRequestParams {
+                name: name.to_string().into(),
+                arguments: Some(args.as_object().unwrap().clone()),
+                meta: None,
+                task: None,
+            }))
+            .expect("call_tool failed")
+    }
+
+    pub fn list_tools(&self) -> Vec<Tool> {
+        self.rt
+            .block_on(self.service.list_all_tools())
+            .expect("list_all_tools failed")
+    }
+}
+
+/// A [`ClientHandler`] that provides project roots to the server.
+struct RootsProvider(Vec<Root>);
+
+impl ClientHandler for RootsProvider {
+    fn get_info(&self) -> ClientInfo {
+        ClientInfo {
+            capabilities: ClientCapabilities::builder().enable_roots().build(),
+            ..Default::default()
+        }
+    }
+
+    fn list_roots(
+        &self,
+        _: RequestContext<RoleClient>,
+    ) -> impl Future<Output = Result<ListRootsResult, ErrorData>> + Send + '_ {
+        std::future::ready(Ok(ListRootsResult {
+            roots: self.0.clone(),
+        }))
     }
 }
 
@@ -82,29 +139,48 @@ fn build_tool_args(check_name: &str, args: &[&str]) -> serde_json::Value {
     }
 }
 
+struct McpListChecksResult {
+    _dir: TempDir,
+    checks: Vec<String>,
+}
+
+impl ListChecksResult for McpListChecksResult {
+    fn expect_contains(&self, name: &str) -> &dyn ListChecksResult {
+        assert!(
+            self.checks.iter().any(|c| c == name),
+            "expected check '{name}' in {:?}",
+            self.checks
+        );
+        self
+    }
+}
+
 struct McpCheckResult {
     _dir: TempDir,
-    project_dir: std::path::PathBuf,
-    result: serde_json::Value,
+    project_dir: PathBuf,
+    result: CallToolResult,
 }
 
 impl McpCheckResult {
-    fn content(&self) -> &serde_json::Value {
-        &self.result["structuredContent"]
+    fn structured(&self) -> &serde_json::Value {
+        self.result
+            .structured_content
+            .as_ref()
+            .expect("structuredContent must be present")
     }
 
     fn is_error(&self) -> bool {
-        self.result["isError"].as_bool().unwrap_or(false)
+        self.result.is_error.unwrap_or(false)
     }
 }
 
 impl CheckResult for McpCheckResult {
     fn expect_pass(&self) -> &dyn CheckResult {
         assert_eq!(
-            self.content()["evaluation"]["status"],
+            self.structured()["evaluation"]["status"],
             "pass",
-            "got: {}",
-            self.result
+            "got: {:?}",
+            self.structured()
         );
         assert!(!self.is_error(), "pass should not set isError");
         self
@@ -112,10 +188,10 @@ impl CheckResult for McpCheckResult {
 
     fn expect_warn(&self) -> &dyn CheckResult {
         assert_eq!(
-            self.content()["evaluation"]["status"],
+            self.structured()["evaluation"]["status"],
             "warn",
-            "got: {}",
-            self.result
+            "got: {:?}",
+            self.structured()
         );
         assert!(!self.is_error(), "warn should not set isError");
         self
@@ -123,22 +199,22 @@ impl CheckResult for McpCheckResult {
 
     fn expect_fail(&self) -> &dyn CheckResult {
         assert_eq!(
-            self.content()["evaluation"]["status"],
+            self.structured()["evaluation"]["status"],
             "fail",
-            "got: {}",
-            self.result
+            "got: {:?}",
+            self.structured()
         );
         assert!(self.is_error(), "fail should set isError");
         self
     }
 
     fn expect_target(&self, expected: &str) -> &dyn CheckResult {
-        assert_eq!(self.content()["target"], expected);
+        assert_eq!(self.structured()["target"], expected);
         self
     }
 
     fn expect_target_matches_dir(&self) -> &dyn CheckResult {
-        let target = self.content()["target"]
+        let target = self.structured()["target"]
             .as_str()
             .expect("target should be a string");
         assert_eq!(
@@ -150,7 +226,7 @@ impl CheckResult for McpCheckResult {
 
     fn expect_observed(&self, expected: u64) -> &dyn CheckResult {
         assert_eq!(
-            self.content()["evaluation"]["measurement"]["observed"],
+            self.structured()["evaluation"]["measurement"]["observed"],
             expected
         );
         self
@@ -158,7 +234,7 @@ impl CheckResult for McpCheckResult {
 
     fn expect_evidence_rule(&self, index: usize, rule: &str) -> &dyn CheckResult {
         assert_eq!(
-            self.content()["evaluation"]["evidence"][index]["rule"],
+            self.structured()["evaluation"]["evidence"][index]["rule"],
             rule
         );
         self
@@ -166,7 +242,7 @@ impl CheckResult for McpCheckResult {
 
     fn expect_evidence_has_expected(&self, index: usize) -> &dyn CheckResult {
         assert!(
-            !self.content()["evaluation"]["evidence"][index]["expected"].is_null(),
+            !self.structured()["evaluation"]["evidence"][index]["expected"].is_null(),
             "expected evidence[{index}].expected to be present"
         );
         self
@@ -174,7 +250,7 @@ impl CheckResult for McpCheckResult {
 
     fn expect_evidence_no_expected(&self, index: usize) -> &dyn CheckResult {
         assert!(
-            self.content()["evaluation"]["evidence"][index]
+            self.structured()["evaluation"]["evidence"][index]
                 .get("expected")
                 .is_none(),
             "expected evidence[{index}].expected to be absent"
@@ -184,16 +260,16 @@ impl CheckResult for McpCheckResult {
 
     fn expect_no_evidences(&self) -> &dyn CheckResult {
         assert!(
-            self.content()["evaluation"].get("evidence").is_none(),
+            self.structured()["evaluation"].get("evidence").is_none(),
             "expected evidence key to be absent, got: {}",
-            self.content()["evaluation"]
+            self.structured()["evaluation"]
         );
         self
     }
 
     fn expect_error(&self, code: &str) -> &dyn CheckResult {
-        let error = &self.content()["error"];
-        assert_eq!(error["code"], code, "got: {}", self.result);
+        let error = &self.structured()["error"];
+        assert_eq!(error["code"], code, "got: {:?}", self.structured());
         assert!(
             error["message"].is_string(),
             "error.message should be present"
@@ -207,143 +283,7 @@ impl CheckResult for McpCheckResult {
     }
 
     fn debug(&self) -> &dyn CheckResult {
-        eprintln!("result: {}", self.result);
+        eprintln!("result: {:?}", self.result);
         self
-    }
-}
-
-pub struct McpConnection {
-    child: std::process::Child,
-    reader: std::io::BufReader<std::process::ChildStdout>,
-    next_id: u64,
-    roots: Vec<String>,
-}
-
-impl McpConnection {
-    pub fn start(working_dir: &std::path::Path) -> Self {
-        Self::spawn(working_dir, Vec::new())
-    }
-
-    pub fn start_with_roots(working_dir: &std::path::Path, roots: &[&str]) -> Self {
-        Self::spawn(working_dir, roots.iter().map(|&r| r.into()).collect())
-    }
-
-    fn spawn(working_dir: &std::path::Path, roots: Vec<String>) -> Self {
-        use std::process::{Command, Stdio};
-
-        let mut child = Command::new(target_bin("scute-mcp"))
-            .current_dir(working_dir)
-            .stdin(Stdio::piped())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::null())
-            .spawn()
-            .expect("failed to start scute-mcp");
-
-        let stdout = child.stdout.take().expect("stdout");
-        let reader = std::io::BufReader::new(stdout);
-
-        Self {
-            child,
-            reader,
-            next_id: 0,
-            roots,
-        }
-    }
-
-    pub fn initialize(&mut self) {
-        let capabilities = if self.roots.is_empty() {
-            serde_json::json!({})
-        } else {
-            serde_json::json!({ "roots": { "listChanged": false } })
-        };
-        self.request(
-            "initialize",
-            &serde_json::json!({
-                "protocolVersion": "2025-03-26",
-                "capabilities": capabilities,
-                "clientInfo": { "name": "scute-test", "version": "0.0.0" }
-            }),
-        );
-        self.notify("notifications/initialized", &serde_json::json!({}));
-    }
-
-    pub fn request(&mut self, method: &str, params: &serde_json::Value) -> serde_json::Value {
-        self.next_id += 1;
-        self.send_request(self.next_id, method, params);
-        self.read_response()
-    }
-
-    pub fn notify(&mut self, method: &str, params: &serde_json::Value) {
-        self.send_message(&serde_json::json!({
-            "jsonrpc": "2.0",
-            "method": method,
-            "params": params,
-        }));
-    }
-
-    fn send_request(&mut self, id: u64, method: &str, params: &serde_json::Value) {
-        self.send_message(&serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "method": method,
-            "params": params,
-        }));
-    }
-
-    fn read_response(&mut self) -> serde_json::Value {
-        loop {
-            let msg = self.read_message();
-            if msg.get("method").is_some() {
-                self.handle_server_request(&msg);
-                continue;
-            }
-            return msg;
-        }
-    }
-
-    fn read_message(&mut self) -> serde_json::Value {
-        use std::io::BufRead;
-
-        let mut line = String::new();
-        self.reader.read_line(&mut line).expect("read response");
-        serde_json::from_str(&line)
-            .unwrap_or_else(|e| panic!("invalid JSON from MCP server: {e}\nraw: {line}"))
-    }
-
-    fn handle_server_request(&mut self, request: &serde_json::Value) {
-        let method = request["method"].as_str().unwrap();
-        let id = &request["id"];
-
-        let result = match method {
-            "roots/list" => {
-                let roots: Vec<_> = self
-                    .roots
-                    .iter()
-                    .map(|r| serde_json::json!({ "uri": format!("file://{r}") }))
-                    .collect();
-                serde_json::json!({ "roots": roots })
-            }
-            _ => panic!("unexpected server request: {method}"),
-        };
-
-        self.send_message(&serde_json::json!({
-            "jsonrpc": "2.0",
-            "id": id,
-            "result": result,
-        }));
-    }
-
-    fn send_message(&mut self, msg: &serde_json::Value) {
-        use std::io::Write;
-
-        let stdin = self.child.stdin.as_mut().expect("stdin");
-        writeln!(stdin, "{msg}").unwrap();
-        stdin.flush().unwrap();
-    }
-}
-
-impl Drop for McpConnection {
-    fn drop(&mut self) {
-        let _ = self.child.kill();
     }
 }

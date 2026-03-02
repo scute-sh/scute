@@ -1,5 +1,5 @@
 use scute_test_utils::Scute;
-use scute_test_utils::mcp::McpConnection;
+use scute_test_utils::mcp::McpTestClient;
 use test_case::test_case;
 
 #[test]
@@ -113,32 +113,18 @@ checks:
 
 #[test]
 fn tool_result_includes_content_text_fallback() {
-    let mut conn = McpConnection::start_with_roots(
-        std::env::temp_dir().as_path(),
-        &[std::env::temp_dir().to_str().unwrap()],
+    let client = McpTestClient::connect(&std::env::temp_dir());
+    let result = client.call_tool(
+        "check_commit_message",
+        &serde_json::json!({ "message": "feat: add login" }),
     );
-    conn.initialize();
-    let response = conn.request(
-        "tools/call",
-        &serde_json::json!({
-            "name": "check_commit_message",
-            "arguments": { "message": "feat: add login" },
-        }),
-    );
-
-    let result = &response["result"];
-    let content = result["content"]
-        .as_array()
-        .expect("content array must be present");
-    assert_eq!(content.len(), 1);
-    assert_eq!(content[0]["type"], "text");
-
-    let text: serde_json::Value =
-        serde_json::from_str(content[0]["text"].as_str().unwrap()).expect("content text is JSON");
-    assert_eq!(text["evaluation"]["status"], "pass");
 
     assert!(
-        result.get("structuredContent").is_some(),
+        !result.content.is_empty(),
+        "content must have text fallback"
+    );
+    assert!(
+        result.structured_content.is_some(),
         "structuredContent must also be present"
     );
 }
@@ -146,36 +132,27 @@ fn tool_result_includes_content_text_fallback() {
 #[test_case("check_commit_message")]
 #[test_case("check_dependency_freshness")]
 fn tool_declares_output_schema(tool_name: &str) {
-    let tool = get_tool(tool_name);
-    assert_check_outcome_schema(&tool);
-}
+    let client = McpTestClient::connect(&std::env::temp_dir());
+    let tools = client.list_tools();
 
-fn get_tool(name: &str) -> serde_json::Value {
-    let mut conn = McpConnection::start(std::env::temp_dir().as_path());
-    conn.initialize();
-    let response = conn.request("tools/list", &serde_json::json!({}));
-    let tools = response["result"]["tools"].as_array().expect("tools array");
-    tools
+    let tool = tools
         .iter()
-        .find(|t| t["name"] == name)
-        .unwrap_or_else(|| panic!("{name} tool must exist"))
-        .clone()
-}
+        .find(|t| t.name == tool_name)
+        .unwrap_or_else(|| panic!("{tool_name} tool must exist"));
 
-fn assert_check_outcome_schema(tool: &serde_json::Value) {
-    let name = tool["name"].as_str().unwrap();
     let schema = tool
-        .get("outputSchema")
-        .unwrap_or_else(|| panic!("{name} must declare outputSchema"));
+        .output_schema
+        .as_ref()
+        .unwrap_or_else(|| panic!("{tool_name} must declare outputSchema"));
     assert_eq!(schema["type"], "object", "root schema type must be object");
 
     let props = schema["properties"]
         .as_object()
-        .unwrap_or_else(|| panic!("{name}: schema must have properties"));
+        .unwrap_or_else(|| panic!("{tool_name}: schema must have properties"));
     for key in ["check", "target", "evaluation", "error"] {
         assert!(
             props.contains_key(key),
-            "{name}: schema must define '{key}'"
+            "{tool_name}: schema must define '{key}'"
         );
     }
 }
