@@ -132,10 +132,6 @@ impl Scute {
             .collect()
     }
 
-    pub fn run(self, args: &[&str]) -> ScuteResult {
-        self.execute(args)
-    }
-
     pub fn check(self, args: &[&str]) -> ScuteResult {
         let mut full_args = vec!["check"];
         full_args.extend_from_slice(args);

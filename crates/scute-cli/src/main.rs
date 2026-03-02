@@ -9,14 +9,14 @@ use scute_core::{
 };
 use serde::{Deserialize, Serialize};
 
-#[derive(Parser)]
+#[derive(Debug, Parser)]
 #[command(name = "scute")]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
 }
 
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 enum Commands {
     Check {
         #[command(subcommand)]
@@ -24,7 +24,7 @@ enum Commands {
     },
 }
 
-#[derive(Subcommand)]
+#[derive(Debug, Subcommand)]
 enum Checks {
     CommitMessage { message: Option<String> },
     DependencyFreshness { path: Option<String> },
@@ -250,6 +250,33 @@ fn load_commit_message_definition(check_name: &str) -> Result<commit_message::De
 mod tests {
     use super::*;
     use dependency_freshness::Level;
+
+    #[test]
+    fn unknown_check_name_classifies_as_unknown_check() {
+        let err = Cli::try_parse_from(["scute", "check", "does-not-exist"]).unwrap_err();
+
+        let error = classify_clap_error(&err);
+
+        assert_eq!(error.code, "unknown_check");
+    }
+
+    #[test]
+    fn missing_check_subcommand_classifies_as_invalid_usage() {
+        let err = Cli::try_parse_from(["scute", "check"]).unwrap_err();
+
+        let error = classify_clap_error(&err);
+
+        assert_eq!(error.code, "invalid_usage");
+    }
+
+    #[test]
+    fn missing_top_level_subcommand_classifies_as_invalid_usage() {
+        let err = Cli::try_parse_from(["scute", "commit-message", "feat: test"]).unwrap_err();
+
+        let error = classify_clap_error(&err);
+
+        assert_eq!(error.code, "invalid_usage");
+    }
 
     #[test]
     fn freshness_config_reads_level_from_entry() {
