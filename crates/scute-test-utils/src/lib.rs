@@ -132,52 +132,73 @@ impl Scute {
             .collect()
     }
 
-    pub fn check(self, args: &[&str]) -> ScuteResult {
+    pub fn check(self, args: &[&str]) -> Box<dyn CheckResult> {
         let mut full_args = vec!["check"];
         full_args.extend_from_slice(args);
-        self.execute(&full_args)
-    }
-
-    fn execute(self, args: &[&str]) -> ScuteResult {
         let dir = self.project.build();
-        let bin = target_bin("scute");
-        let mut cmd = assert_cmd::Command::new(&bin);
-        cmd.current_dir(dir.path());
         match self.mode {
-            ScuteMode::Cli => {
-                cmd.args(args);
-            }
-            ScuteMode::CliStdin => {
-                let message = args.last().expect("CliStdin requires message in args");
-                cmd.args(&args[..args.len() - 1])
-                    .write_stdin(message.to_string());
+            ScuteMode::Cli | ScuteMode::CliStdin => {
+                let stdin = matches!(self.mode, ScuteMode::CliStdin);
+                Box::new(CliCheckResult::run(dir, &full_args, stdin))
             }
             ScuteMode::Mcp => {
                 todo!("MCP check execution")
             }
         }
-        let output = cmd.output().unwrap();
-        let stdout = String::from_utf8_lossy(&output.stdout).into_owned();
-        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-
-        ScuteResult {
-            dir,
-            exit_code: output.status.code().unwrap_or(-1),
-            json: serde_json::from_str(&stdout).ok(),
-            stderr,
-        }
     }
 }
 
-pub struct ScuteResult {
+pub trait CheckResult {
+    fn expect_pass(&self) -> &dyn CheckResult;
+    fn expect_warn(&self) -> &dyn CheckResult;
+    fn expect_fail(&self) -> &dyn CheckResult;
+    fn expect_target(&self, expected: &str) -> &dyn CheckResult;
+    fn expect_target_matches_dir(&self) -> &dyn CheckResult;
+    fn expect_observed(&self, expected: u64) -> &dyn CheckResult;
+    fn expect_evidence_rule(&self, index: usize, rule: &str) -> &dyn CheckResult;
+    fn expect_evidence_has_expected(&self, index: usize) -> &dyn CheckResult;
+    fn expect_evidence_no_expected(&self, index: usize) -> &dyn CheckResult;
+    fn expect_no_evidences(&self) -> &dyn CheckResult;
+    fn expect_error(&self, code: &str) -> &dyn CheckResult;
+    fn debug(&self) -> &dyn CheckResult;
+}
+
+struct CliCheckResult {
     dir: TempDir,
     exit_code: i32,
     json: Option<serde_json::Value>,
     stderr: String,
 }
 
-impl ScuteResult {
-    pub fn expect_check_pass(&self) -> &Self {
+impl CliCheckResult {
+    fn run(dir: TempDir, args: &[&str], stdin: bool) -> Self {
+        let mut cmd = assert_cmd::Command::new(target_bin("scute"));
+        cmd.current_dir(dir.path());
+        if stdin {
+            let message = args.last().expect("CliStdin requires message in args");
+            cmd.args(&args[..args.len() - 1])
+                .write_stdin(message.to_string());
+        } else {
+            cmd.args(args);
+        }
+        let output = cmd.output().unwrap();
+        Self {
+            dir,
+            exit_code: output.status.code().unwrap_or(-1),
+            json: serde_json::from_str(&String::from_utf8_lossy(&output.stdout)).ok(),
+            stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
+        }
+    }
+
+    fn json(&self) -> &serde_json::Value {
+        self.json
+            .as_ref()
+            .expect("expected valid JSON in stdout, got none")
+    }
+}
+
+impl CheckResult for CliCheckResult {
+    fn expect_pass(&self) -> &dyn CheckResult {
         let evaluation = &self.json()["evaluation"];
         assert_eq!(evaluation["status"], "pass", "got: {}", self.json());
         assert_eq!(
@@ -188,7 +209,7 @@ impl ScuteResult {
         self
     }
 
-    pub fn expect_check_warn(&self) -> &Self {
+    fn expect_warn(&self) -> &dyn CheckResult {
         let evaluation = &self.json()["evaluation"];
         assert_eq!(evaluation["status"], "warn", "got: {}", self.json());
         assert_eq!(
@@ -199,19 +220,19 @@ impl ScuteResult {
         self
     }
 
-    pub fn expect_check_fail(&self) -> &Self {
+    fn expect_fail(&self) -> &dyn CheckResult {
         let evaluation = &self.json()["evaluation"];
         assert_eq!(evaluation["status"], "fail", "got: {}", self.json());
         assert_eq!(self.exit_code, 1, "expected exit 1 for fail");
         self
     }
 
-    pub fn expect_target(&self, expected: &str) -> &Self {
+    fn expect_target(&self, expected: &str) -> &dyn CheckResult {
         assert_eq!(self.json()["target"], expected);
         self
     }
 
-    pub fn expect_target_matches_dir(&self) -> &Self {
+    fn expect_target_matches_dir(&self) -> &dyn CheckResult {
         let target = self.json()["target"]
             .as_str()
             .expect("target should be a string");
@@ -222,7 +243,7 @@ impl ScuteResult {
         self
     }
 
-    pub fn expect_observed(&self, expected: u64) -> &Self {
+    fn expect_observed(&self, expected: u64) -> &dyn CheckResult {
         assert_eq!(
             self.json()["evaluation"]["measurement"]["observed"],
             expected
@@ -230,12 +251,12 @@ impl ScuteResult {
         self
     }
 
-    pub fn expect_evidence_rule(&self, index: usize, rule: &str) -> &Self {
+    fn expect_evidence_rule(&self, index: usize, rule: &str) -> &dyn CheckResult {
         assert_eq!(self.json()["evaluation"]["evidence"][index]["rule"], rule);
         self
     }
 
-    pub fn expect_evidence_has_expected(&self, index: usize) -> &Self {
+    fn expect_evidence_has_expected(&self, index: usize) -> &dyn CheckResult {
         assert!(
             !self.json()["evaluation"]["evidence"][index]["expected"].is_null(),
             "expected evidence[{index}].expected to be present"
@@ -243,7 +264,7 @@ impl ScuteResult {
         self
     }
 
-    pub fn expect_evidence_no_expected(&self, index: usize) -> &Self {
+    fn expect_evidence_no_expected(&self, index: usize) -> &dyn CheckResult {
         assert!(
             self.json()["evaluation"]["evidence"][index]
                 .get("expected")
@@ -253,7 +274,7 @@ impl ScuteResult {
         self
     }
 
-    pub fn expect_no_evidences(&self) -> &Self {
+    fn expect_no_evidences(&self) -> &dyn CheckResult {
         assert!(
             self.json()["evaluation"].get("evidence").is_none(),
             "expected evidence key to be absent, got: {}",
@@ -262,19 +283,7 @@ impl ScuteResult {
         self
     }
 
-    pub fn debug(&self) -> &Self {
-        eprintln!("exit_code: {}", self.exit_code);
-        eprintln!(
-            "stdout: {}",
-            self.json
-                .as_ref()
-                .map_or("(none)".into(), std::string::ToString::to_string)
-        );
-        eprintln!("stderr: {}", self.stderr);
-        self
-    }
-
-    pub fn expect_error(&self, code: &str) -> &Self {
+    fn expect_error(&self, code: &str) -> &dyn CheckResult {
         let error = &self.json()["error"];
         assert_eq!(error["code"], code, "got: {}", self.json());
         assert!(
@@ -289,10 +298,16 @@ impl ScuteResult {
         self
     }
 
-    fn json(&self) -> &serde_json::Value {
-        self.json
-            .as_ref()
-            .expect("expected valid JSON in stdout, got none")
+    fn debug(&self) -> &dyn CheckResult {
+        eprintln!("exit_code: {}", self.exit_code);
+        eprintln!(
+            "stdout: {}",
+            self.json
+                .as_ref()
+                .map_or("(none)".into(), std::string::ToString::to_string)
+        );
+        eprintln!("stderr: {}", self.stderr);
+        self
     }
 }
 

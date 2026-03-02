@@ -2,9 +2,7 @@ use scute_test_utils::{Scute, TestProject};
 
 #[test]
 fn passing_check_exits_with_code_0() {
-    Scute::cli()
-        .check(&["dependency-freshness"])
-        .expect_check_pass();
+    Scute::cli().check(&["dependency-freshness"]).expect_pass();
 }
 
 #[test]
@@ -12,7 +10,7 @@ fn failing_check_exits_with_non_zero() {
     Scute::cli()
         .dependency("itoa", "=0.4.8")
         .check(&["dependency-freshness"])
-        .expect_check_fail();
+        .expect_fail();
 }
 
 #[test]
@@ -36,7 +34,7 @@ checks:
 ",
         )
         .check(&["dependency-freshness"])
-        .expect_check_warn();
+        .expect_warn();
 }
 
 #[test]
@@ -46,7 +44,7 @@ fn path_argument_resolves_to_provided_directory() {
 
     Scute::cli()
         .check(&["dependency-freshness", project.path().to_str().unwrap()])
-        .expect_check_pass()
+        .expect_pass()
         .expect_target(canonical.to_str().unwrap());
 }
 
@@ -72,5 +70,5 @@ checks:
 ",
         )
         .check(&["dependency-freshness"])
-        .expect_check_pass();
+        .expect_pass();
 }
