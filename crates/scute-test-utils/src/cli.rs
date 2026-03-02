@@ -11,8 +11,17 @@ impl Backend for CliBackend {
         Box::new(CliCheckResult::run(dir, args, self.stdin))
     }
 
-    fn list_checks(&self, _dir: TempDir) -> Box<dyn ListChecksResult> {
-        todo!("CLI list_checks")
+    fn list_checks(&self, dir: TempDir) -> Box<dyn ListChecksResult> {
+        let output = assert_cmd::Command::new(target_bin("scute"))
+            .args(["check", "list"])
+            .current_dir(dir.path())
+            .output()
+            .unwrap();
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        let checks: Vec<String> = serde_json::from_str(&stdout).unwrap_or_else(|e| {
+            panic!("expected JSON array from `scute check list`: {e}\nstdout: {stdout}")
+        });
+        Box::new(CliListChecksResult { _dir: dir, checks })
     }
 }
 
@@ -160,6 +169,22 @@ impl CheckResult for CliCheckResult {
                 .map_or("(none)".into(), std::string::ToString::to_string)
         );
         eprintln!("stderr: {}", self.stderr);
+        self
+    }
+}
+
+struct CliListChecksResult {
+    _dir: TempDir,
+    checks: Vec<String>,
+}
+
+impl ListChecksResult for CliListChecksResult {
+    fn expect_contains(&self, name: &str) -> &dyn ListChecksResult {
+        assert!(
+            self.checks.iter().any(|c| c == name),
+            "expected check '{name}' in {:?}",
+            self.checks
+        );
         self
     }
 }

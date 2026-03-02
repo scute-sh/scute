@@ -1,9 +1,8 @@
 use scute_test_utils::Scute;
 
 #[test]
-fn malformed_config_produces_structured_error() {
-    Scute::cli()
-        .scute_config("not: valid: yaml: [")
-        .check(&["commit-message", "feat: add login"])
-        .expect_error("invalid_config");
+fn stdin_provides_commit_message_target() {
+    Scute::cli_stdin()
+        .check(&["commit-message", "fix: resolve crash on startup"])
+        .expect_target("fix: resolve crash on startup");
 }

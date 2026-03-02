@@ -13,6 +13,23 @@ use mcp::McpBackend;
 pub use project::TestProject;
 use tempfile::TempDir;
 
+#[derive(Debug, Clone, Copy)]
+pub enum Interface {
+    Cli,
+    CliStdin,
+    Mcp,
+}
+
+impl std::fmt::Display for Interface {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Cli => write!(f, "cli"),
+            Self::CliStdin => write!(f, "cli_stdin"),
+            Self::Mcp => write!(f, "mcp"),
+        }
+    }
+}
+
 trait Backend {
     fn check(&self, dir: TempDir, args: &[&str]) -> Box<dyn CheckResult>;
     fn list_checks(&self, dir: TempDir) -> Box<dyn ListChecksResult>;
@@ -24,6 +41,14 @@ pub struct Scute {
 }
 
 impl Scute {
+    pub fn new(interface: Interface) -> Self {
+        match interface {
+            Interface::Cli => Self::cli(),
+            Interface::CliStdin => Self::cli_stdin(),
+            Interface::Mcp => Self::mcp(),
+        }
+    }
+
     pub fn cli() -> Self {
         Self {
             backend: Box::new(CliBackend { stdin: false }),

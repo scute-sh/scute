@@ -31,6 +31,8 @@ enum Commands {
 
 #[derive(Debug, Subcommand)]
 enum Checks {
+    /// List available checks
+    List,
     /// Validate a commit message
     CommitMessage {
         /// Commit message to check
@@ -70,6 +72,11 @@ fn run(cli: Cli) -> Result<()> {
         Commands::Check { check } => {
             let cwd = std::env::current_dir()?;
             match check {
+                Checks::List => {
+                    let checks = [commit_message::CHECK_NAME, dependency_freshness::CHECK_NAME];
+                    println!("{}", serde_json::to_string(&checks)?);
+                    Ok(())
+                }
                 Checks::CommitMessage { message } => {
                     let message = resolve_message(message)?;
                     let definition = scute_config::load_commit_message_definition(&cwd)
@@ -103,7 +110,11 @@ fn classify_clap_error(err: &clap::Error) -> ExecutionError {
             ExecutionError {
                 code: "unknown_check".into(),
                 message: format!("unknown check: {name}"),
-                recovery: "available checks: commit-message, dependency-freshness".into(),
+                recovery: format!(
+                    "available checks: {}, {}",
+                    commit_message::CHECK_NAME,
+                    dependency_freshness::CHECK_NAME
+                ),
             }
         }
         _ => ExecutionError {
