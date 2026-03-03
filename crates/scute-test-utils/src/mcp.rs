@@ -173,14 +173,28 @@ impl McpCheckResult {
     fn is_error(&self) -> bool {
         self.result.is_error.unwrap_or(false)
     }
+
+    fn findings(&self) -> &Vec<serde_json::Value> {
+        self.structured()["findings"]
+            .as_array()
+            .expect("findings should be an array")
+    }
+
+    fn first_finding(&self) -> &serde_json::Value {
+        self.findings()
+            .first()
+            .expect("expected at least one finding")
+    }
 }
 
 impl CheckResult for McpCheckResult {
     fn expect_pass(&self) -> &dyn CheckResult {
-        assert_eq!(
-            self.structured()["evaluation"]["status"],
-            "pass",
-            "got: {:?}",
+        let summary = &self.structured()["summary"];
+        assert!(
+            summary["failed"] == 0
+                && summary["errored"] == 0
+                && summary["passed"].as_u64() > Some(0),
+            "expected pass, got: {:?}",
             self.structured()
         );
         assert!(!self.is_error(), "pass should not set isError");
@@ -188,10 +202,10 @@ impl CheckResult for McpCheckResult {
     }
 
     fn expect_warn(&self) -> &dyn CheckResult {
-        assert_eq!(
-            self.structured()["evaluation"]["status"],
-            "warn",
-            "got: {:?}",
+        let summary = &self.structured()["summary"];
+        assert!(
+            summary["warned"].as_u64() > Some(0),
+            "expected at least one warn, got: {:?}",
             self.structured()
         );
         assert!(!self.is_error(), "warn should not set isError");
@@ -199,10 +213,10 @@ impl CheckResult for McpCheckResult {
     }
 
     fn expect_fail(&self) -> &dyn CheckResult {
-        assert_eq!(
-            self.structured()["evaluation"]["status"],
-            "fail",
-            "got: {:?}",
+        let summary = &self.structured()["summary"];
+        assert!(
+            summary["failed"].as_u64() > Some(0),
+            "expected at least one fail, got: {:?}",
             self.structured()
         );
         assert!(self.is_error(), "fail should set isError");
@@ -210,12 +224,18 @@ impl CheckResult for McpCheckResult {
     }
 
     fn expect_target(&self, expected: &str) -> &dyn CheckResult {
-        assert_eq!(self.structured()["target"], expected);
+        if self.findings().is_empty() {
+            return self;
+        }
+        assert_eq!(self.first_finding()["target"], expected);
         self
     }
 
     fn expect_target_matches_dir(&self) -> &dyn CheckResult {
-        let target = self.structured()["target"]
+        if self.findings().is_empty() {
+            return self;
+        }
+        let target = self.first_finding()["target"]
             .as_str()
             .expect("target should be a string");
         assert_eq!(
@@ -226,24 +246,18 @@ impl CheckResult for McpCheckResult {
     }
 
     fn expect_observed(&self, expected: u64) -> &dyn CheckResult {
-        assert_eq!(
-            self.structured()["evaluation"]["measurement"]["observed"],
-            expected
-        );
+        assert_eq!(self.first_finding()["measurement"]["observed"], expected);
         self
     }
 
     fn expect_evidence_rule(&self, index: usize, rule: &str) -> &dyn CheckResult {
-        assert_eq!(
-            self.structured()["evaluation"]["evidence"][index]["rule"],
-            rule
-        );
+        assert_eq!(self.first_finding()["evidence"][index]["rule"], rule);
         self
     }
 
     fn expect_evidence_has_expected(&self, index: usize) -> &dyn CheckResult {
         assert!(
-            !self.structured()["evaluation"]["evidence"][index]["expected"].is_null(),
+            !self.first_finding()["evidence"][index]["expected"].is_null(),
             "expected evidence[{index}].expected to be present"
         );
         self
@@ -251,7 +265,7 @@ impl CheckResult for McpCheckResult {
 
     fn expect_evidence_no_expected(&self, index: usize) -> &dyn CheckResult {
         assert!(
-            self.structured()["evaluation"]["evidence"][index]
+            self.first_finding()["evidence"][index]
                 .get("expected")
                 .is_none(),
             "expected evidence[{index}].expected to be absent"
@@ -261,9 +275,9 @@ impl CheckResult for McpCheckResult {
 
     fn expect_no_evidences(&self) -> &dyn CheckResult {
         assert!(
-            self.structured()["evaluation"].get("evidence").is_none(),
-            "expected evidence key to be absent, got: {}",
-            self.structured()["evaluation"]
+            self.findings().is_empty(),
+            "expected no findings, got: {:?}",
+            self.findings()
         );
         self
     }

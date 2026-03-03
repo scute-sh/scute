@@ -1,30 +1,47 @@
 use rmcp::schemars;
-use scute_core::{CheckOutcome, Evidence, ExecutionError, Expected, Thresholds};
+use scute_core::{CheckOutcome, Evidence, ExecutionError, Expected, Status, Thresholds};
 use serde::Serialize;
 
 #[derive(Serialize, schemars::JsonSchema)]
-pub struct CheckOutcomeSchema {
-    /// The check that produced this outcome (e.g. `"commit-message"`).
+pub struct CheckReportSchema {
+    /// The check that produced this report (e.g. `"commit-message"`).
     pub check: String,
-    /// What was checked (e.g. the commit message text).
-    pub target: String,
-    /// Present when the check executed successfully.
+    /// Counts of evaluated, passed, warned, failed, and errored evaluations.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub evaluation: Option<EvaluationSchema>,
-    /// Present when the check could not execute.
+    pub summary: Option<SummarySchema>,
+    /// Non-passing evaluations. Empty array when all pass.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub findings: Option<Vec<FindingSchema>>,
+    /// Present when the check could not execute at all.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<ErrorSchema>,
 }
 
 #[derive(Serialize, schemars::JsonSchema)]
-pub struct EvaluationSchema {
-    /// The verdict: `"pass"`, `"warn"`, or `"fail"`.
-    pub status: String,
-    /// The observed value and the thresholds it was compared against.
-    pub measurement: MeasurementSchema,
-    /// Individual violations found. Absent when empty.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    pub evidence: Vec<EvidenceSchema>,
+pub struct SummarySchema {
+    pub evaluated: u64,
+    pub passed: u64,
+    pub warned: u64,
+    pub failed: u64,
+    pub errored: u64,
+}
+
+#[derive(Serialize, schemars::JsonSchema)]
+#[serde(untagged)]
+#[schemars(untagged)]
+pub enum FindingSchema {
+    Completed {
+        target: String,
+        status: String,
+        measurement: MeasurementSchema,
+        #[serde(skip_serializing_if = "Vec::is_empty")]
+        evidence: Vec<EvidenceSchema>,
+    },
+    Errored {
+        target: String,
+        status: String,
+        error: ErrorSchema,
+    },
 }
 
 #[derive(Serialize, schemars::JsonSchema)]
@@ -69,30 +86,53 @@ pub struct ErrorSchema {
     pub recovery: String,
 }
 
-impl CheckOutcomeSchema {
+impl CheckReportSchema {
     pub fn from_outcome(check_name: &str, outcome: &CheckOutcome) -> Self {
         match &outcome.result {
-            Ok(evaluation) => Self {
-                check: check_name.into(),
-                target: outcome.target.clone(),
-                evaluation: Some(EvaluationSchema {
-                    status: evaluation.status.to_string(),
-                    measurement: MeasurementSchema {
-                        observed: evaluation.observed,
-                        thresholds: ThresholdsSchema::from(&evaluation.thresholds),
-                    },
-                    evidence: evaluation
-                        .evidence
-                        .iter()
-                        .map(EvidenceSchema::from)
-                        .collect(),
-                }),
-                error: None,
-            },
+            Ok(eval) => {
+                let status = &eval.status;
+                let is_pass = *status == Status::Pass;
+
+                let mut passed = 0u64;
+                let mut warned = 0u64;
+                let mut failed = 0u64;
+                let findings = if is_pass {
+                    passed = 1;
+                    vec![]
+                } else {
+                    match status {
+                        Status::Warn => warned = 1,
+                        Status::Fail => failed = 1,
+                        Status::Pass => unreachable!(),
+                    }
+                    vec![FindingSchema::Completed {
+                        target: outcome.target.clone(),
+                        status: status.to_string(),
+                        measurement: MeasurementSchema {
+                            observed: eval.observed,
+                            thresholds: ThresholdsSchema::from(&eval.thresholds),
+                        },
+                        evidence: eval.evidence.iter().map(EvidenceSchema::from).collect(),
+                    }]
+                };
+
+                Self {
+                    check: check_name.into(),
+                    summary: Some(SummarySchema {
+                        evaluated: 1,
+                        passed,
+                        warned,
+                        failed,
+                        errored: 0,
+                    }),
+                    findings: Some(findings),
+                    error: None,
+                }
+            }
             Err(err) => Self {
                 check: check_name.into(),
-                target: outcome.target.clone(),
-                evaluation: None,
+                summary: None,
+                findings: None,
                 error: Some(ErrorSchema::from(err)),
             },
         }

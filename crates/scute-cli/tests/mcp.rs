@@ -39,7 +39,7 @@ fn tool_declares_output_schema(tool_name: &str) {
     let props = schema["properties"]
         .as_object()
         .unwrap_or_else(|| panic!("{tool_name}: schema must have properties"));
-    for key in ["check", "target", "evaluation", "error"] {
+    for key in ["check", "summary", "findings", "error"] {
         assert!(
             props.contains_key(key),
             "{tool_name}: schema must define '{key}'"

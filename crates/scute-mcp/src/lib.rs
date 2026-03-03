@@ -13,7 +13,7 @@ use rmcp::{
     tool, tool_handler, tool_router,
     transport::stdio,
 };
-use schema::CheckOutcomeSchema;
+use schema::CheckReportSchema;
 use scute_core::{CheckOutcome, ExecutionError, commit_message, dependency_freshness};
 
 const INSTRUCTIONS: &str = "\
@@ -57,7 +57,7 @@ impl ScuteMcp {
     /// footer syntax, and breaking change markers against the Conventional Commits spec.
     #[tool(
         name = "check_commit_message",
-        output_schema = schema_for_output::<CheckOutcomeSchema>().unwrap(),
+        output_schema = schema_for_output::<CheckReportSchema>().unwrap(),
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -85,7 +85,7 @@ impl ScuteMcp {
     /// (patch, minor, major), and what to update to.
     #[tool(
         name = "check_dependency_freshness",
-        output_schema = schema_for_output::<CheckOutcomeSchema>().unwrap(),
+        output_schema = schema_for_output::<CheckReportSchema>().unwrap(),
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -158,7 +158,7 @@ fn outcome_to_result(
     check_name: &str,
     outcome: &CheckOutcome,
 ) -> Result<CallToolResult, ErrorData> {
-    let schema = CheckOutcomeSchema::from_outcome(check_name, outcome);
+    let schema = CheckReportSchema::from_outcome(check_name, outcome);
     let value = serde_json::to_value(&schema)
         .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
