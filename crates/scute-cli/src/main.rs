@@ -4,7 +4,7 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 mod output;
 
-use output::to_check_json;
+use output::to_report_json;
 use scute_core::{ExecutionError, commit_message, dependency_freshness};
 use serde::Serialize;
 
@@ -153,7 +153,7 @@ fn engine_error(error: &ExecutionError) -> ! {
 }
 
 fn output(check_name: &str, outcome: &scute_core::CheckOutcome) -> Result<()> {
-    let json = to_check_json(check_name, outcome);
+    let json = to_report_json(check_name, outcome);
     println!("{}", serde_json::to_string(&json)?);
     if outcome.is_error() {
         std::process::exit(2);

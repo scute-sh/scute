@@ -59,10 +59,30 @@ impl CliCheckResult {
     }
 }
 
+impl CliCheckResult {
+    fn findings(&self) -> &Vec<serde_json::Value> {
+        self.json()["findings"]
+            .as_array()
+            .expect("findings should be an array")
+    }
+
+    fn first_finding(&self) -> &serde_json::Value {
+        self.findings()
+            .first()
+            .expect("expected at least one finding")
+    }
+}
+
 impl CheckResult for CliCheckResult {
     fn expect_pass(&self) -> &dyn CheckResult {
-        let evaluation = &self.json()["evaluation"];
-        assert_eq!(evaluation["status"], "pass", "got: {}", self.json());
+        let summary = &self.json()["summary"];
+        assert!(
+            summary["failed"] == 0
+                && summary["errored"] == 0
+                && summary["passed"].as_u64() > Some(0),
+            "expected pass, got: {}",
+            self.json()
+        );
         assert_eq!(
             self.exit_code, 0,
             "expected exit 0, stderr: {}",
@@ -72,8 +92,12 @@ impl CheckResult for CliCheckResult {
     }
 
     fn expect_warn(&self) -> &dyn CheckResult {
-        let evaluation = &self.json()["evaluation"];
-        assert_eq!(evaluation["status"], "warn", "got: {}", self.json());
+        let summary = &self.json()["summary"];
+        assert!(
+            summary["warned"].as_u64() > Some(0),
+            "expected at least one warn, got: {}",
+            self.json()
+        );
         assert_eq!(
             self.exit_code, 0,
             "expected exit 0 for warn, stderr: {}",
@@ -83,19 +107,29 @@ impl CheckResult for CliCheckResult {
     }
 
     fn expect_fail(&self) -> &dyn CheckResult {
-        let evaluation = &self.json()["evaluation"];
-        assert_eq!(evaluation["status"], "fail", "got: {}", self.json());
+        let summary = &self.json()["summary"];
+        assert!(
+            summary["failed"].as_u64() > Some(0),
+            "expected at least one fail, got: {}",
+            self.json()
+        );
         assert_eq!(self.exit_code, 1, "expected exit 1 for fail");
         self
     }
 
     fn expect_target(&self, expected: &str) -> &dyn CheckResult {
-        assert_eq!(self.json()["target"], expected);
+        if self.findings().is_empty() {
+            return self;
+        }
+        assert_eq!(self.first_finding()["target"], expected);
         self
     }
 
     fn expect_target_matches_dir(&self) -> &dyn CheckResult {
-        let target = self.json()["target"]
+        if self.findings().is_empty() {
+            return self;
+        }
+        let target = self.first_finding()["target"]
             .as_str()
             .expect("target should be a string");
         assert_eq!(
@@ -106,21 +140,18 @@ impl CheckResult for CliCheckResult {
     }
 
     fn expect_observed(&self, expected: u64) -> &dyn CheckResult {
-        assert_eq!(
-            self.json()["evaluation"]["measurement"]["observed"],
-            expected
-        );
+        assert_eq!(self.first_finding()["measurement"]["observed"], expected);
         self
     }
 
     fn expect_evidence_rule(&self, index: usize, rule: &str) -> &dyn CheckResult {
-        assert_eq!(self.json()["evaluation"]["evidence"][index]["rule"], rule);
+        assert_eq!(self.first_finding()["evidence"][index]["rule"], rule);
         self
     }
 
     fn expect_evidence_has_expected(&self, index: usize) -> &dyn CheckResult {
         assert!(
-            !self.json()["evaluation"]["evidence"][index]["expected"].is_null(),
+            !self.first_finding()["evidence"][index]["expected"].is_null(),
             "expected evidence[{index}].expected to be present"
         );
         self
@@ -128,7 +159,7 @@ impl CheckResult for CliCheckResult {
 
     fn expect_evidence_no_expected(&self, index: usize) -> &dyn CheckResult {
         assert!(
-            self.json()["evaluation"]["evidence"][index]
+            self.first_finding()["evidence"][index]
                 .get("expected")
                 .is_none(),
             "expected evidence[{index}].expected to be absent"
@@ -138,9 +169,9 @@ impl CheckResult for CliCheckResult {
 
     fn expect_no_evidences(&self) -> &dyn CheckResult {
         assert!(
-            self.json()["evaluation"].get("evidence").is_none(),
-            "expected evidence key to be absent, got: {}",
-            self.json()["evaluation"]
+            self.findings().is_empty(),
+            "expected no findings, got: {:?}",
+            self.findings()
         );
         self
     }
