@@ -45,8 +45,8 @@ pub struct Definition {
 ///
 /// # Errors
 ///
-/// This check always succeeds; the `Result` wrapper provides a uniform
-/// signature across all checks.
+/// Always returns `Ok`. Validation issues appear as evidence in the
+/// evaluation, not as errors.
 ///
 /// ```
 /// use scute_core::commit_message;

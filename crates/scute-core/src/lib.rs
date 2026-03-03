@@ -14,9 +14,9 @@ pub mod report;
 
 use serde::{Deserialize, Serialize};
 
-/// Outcome of a threshold comparison.
+/// Whether a check passed, warned, or failed.
 ///
-/// Derived by comparing [`Evaluation::observed`] against [`Thresholds`].
+/// Derived by comparing the `observed` value against [`Thresholds`].
 #[derive(Debug, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Status {
@@ -110,6 +110,7 @@ pub enum Outcome {
 }
 
 impl Outcome {
+    /// Create a completed outcome, deriving [`Status`] from `observed` and `thresholds`.
     #[must_use]
     pub fn completed(observed: u64, thresholds: Thresholds, evidence: Vec<Evidence>) -> Self {
         Self::Completed {

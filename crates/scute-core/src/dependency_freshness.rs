@@ -56,9 +56,6 @@ impl OutdatedDep {
 
 /// Run the dependency-freshness check against a Cargo project.
 ///
-/// Returns `Ok(vec![evaluation])` on success, `Err(error)` when the check
-/// can't run (missing tool, invalid target, crash).
-///
 /// # Errors
 ///
 /// Returns `Err` when the target path doesn't exist, `cargo-outdated`

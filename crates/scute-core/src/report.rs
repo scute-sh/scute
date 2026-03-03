@@ -47,6 +47,7 @@ pub struct Summary {
 }
 
 impl CheckReport {
+    /// Create a report from raw check output, computing the [`Summary`].
     #[must_use]
     pub fn new(check_name: &str, result: Result<Vec<Evaluation>, ExecutionError>) -> Self {
         Self {
@@ -61,11 +62,13 @@ impl CheckReport {
         }
     }
 
+    /// True when any evaluation resolved to [`Status::Fail`].
     #[must_use]
     pub fn has_failures(&self) -> bool {
         self.result.as_ref().is_ok_and(|run| run.summary.failed > 0)
     }
 
+    /// True when the check itself failed to run, or any evaluation errored.
     #[must_use]
     pub fn has_errors(&self) -> bool {
         self.result.is_err()
@@ -106,6 +109,17 @@ fn summarize(evaluations: &[Evaluation]) -> Summary {
 mod tests {
     use super::*;
     use crate::{Evidence, Thresholds};
+
+    #[test]
+    fn empty_evaluations_produces_zero_summary() {
+        let report = CheckReport::new("test-check", Ok(vec![]));
+
+        let run = report.result.as_ref().unwrap();
+        assert_eq!(run.summary.evaluated, 0);
+        assert_eq!(run.summary.passed, 0);
+        assert!(!report.has_failures());
+        assert!(!report.has_errors());
+    }
 
     #[test]
     fn summary_counts_match_evaluations() {
