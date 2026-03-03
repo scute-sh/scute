@@ -18,13 +18,13 @@ Three constraints shape the architecture:
    cheaper and more maintainable than reimplementing.
 3. **Extensibility without the engine's language.** Requiring contributors to learn
    the engine's implementation language to write a custom check would limit adoption.
-   The check outcome schema ([ADR-0001](0001-check-result-schema.md)) is
+   The check evaluation schema ([ADR-0001](0001-check-evaluation-schema.md)) is
    language-agnostic, so the implementation architecture should be too.
 
 ## Decision
 
-Three tiers of check implementation. All three produce the same CheckOutcome
-([ADR-0001](0001-check-result-schema.md)). Consumers don't know or care which tier
+Three tiers of check implementation. All three produce the same Evaluation
+([ADR-0001](0001-check-evaluation-schema.md)). Consumers don't know or care which tier
 generated it.
 
 ### Tier 1: Native
@@ -37,7 +37,7 @@ analysis, naming convention enforcement.
 ### Tier 2: Subprocess Wrapper
 
 Engine glue code that invokes an external tool, parses its output, and normalizes
-it into the check outcome schema. The engine code is thin glue — the external tool
+it into the check evaluation schema. The engine code is thin glue — the external tool
 does the heavy lifting.
 
 Examples:
@@ -58,7 +58,7 @@ Any executable that conforms to a check protocol. For custom, proprietary, or
 domain-specific checks written in any language.
 
 The contract: scute provides the check definition and target as input, the
-executable produces a CheckOutcome ([ADR-0001](0001-check-result-schema.md)) as JSON
+executable produces an Evaluation ([ADR-0001](0001-check-evaluation-schema.md)) as JSON
 on stdout. Scute validates it at the boundary. The exact invocation protocol (how
 input is passed, how the executable is registered) is deferred.
 
@@ -68,10 +68,10 @@ What matters at the architecture level:
   executable.
 - **Separation of check status from execution status.** A check that executes
   successfully but finds violations is not the same as a check that fails to run.
-  This is realized through the CheckOutcome wrapper: mutually exclusive `evaluation`
-  (fitness assessed) or `error` (execution failed). Tier 2 and Tier 3 checks
-  produce evaluations; scute catches execution failures at the boundary and wraps
-  them as errors.
+  This is realized through the Evaluation type: `status` tells the consumer
+  whether the check measured something (pass/warn/fail) or couldn't run (error).
+  Tier 2 and Tier 3 checks produce evaluations; scute catches execution failures
+  at the boundary and wraps them as errors.
 
 ## Design Decisions
 
@@ -133,7 +133,7 @@ by the engine. Rejected because:
 ## Consequences
 
 - **Contributor accessibility is language-agnostic.** The barrier to writing a check is
-  "produce JSON conforming to [ADR-0001](0001-check-result-schema.md)," not "learn the
+  "produce JSON conforming to [ADR-0001](0001-check-evaluation-schema.md)," not "learn the
   engine's language." This directly mitigates the contributor learning curve consequence
   from [ADR-0003](0003-language-choice.md).
 - **Subprocess overhead per check invocation.** Acceptable for the expected workload.

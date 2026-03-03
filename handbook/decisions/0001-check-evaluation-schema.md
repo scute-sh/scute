@@ -1,4 +1,4 @@
-# ADR-0001: Check Outcome Schema
+# ADR-0001: Check Evaluation Schema
 
 **Status:** Accepted
 **Date:** 2026-02-26
@@ -8,91 +8,91 @@
   to WorkflowOutcome.
 - 2026-03-02 — removed WorkflowOutcome; aggregation of multiple check outcomes is an
   unsolved problem that needs proper design (see
-  [ADR-0006](0006-atomic-checks-and-target-resolution.md)).
+  [ADR-0006](0006-atomic-checks-and-check-report.md)).
+- 2026-03-03 — replaced CheckOutcome wrapper with a flat Evaluation type that takes
+  two shapes based on `status` (completed or errored); removed baseline and delta.
 
 ## Context
 
-The check outcome schema is the contract between check implementations and their
+The evaluation schema is the contract between check implementations and their
 consumers: coding agents, CI pipelines, CLIs, editors, and MCP servers. All
-consumers receive the same structured data. Reporters transform it for their
-context.
+consumers receive the same structured data. Reporters (CLI formatters, MCP tool
+responses, CI summaries) transform it for their context.
 
 Design constraints:
 
-- **Token-efficient** — semantically dense so agents can parse, reason, and act in
-  minimal tokens.
+- **Token-efficient** — dense enough that agents can parse, reason, and act without
+  burning through their context window.
 - **Unambiguous** — CI needs a clear gate signal, not a score to interpret.
-- **Numeric** — trend storage needs values that can be compared over time.
-- **Forward-guiding** — every output, whether fitness evaluation or execution error,
-  must tell the consumer what to do next.
+- **Numeric** — trend tracking needs values that can be compared over time.
+- **Forward-guiding** — every output, whether a fitness evaluation or an execution
+  error, must tell the consumer what to do next.
 
 A check that evaluates code and finds violations is fundamentally different from a
 check that fails to execute. Both happen in practice. The schema must represent both
 without conflating them (see [ADR-0004](0004-check-implementation-architecture.md)).
 
-The fitness function taxonomy from *Building Evolutionary Architectures* (Ford,
-Parsons, Kua, Sadalage — 2nd ed.) informed the design, particularly the
-static/dynamic result distinction and the atomic/holistic scope distinction.
+The fitness function model from *Building Evolutionary Architectures* (Ford,
+Parsons, Kua, Sadalage — 2nd ed.) informed the evaluation/error distinction and
+the atomic measurement approach.
 
 ## Decision
 
-### CheckOutcome
-
-The outcome of invoking a check against a target. Contains either an `evaluation`
-(the check executed and produced a fitness assessment) or an `error` (the check
-could not execute). Exactly one is present, never both.
-
-```
-CheckOutcome {
-  check:       string
-  target:      string
-  evaluation?: Evaluation       // present when the check executed
-  error?:      ExecutionError   // present when execution failed
-}
-```
-
-A successful evaluation:
-
-```json
-{
-  "check": "dependency-freshness",
-  "target": "src/",
-  "evaluation": {
-    "status": "pass",
-    "measurement": { "observed": 0, "thresholds": { "fail": 0 } }
-  }
-}
-```
-
-An execution error:
-
-```json
-{
-  "check": "dependency-freshness",
-  "target": "/tmp",
-  "error": {
-    "code": "invalid_target",
-    "message": "Not a Cargo project",
-    "recovery": "Point to a directory containing a Cargo.toml"
-  }
-}
-```
-
 ### Evaluation
 
-The core output of a fitness function. When a check executes successfully, it
-produces an Evaluation: a verdict, a measurement, and optionally the evidence that
-led to that verdict.
+The per-target output of a check. An Evaluation takes one of two shapes, based on
+`status`:
+
+- **Completed** (status: pass, warn, or fail) — the check measured the target and
+  produced a verdict.
+- **Errored** (status: error) — the check could not evaluate this target.
 
 ```
-Evaluation {
+CompletedEvaluation {
+  target:      string
   status:      "pass" | "warn" | "fail"
   measurement: Measurement
   evidence?:   Evidence[]
-  baseline?:   Baseline
-  delta?:      number          // observed - baseline.observed
 }
 
+ErroredEvaluation {
+  target:      string
+  status:      "error"
+  error:       ExecutionError
+}
+```
+
+The check name is not part of Evaluation. It lives on the CheckReport
+([ADR-0006](0006-atomic-checks-and-check-report.md)), which wraps evaluations
+for consumers.
+
+A completed evaluation:
+
+```json
+{
+  "target": "validate_user (src/auth/login.rs:42)",
+  "status": "warn",
+  "measurement": { "observed": 12, "thresholds": { "warn": 10, "fail": 15 } }
+}
+```
+
+An errored evaluation:
+
+```json
+{
+  "target": "src/broken.rs",
+  "status": "error",
+  "error": {
+    "code": "parse_error",
+    "message": "Failed to parse file",
+    "recovery": "Fix syntax errors in src/broken.rs"
+  }
+}
+```
+
+### Measurement
+
+```
 Measurement {
   observed:   number
   thresholds: Thresholds
@@ -102,31 +102,32 @@ Thresholds {
   warn?: number
   fail?: number
 }
+```
 
+### Evidence
+
+```
 Evidence {
   rule?:     string       // stable identifier scoped to the check
   location?: string       // where in the target (file:line, path)
   found:     any          // what triggered this finding
   expected?: any          // what the check wanted instead
 }
-
-Baseline {
-  observed: number
-  commit:   string
-}
 ```
 
 ### ExecutionError
 
-Describes why a check could not execute. Every error includes a `recovery` field
-so the consumer knows exactly what to do next.
+Describes why a check could not evaluate a target, or why a check could not run
+at all (see [ADR-0006](0006-atomic-checks-and-check-report.md) for check-level
+errors). Every error includes a `recovery` field so the consumer knows exactly
+what to do next.
 
 ```
 ExecutionError {
-  code:      string     // coarse, stable category (see ADR-0005)
+  code:      string     // broad, stable category (see ADR-0005)
   message:   string     // human-readable context
   recovery:  string     // actionable next step
-  location?: string     // source of the problem (e.g., config file position)
+  location?: string     // where the problem is (e.g., config file position)
 }
 ```
 
@@ -135,16 +136,20 @@ The error code taxonomy is defined in
 
 ## Design Decisions
 
-### `evaluation` and `error` are mutually exclusive
+### `status` tells the consumer what to do
 
-A CheckOutcome contains exactly one: an evaluation or an error. This is enforced at
-the type level, not by convention.
+`status` is the single field consumers branch on. Four values, four actions:
 
-A check that executes successfully and finds 50 violations is an evaluation with
-`status: fail`. A check that can't run because the tool is missing is an error. The
-consumer's recovery path is completely different: fix your code vs fix your
-environment. Conflating them in one structure would force consumers to branch on
-implicit signals.
+| Status | Action |
+|---|---|
+| `pass` | Continue |
+| `warn` | Investigate |
+| `fail` | Stop and fix |
+| `error` | Fix the environment |
+
+Completed and errored evaluations carry different fields: completed evaluations
+have measurement and evidence, errored evaluations have an ExecutionError. Each
+shape has exactly the fields it needs. No null fields, no guessing.
 
 ### Why `evaluation`, not `result`
 
@@ -165,9 +170,9 @@ the agent what the correct value should be. `recovery` is the error-side equival
 but it's an instruction ("install cargo-outdated") rather than a value
 ("feat, fix, chore"). Different names because they're different in kind.
 
-### Error codes are coarse and stable
+### Error codes are broad and stable
 
-`code` in ExecutionError is a stable category, not a translation of every possible
+`code` in ExecutionError is a broad category, not a translation of every possible
 upstream error. Scute wraps many external tools; translating each tool's error
 messages into scute-branded error codes would be a maintenance trap. The `code` tells
 you *what kind* of problem (missing tool, bad config, invalid target). The `message`
@@ -176,7 +181,7 @@ carries the specifics.
 ### `measurement` groups observed value and thresholds
 
 Every check *observes* something and compares it to *thresholds*. The `measurement`
-object groups these together so all trending-relevant data lives in one place.
+object groups these together so all trend-relevant data lives in one place.
 
 `observed` is the check's measurement, in whatever unit is natural to it. The schema
 doesn't prescribe the unit; the check does. Coverage observes a percentage. Layer
@@ -188,15 +193,7 @@ because the check's scope is a single message.
 from static config or dynamic computation (e.g., acceptable latency shifting with
 concurrent user count).
 
-### `status` as three-value enum, not score
-
-`pass | warn | fail`. Not a number, not a percentage, not a letter grade.
-
-Agents need unambiguous signals. "What do I do with 73%?" is a question that wastes
-tokens. "fail" is an instruction. The three values map directly to action: continue,
-investigate, stop and fix.
-
-### `evidence` as structured findings
+### `evidence` carries what went wrong
 
 Each evidence item describes a single violation. `found` is what triggered it: the
 import that violated a layer rule, the identifier that broke a naming convention,
@@ -207,7 +204,7 @@ enough to act on. For example, an `unknown-type` violation includes the list of 
 types so the agent can fix it without external lookup. Self-explanatory rules like
 `body-separator` omit `expected` — the name says it all.
 
-### `rule` as identifier, not prose
+### `rule` is an identifier, not prose
 
 Within `evidence`, `rule` is a stable identifier scoped to the check (e.g.,
 `"camelCase"`, `"no-persistence-import"`), not a human-readable description (e.g.,
@@ -220,16 +217,13 @@ check produces hundreds of violations. Human-readable text is a reporter concern
 For single-rule checks (like cyclomatic-complexity), `rule` is absent from evidence.
 The check *is* the rule.
 
-### `target` as scope boundary
+### `target` identifies what was evaluated
 
-`target` identifies the scope boundary being checked: a file, module, package, or
-service. Specific locations within that scope (line numbers, identifiers) live inside
-`evidence[].location`.
+`target` identifies the specific thing this Evaluation assessed: a function, a
+dependency, a commit message. Each Evaluation covers one target
+([ADR-0006](0006-atomic-checks-and-check-report.md)).
 
-This means a single check outcome for "naming-convention on src/billing/reconcile.ts"
-carries all violations in one evaluation rather than producing N top-level outcomes.
-
-### `observed` as number
+### `observed` is always a number
 
 `observed` is a number. Dependency freshness measures "major versions behind."
 Coverage measures percentage. Violations measure count. All check types tested so
@@ -243,22 +237,15 @@ The schema carries complete data. How much gets surfaced is a reporter decision
 (MCP might limit evidence items for token budget, CI might show only the summary).
 Presentation logic belongs at the edges, not in the schema.
 
-### Baseline and delta are optional but schema-level
-
-`baseline` and `delta` exist in the schema before a trend store does. Individual
-checks can compute deltas against a provided baseline independently. Baking these
-in early is cheaper than retrofitting, and agents learn to use directional data
-from the start.
-
 ## Alternatives Considered
 
-### Typed union per check category
+### Different schemas per check type
 
 Instead of a uniform schema, have different evaluation shapes for metric checks,
 violation checks, assertion checks, etc. Rejected because it fragments the consumer
 interface. An agent would need to handle N schemas instead of one. The uniform
-`measurement` + `evidence` pattern handles all current check types without type
-branching.
+`measurement` + `evidence` pattern handles all current check types without
+branching on check type.
 
 ### Human-readable `message` field on evaluations
 
@@ -267,28 +254,31 @@ fail threshold 20") is redundant. Every piece of information it would contain is
 already present in structured fields. Human-readable output is constructed by
 reporters from the structured data.
 
-### `error` as a fourth status value
+### Wrapper type with two optional branches
 
-Adding `"status": "error"` alongside pass/warn/fail would keep a single branching
-field. Rejected because it conflates two fundamentally different things: "the check
-measured something" vs "the check couldn't run." An evaluation with `status: fail`
-has measurement data, evidence, thresholds. An error has none of that. Forcing both
-into one structure with mostly-null fields is worse than a clean union type.
+A wrapper type with two optional fields (`evaluation?: Evaluation` and
+`error?: ExecutionError`), where exactly one is present. Replaced by the flat
+two-shape Evaluation because:
 
-### Separate error schema, not integrated in CheckOutcome
+- One less nesting level for consumers (e.g., `finding.status` instead of
+  `finding.evaluation.status`).
+- `status` is the natural branching field — consumers already act on it.
+- The wrapper added a type without adding information.
 
-Having check evaluations and execution errors as completely separate, unrelated
-structures. Rejected because consumers need a single type to handle any check
-invocation result. The CheckOutcome wrapper makes this natural: one type, two
-possible branches, same handling code everywhere.
+### Separate error schema, not part of Evaluation
+
+Having evaluations and execution errors as completely separate, unrelated
+structures. Rejected because consumers need a single type to handle any per-target
+result. The two-shape Evaluation makes this natural: one type, `status` as the
+branching field, same handling code everywhere.
 
 ## Consequences
 
 - Check authors must express their measurement as a number in `observed`. Checks that
   produce fundamentally non-numeric results will need to find a numeric proxy (count
   of violations, versions behind, etc.) or the schema will need revision.
-- Reporter implementations (CLI, MCP, CI) are responsible for rendering human-readable
-  output from structured data. The schema provides no convenience fields for display.
+- Reporters (CLI, MCP, CI) are responsible for rendering human-readable output from
+  structured data. The schema provides no convenience fields for display.
 - The `evidence` array can grow large for high-volume checks. Reporters must handle
   this gracefully.
 - The check definition format ([ADR-0002](0002-check-definition-format.md)) must carry
@@ -296,5 +286,5 @@ possible branches, same handling code everywhere.
 - Every execution error must include a `recovery` field. Check authors cannot emit
   an error without actionable guidance.
 - The `code` taxonomy for execution errors is defined in
-  [ADR-0005](0005-cli-output-contract.md) and must remain coarse and stable. Adding a
+  [ADR-0005](0005-cli-output-contract.md) and must remain broad and stable. Adding a
   new code is a deliberate decision, not a per-tool translation.

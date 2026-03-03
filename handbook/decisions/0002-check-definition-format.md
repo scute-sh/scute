@@ -7,7 +7,7 @@
 
 A check definition declares the desired state for a fitness function: what to
 measure and what thresholds to enforce. It is the input-side counterpart to the
-check outcome schema ([ADR-0001](0001-check-result-schema.md)).
+check evaluation schema ([ADR-0001](0001-check-evaluation-schema.md)).
 
 Definitions are purely declarative. They describe *what* is acceptable, never *how*
 to measure it or *when* to run it.
@@ -43,7 +43,7 @@ thresholds:
 
 | Field | Required | Purpose |
 |---|---|---|
-| `check` | yes | Unique identifier. Maps to `CheckOutcome.check`. For built-in checks, also identifies the measurement implementation. |
+| `check` | yes | Unique identifier. Maps to `CheckReport.check`. For built-in checks, also identifies the measurement implementation. |
 | `thresholds` | yes | `{ warn?, fail? }` — at least one must be present. |
 | `config` | no | Check-specific configuration. Free-form, validated by the check implementation. |
 
@@ -83,7 +83,7 @@ field can be added that defaults to `check` when absent.
 The definition schema does not interpret `config`. It is passed through to the
 check implementation, which validates its own configuration.
 
-Rule IDs (referenced in `Evidence.rule` in the check outcome schema) appear as keys
+Rule IDs (referenced in `Evidence.rule` in the check evaluation schema) appear as keys
 within `config`. The convention is that `description` is a reserved key within any
 rule definition, carrying prose for human-readable reporters.
 
@@ -114,11 +114,6 @@ thresholds:
 
 This keeps the evaluation simple: one `observed`, one set of thresholds, one
 `status`. No branching logic to determine which criterion triggered the verdict.
-
-The `baseline` and `delta` fields in the evaluation
-([ADR-0001](0001-check-result-schema.md)) remain available on any check as
-informational context for trends, independent of whether the check itself is
-absolute or delta-based.
 
 ### Threshold direction is implicit
 

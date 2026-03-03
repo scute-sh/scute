@@ -31,7 +31,7 @@ structured output) is the product. Everything else composes on top.
 
 ## Schema Validation
 
-The check result schema ([ADR-0001](decisions/0001-check-result-schema.md)) and
+The check evaluation schema ([ADR-0001](decisions/0001-check-evaluation-schema.md)) and
 check definition format ([ADR-0002](decisions/0002-check-definition-format.md))
 were validated against diverse fitness function types:
 

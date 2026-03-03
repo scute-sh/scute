@@ -13,14 +13,14 @@ produced unstructured text on stderr. This meant consumers needed two parsing pa
 error messages leaked internal tool details ("cargo outdated failed: error: could
 not find `Cargo.toml`..."), and there was no forward guidance on how to recover.
 
-The check outcome schema ([ADR-0001](0001-check-result-schema.md)) defines *what*
+The check evaluation schema ([ADR-0001](0001-check-evaluation-schema.md)) defines *what*
 the data looks like. This ADR defines *how* it reaches the consumer.
 
 ## Decision
 
 ### Output streams
 
-**stdout** carries all structured output: CheckOutcomes and engine-level errors.
+**stdout** carries all structured output: CheckReports and engine-level errors.
 Always JSON. A consumer reads one stream and always gets parseable data.
 
 **stderr** is reserved for human-facing diagnostics: verbose/debug logging, progress
@@ -30,7 +30,7 @@ indicators, deprecation warnings. Agents ignore it. It is never JSON.
 
 When the engine itself fails before any check can execute (e.g., unparseable config
 file, invalid CLI usage), it emits the same ExecutionError shape
-([ADR-0001](0001-check-result-schema.md)) on stdout, just without `check`/`target`
+([ADR-0001](0001-check-evaluation-schema.md)) on stdout, just without `check`/`target`
 context since that information isn't available yet:
 
 ```json
@@ -44,16 +44,16 @@ context since that information isn't available yet:
 ```
 
 Same error structure, different scope. A check-level error lives inside a
-CheckOutcome (with `check` and `target`). An engine error lives at the root
+CheckReport (with `check` and `target`). An engine error lives at the root
 (without them). Consumers parse one error shape either way.
 
 ### Exit codes
 
 | Code | Meaning | stdout contains |
 |------|---------|----------------|
-| 0 | Check passed or warned | CheckOutcome with evaluation |
-| 1 | Check failed | CheckOutcome with evaluation |
-| 2 | Execution error | CheckOutcome with error, or engine error |
+| 0 | Check passed or warned | CheckReport with evaluation |
+| 1 | Check failed | CheckReport with evaluation |
+| 2 | Execution error | CheckReport with error, or engine error |
 
 For workflows: exit 0 if all checks pass/warn, exit 1 if any check fails, exit 2
 if any check errors (error takes precedence over fail).
@@ -83,7 +83,7 @@ the agent reads stdout, gets nothing, and has to know to check a second stream f
 a different reason. That's a bad contract.
 
 stdout for all structured output means one stream, one parse, one contract.
-The JSON shape (CheckOutcome vs naked error) tells the consumer what it got. No
+The JSON shape (CheckReport vs naked error) tells the consumer what it got. No
 stream-based branching needed.
 
 stderr becomes what it should be: a side channel for human diagnostics that doesn't
@@ -92,7 +92,7 @@ interfere with structured data.
 ### Engine errors vs check errors
 
 Both use the same ExecutionError shape
-([ADR-0001](0001-check-result-schema.md)). The difference is scope:
+([ADR-0001](0001-check-evaluation-schema.md)). The difference is scope:
 
 **Engine errors** (no `check`/`target`): the engine failed before it could attempt
 any check. Bad config, invalid CLI arguments. The error object sits at the root
@@ -100,7 +100,7 @@ of the output.
 
 **Check errors** (scoped to `check`/`target`): a specific check could not execute.
 Missing tool, invalid target for that check type. The error object sits inside a
-CheckOutcome.
+CheckReport.
 
 The distinction matters for workflows: an engine error aborts the entire run, while
 a check error leaves other checks unaffected.

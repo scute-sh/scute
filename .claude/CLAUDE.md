@@ -1,3 +1,4 @@
+- we are in **2026**, forward this to all subagents
 - See @README for the overview of what Scute is about.
 - See @handbook/vision.md @handbook/attributes.md and @handbook/roadmap.md to understand more about the project context, goals, and the direction we're headed.
 
@@ -8,6 +9,7 @@
 **Trigger:** The user corrects, reminds, or redirects you. This includes explicit corrections AND gentle nudges like "did you forget...?"
 
 **Action (do this BEFORE fixing the problem):**
+
 1. Acknowledge what went wrong and why you didn't catch it yourself
 2. Open @handbook/pain-points.md and track it:
    - Already documented → increase the counter (×N)
@@ -30,6 +32,7 @@ Run all three, in this order: `cargo fmt`, `cargo clippy`, `cargo test`. All mus
 Test names are living documentation. Just by reading a name, you should understand exactly what happens and why it failed.
 
 **Rules:**
+
 1. **Active voice.** The implicit subject is the system under test. Use active verbs.
 2. **Self-documenting.** Every noun must be grounded. If it raises "of what?" or "where?", the name is incomplete.
 3. **Context before outcome** when context is needed. When no context, verb+object is fine.

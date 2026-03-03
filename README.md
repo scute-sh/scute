@@ -145,7 +145,7 @@ thresholds:
 One definition format. One result schema. From pre-commit hook to production
 monitor.
 
-See the full [check result schema](handbook/decisions/0001-check-result-schema.md)
+See the full [check evaluation schema](handbook/decisions/0001-check-evaluation-schema.md)
 and [check definition format](handbook/decisions/0002-check-definition-format.md).
 
 ## Design Principles
