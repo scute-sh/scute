@@ -34,6 +34,7 @@ Multi-phase workflow for complex features: requirements → design → TDD → h
    - **Unknowns**: What needs clarification?
 3. If unknowns exist, ask the user — don't guess on important decisions
 4. Write acceptance criteria to `playground/{feature-name}-criteria.md`:
+
    ```
    # [Feature Name] Acceptance Criteria
 
@@ -73,6 +74,7 @@ Use a short, hyphenated feature name (e.g., `user-auth`, `invoice-export`) consi
    - Test coverage — existing tests for the areas we'll touch
    - Technical debt — long functions, duplication, poor names
 3. **Write scout report** to `playground/{feature-name}-scout.md`:
+
    ```
    # Scout Report: [area/files being modified]
 
@@ -121,6 +123,7 @@ Once validated, scout report improvements become **preparatory slices** in Phase
    - **Small**: Completable in one focused session
 
 Write to `playground/{feature-name}-sketch.md`:
+
 ```
 # [Feature] Design Sketch
 
@@ -163,6 +166,7 @@ Write to `playground/{feature-name}-sketch.md`:
 ### Test Strategy
 
 Choose based on slice type:
+
 - **Preparatory** (refactoring, test gaps) → `/tdd` for characterization, then `/refactoring`
 - **Behavior-heavy** (user flows, rules) → `/bdd-with-approvals`
 - **Algorithm/logic-heavy** → `/tdd`
@@ -192,22 +196,24 @@ For each slice from the sketch:
    - Web feature → the UI component where the new affordance appears
    - API feature → the controller/endpoint
    - CLI feature → the command handler
-   Even if it's "just" adding a prop and a menu item, that's your starting point. The outermost layer defines what inner layers must provide.
+     Even if it's "just" adding a prop and a menu item, that's your starting point. The outermost layer defines what inner layers must provide.
 2. **Write your first test for that outermost layer.** Invoke the chosen test skill. Stub everything below — hardcoded data, fake responses, in-memory storage. The outermost layer should work with stubs before any inner layer exists.
 3. **Work inward one layer at a time.** Each layer gets its own tests. Replace the stub from the layer above with real implementation. Then stub the next layer down. Repeat until you reach storage.
 
 **If you find yourself reasoning about why outside-in doesn't apply to this specific case, you are rationalizing. Common excuses:**
+
 - "The outermost layer has no tests yet" → That's exactly why you start there. You're building the test infrastructure as part of the feature.
 - "The real logic/work is in [deeper layer]" → Outside-in discovers what inner layers need. Inside-out guesses. You're drawn to where business rules live because it feels like "real work." The UI feels like "just wiring." This is backwards.
 - "I'll be pragmatic" → Outside-in IS pragmatic. It catches integration issues early and prevents building the wrong API.
 - "The backend needs to exist first" → No. That's what stubs are for. The UI works with stubs before any backend exists.
 - "This component already exists, so I can skip this layer" → The outermost layer is the component that USES the shared one. A reusable dialog still needs integration: new props, new menu items, new wiring. Start there.
+
 4. **Read back code** — is it clear? If not, refactor before moving on.
 5. **Run every gate check below** — all must pass before moving on.
 
 All slices done → Phase 5.
 
-### Stop If You Catch Yourself...
+### Stop If You Catch Yourself
 
 These are not suggestions. If you detect any of these, stop immediately and correct course:
 
@@ -222,6 +228,7 @@ These are not suggestions. If you detect any of these, stop immediately and corr
 ### Gate: Slice Complete
 
 **All four** checks must pass before moving to next slice:
+
 1. All tests pass
 2. Code read-back: comfortable explaining this in a code review?
 3. Update tracking:
@@ -247,6 +254,7 @@ Completed work stays — only adjust what's ahead.
 ### 5.1 Edge Cases (ZOMBIES)
 
 Walk through **every** category, add tests for gaps found:
+
 - **Z**ero/empty — null, empty string, zero, empty collection
 - **O**ne — single item
 - **M**any — multiple items, ordering
@@ -260,6 +268,7 @@ Walk through **every** category, add tests for gaps found:
 See [references/production-checklist.md](references/production-checklist.md) for full checklist.
 
 Address **every** item (mark N/A with reason if not applicable):
+
 - [ ] Error handling: graceful degradation, meaningful messages
 - [ ] Logging: key events, debug info, no sensitive data
 - [ ] Observability and analytics: can you tell if it's working and valuable?
@@ -276,9 +285,18 @@ Invoke `/refactoring` on all files touched. This is a required step, not optiona
 
 If the feature includes user-facing text, invoke `/writing-style` on all text added or modified. Mark N/A if purely backend.
 
+User-facing text includes:
+
+- API docs (markdown files, rustdoc, jsdoc, etc.)
+- Documentation (Readme, changelog, handbook, and other readme files)
+- UI text, CLI output, MCP messages, etc.
+- Test names, error messages, etc.
+- Logging messages, alerting, observability, etc.
+
 ### Gate: Hardening Complete
 
 **All five** checks must pass. **Do not proceed to Phase 6 until they do.**
+
 - [ ] ZOMBIES walked through every category, tests added for gaps
 - [ ] Production checklist: every item addressed (or N/A with reason)
 - [ ] Refactoring pass complete
@@ -294,6 +312,7 @@ If the feature includes user-facing text, invoke `/writing-style` on all text ad
 ### Criteria Demonstration
 
 Open `playground/{feature-name}-criteria.md`. For **every** criterion:
+
 1. State the criterion
 2. Cite the test(s) that prove it. If the criterion can't be verified by a test, explain why and provide alternative evidence.
 3. Mark VERIFIED or FAILED
@@ -303,6 +322,7 @@ If any criterion is FAILED, return to the appropriate phase and fix it.
 ### Final Checks
 
 Complete **all five**:
+
 1. Run full test suite — all must pass
 2. Review all commits — do they tell a coherent story?
 3. Self-review: Read the diff as someone else's code. Address any comments you'd leave.
@@ -312,6 +332,7 @@ Complete **all five**:
 ### Gate: Feature Complete
 
 **All five** checks must pass:
+
 - [ ] Every acceptance criterion VERIFIED with evidence
 - [ ] All tests pass
 - [ ] Self-review complete, no outstanding concerns
@@ -329,6 +350,7 @@ Delete playground files (`{feature-name}-criteria.md`, `{feature-name}-scout.md`
 ## When to Check In With User
 
 Stay autonomous, but stop and ask when:
+
 - Requirements have genuine ambiguity affecting architecture
 - Trade-off with no clear winner
 - Scope creep detected

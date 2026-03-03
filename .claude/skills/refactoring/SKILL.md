@@ -21,8 +21,10 @@ Work autonomously as much as possible. Start with the simplest thing or file and
 ## Test Code Policy
 
 Do not change test code during refactoring, except:
+
 - Renames that follow production code renames (imports, function calls)
 - Import path updates if something moved
+- Extracting helpers and constants to improve readability and reduce duplication
 
 Never change test assertions, test data, or test logic.
 
@@ -52,6 +54,7 @@ Prefer self-explanatory, readable code over comments.
 ### Process
 
 For each refactor:
+
 1. Ensure all tests pass
 2. Choose and perform the simplest possible refactoring (one at a time)
 3. Ensure all tests pass after the change
@@ -68,6 +71,7 @@ Shift focus: you've been implementing. Now become a critic. Your job is to find 
 Re-read Code Style guidelines. Look at each file in scope. Consider blind spots - what improvements haven't we even considered that would make the code better, easier, more maintainable?
 
 For each file, find ONE thing that could be better. If you find something:
+
 1. Fix it using the same refactoring process (test, change, test, commit)
 2. Look again; fixing one thing often reveals the next
 
@@ -76,6 +80,7 @@ Repeat until you find nothing more to improve.
 ## 4. Summary
 
 Provide a high-level summary of the refactoring:
+
 - List each file that was touched
 - Describe the key improvements made in each file
 
