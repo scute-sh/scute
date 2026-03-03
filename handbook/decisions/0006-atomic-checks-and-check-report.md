@@ -1,6 +1,6 @@
 # ADR-0006: Atomic Checks and Check Report
 
-**Status:** Draft
+**Status:** Accepted
 **Date:** 2026-03-02
 
 ## Context
