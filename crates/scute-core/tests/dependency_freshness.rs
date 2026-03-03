@@ -1,4 +1,4 @@
-use scute_core::dependency_freshness::fetch_outdated;
+use scute_core::dependency_freshness::{self, fetch_outdated};
 use scute_test_utils::TestProject;
 
 #[test]
@@ -60,4 +60,17 @@ fn outdated_report_includes_dev_dependencies() {
 
     assert_eq!(deps.len(), 1);
     assert_eq!(deps[0].name, "rand");
+}
+
+#[test]
+fn check_sets_target_to_canonicalized_path() {
+    let dir = TestProject::cargo().build();
+    let definition = dependency_freshness::Definition::default();
+
+    let evals = dependency_freshness::check(dir.path(), &definition).unwrap();
+
+    assert_eq!(
+        evals[0].target,
+        dir.path().canonicalize().unwrap().display().to_string()
+    );
 }

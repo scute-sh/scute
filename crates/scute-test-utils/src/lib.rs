@@ -112,7 +112,7 @@ pub trait CheckResult {
     fn expect_evidence_rule(&self, index: usize, rule: &str) -> &dyn CheckResult;
     fn expect_evidence_has_expected(&self, index: usize) -> &dyn CheckResult;
     fn expect_evidence_no_expected(&self, index: usize) -> &dyn CheckResult;
-    fn expect_no_evidences(&self) -> &dyn CheckResult;
+    fn expect_no_findings(&self) -> &dyn CheckResult;
     fn expect_error(&self, code: &str) -> &dyn CheckResult;
     fn debug(&self) -> &dyn CheckResult;
 }

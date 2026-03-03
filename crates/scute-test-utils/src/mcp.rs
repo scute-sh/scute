@@ -224,17 +224,11 @@ impl CheckResult for McpCheckResult {
     }
 
     fn expect_target(&self, expected: &str) -> &dyn CheckResult {
-        if self.findings().is_empty() {
-            return self;
-        }
         assert_eq!(self.first_finding()["target"], expected);
         self
     }
 
     fn expect_target_matches_dir(&self) -> &dyn CheckResult {
-        if self.findings().is_empty() {
-            return self;
-        }
         let target = self.first_finding()["target"]
             .as_str()
             .expect("target should be a string");
@@ -273,7 +267,7 @@ impl CheckResult for McpCheckResult {
         self
     }
 
-    fn expect_no_evidences(&self) -> &dyn CheckResult {
+    fn expect_no_findings(&self) -> &dyn CheckResult {
         assert!(
             self.findings().is_empty(),
             "expected no findings, got: {:?}",

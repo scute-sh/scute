@@ -1,5 +1,6 @@
 use rmcp::schemars;
-use scute_core::{CheckOutcome, Evidence, ExecutionError, Expected, Status, Thresholds};
+use scute_core::report::{CheckReport, Summary};
+use scute_core::{Evidence, ExecutionError, Expected, Outcome, Thresholds};
 use serde::Serialize;
 
 #[derive(Serialize, schemars::JsonSchema)]
@@ -86,55 +87,67 @@ pub struct ErrorSchema {
     pub recovery: String,
 }
 
-impl CheckReportSchema {
-    pub fn from_outcome(check_name: &str, outcome: &CheckOutcome) -> Self {
-        match &outcome.result {
-            Ok(eval) => {
-                let status = &eval.status;
-                let is_pass = *status == Status::Pass;
-
-                let mut passed = 0u64;
-                let mut warned = 0u64;
-                let mut failed = 0u64;
-                let findings = if is_pass {
-                    passed = 1;
-                    vec![]
-                } else {
-                    match status {
-                        Status::Warn => warned = 1,
-                        Status::Fail => failed = 1,
-                        Status::Pass => unreachable!(),
-                    }
-                    vec![FindingSchema::Completed {
-                        target: outcome.target.clone(),
-                        status: status.to_string(),
-                        measurement: MeasurementSchema {
-                            observed: eval.observed,
-                            thresholds: ThresholdsSchema::from(&eval.thresholds),
-                        },
-                        evidence: eval.evidence.iter().map(EvidenceSchema::from).collect(),
-                    }]
-                };
+impl From<&CheckReport> for CheckReportSchema {
+    fn from(report: &CheckReport) -> Self {
+        match &report.result {
+            Ok(run) => {
+                let findings: Vec<FindingSchema> = run
+                    .non_passing_evaluations()
+                    .into_iter()
+                    .map(FindingSchema::from)
+                    .collect();
 
                 Self {
-                    check: check_name.into(),
-                    summary: Some(SummarySchema {
-                        evaluated: 1,
-                        passed,
-                        warned,
-                        failed,
-                        errored: 0,
-                    }),
+                    check: report.check.clone(),
+                    summary: Some(SummarySchema::from(&run.summary)),
                     findings: Some(findings),
                     error: None,
                 }
             }
             Err(err) => Self {
-                check: check_name.into(),
+                check: report.check.clone(),
                 summary: None,
                 findings: None,
                 error: Some(ErrorSchema::from(err)),
             },
+        }
+    }
+}
+
+impl From<&scute_core::Evaluation> for FindingSchema {
+    fn from(eval: &scute_core::Evaluation) -> Self {
+        match &eval.outcome {
+            Outcome::Completed {
+                status,
+                observed,
+                thresholds,
+                evidence,
+            } => Self::Completed {
+                target: eval.target.clone(),
+                status: status.to_string(),
+                measurement: MeasurementSchema {
+                    observed: *observed,
+                    thresholds: ThresholdsSchema::from(thresholds),
+                },
+                evidence: evidence.iter().map(EvidenceSchema::from).collect(),
+            },
+            Outcome::Errored(err) => Self::Errored {
+                target: eval.target.clone(),
+                status: "error".into(),
+                error: ErrorSchema::from(err),
+            },
+        }
+    }
+}
+
+impl From<&Summary> for SummarySchema {
+    fn from(s: &Summary) -> Self {
+        Self {
+            evaluated: s.evaluated,
+            passed: s.passed,
+            warned: s.warned,
+            failed: s.failed,
+            errored: s.errored,
         }
     }
 }

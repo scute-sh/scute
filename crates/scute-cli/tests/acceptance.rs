@@ -48,10 +48,10 @@ mod commit_message {
     #[test_case(Cli)]
     #[test_case(CliStdin)]
     #[test_case(Mcp)]
-    fn target_matches_argument(interface: Interface) {
+    fn invalid_message_shows_subject_line_as_target(interface: Interface) {
         Scute::new(interface)
-            .check(&["commit-message", "feat: from argument"])
-            .expect_target("feat: from argument");
+            .check(&["commit-message", "not conventional"])
+            .expect_target("not conventional");
     }
 
     #[test_case(Cli)]
@@ -78,7 +78,7 @@ checks:
         Scute::new(interface)
             .check(&["commit-message", "feat: add login"])
             .expect_pass()
-            .expect_no_evidences();
+            .expect_no_findings();
     }
 }
 
@@ -107,22 +107,11 @@ mod dependency_freshness {
 
     #[test_case(Cli)]
     #[test_case(Mcp)]
-    fn uses_working_directory_as_target(interface: Interface) {
+    fn without_path_defaults_to_working_directory(interface: Interface) {
         Scute::new(interface)
+            .dependency("itoa", "=0.4.8")
             .check(&["dependency-freshness"])
             .expect_target_matches_dir();
-    }
-
-    #[test_case(Cli)]
-    #[test_case(Mcp)]
-    fn path_argument_resolves_target(interface: Interface) {
-        let project = TestProject::cargo().build();
-        let canonical = project.path().canonicalize().unwrap();
-
-        Scute::new(interface)
-            .check(&["dependency-freshness", project.path().to_str().unwrap()])
-            .expect_pass()
-            .expect_target(canonical.to_str().unwrap());
     }
 
     #[test_case(Cli)]

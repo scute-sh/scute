@@ -4,7 +4,8 @@ use anyhow::Result;
 use clap::{Parser, Subcommand};
 mod output;
 
-use output::to_report_json;
+use output::CheckReportJson;
+use scute_core::report::CheckReport;
 use scute_core::{ExecutionError, commit_message, dependency_freshness};
 use serde::Serialize;
 
@@ -81,8 +82,8 @@ fn run(cli: Cli) -> Result<()> {
                     let message = resolve_message(message)?;
                     let definition = scute_config::load_commit_message_definition(&cwd)
                         .unwrap_or_else(|e| invalid_config(&e));
-                    let outcome = commit_message::check(&message, &definition);
-                    output(commit_message::CHECK_NAME, &outcome)
+                    let result = commit_message::check(&message, &definition);
+                    output(&CheckReport::new(commit_message::CHECK_NAME, result))
                 }
                 Checks::DependencyFreshness { path } => {
                     let target = match path {
@@ -91,8 +92,8 @@ fn run(cli: Cli) -> Result<()> {
                     };
                     let definition = scute_config::load_freshness_definition(&cwd)
                         .unwrap_or_else(|e| invalid_config(&e));
-                    let outcome = dependency_freshness::check(&target, &definition);
-                    output(dependency_freshness::CHECK_NAME, &outcome)
+                    let result = dependency_freshness::check(&target, &definition);
+                    output(&CheckReport::new(dependency_freshness::CHECK_NAME, result))
                 }
             }
         }
@@ -152,13 +153,13 @@ fn engine_error(error: &ExecutionError) -> ! {
     std::process::exit(2);
 }
 
-fn output(check_name: &str, outcome: &scute_core::CheckOutcome) -> Result<()> {
-    let json = to_report_json(check_name, outcome);
+fn output(report: &CheckReport) -> Result<()> {
+    let json = CheckReportJson::from(report);
     println!("{}", serde_json::to_string(&json)?);
-    if outcome.is_error() {
+    if report.has_errors() {
         std::process::exit(2);
     }
-    if outcome.is_fail() {
+    if report.has_failures() {
         std::process::exit(1);
     }
     Ok(())

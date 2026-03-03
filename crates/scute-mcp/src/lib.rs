@@ -14,7 +14,8 @@ use rmcp::{
     transport::stdio,
 };
 use schema::CheckReportSchema;
-use scute_core::{CheckOutcome, ExecutionError, commit_message, dependency_freshness};
+use scute_core::report::CheckReport;
+use scute_core::{ExecutionError, commit_message, dependency_freshness};
 
 const INSTRUCTIONS: &str = "\
 Scute gives you a feedback loop to catch problems as you work, not after. \
@@ -75,8 +76,8 @@ impl ScuteMcp {
             Ok(def) => def,
             Err(e) => return config_error(commit_message::CHECK_NAME, &e),
         };
-        let outcome = commit_message::check(&input.message, &definition);
-        outcome_to_result(commit_message::CHECK_NAME, &outcome)
+        let result = commit_message::check(&input.message, &definition);
+        report_to_result(&CheckReport::new(commit_message::CHECK_NAME, result))
     }
 
     /// Find outdated dependencies in your project.
@@ -107,8 +108,8 @@ impl ScuteMcp {
             Ok(def) => def,
             Err(e) => return config_error(dependency_freshness::CHECK_NAME, &e),
         };
-        let outcome = dependency_freshness::check(&path, &definition);
-        outcome_to_result(dependency_freshness::CHECK_NAME, &outcome)
+        let result = dependency_freshness::check(&path, &definition);
+        report_to_result(&CheckReport::new(dependency_freshness::CHECK_NAME, result))
     }
 }
 
@@ -143,26 +144,23 @@ fn config_error(
     check_name: &str,
     err: &scute_config::ConfigError,
 ) -> Result<CallToolResult, ErrorData> {
-    let outcome = CheckOutcome {
-        target: String::new(),
-        result: Err(ExecutionError {
+    let report = CheckReport::new(
+        check_name,
+        Err(ExecutionError {
             code: "invalid_config".into(),
             message: format!("{err}"),
             recovery: "check your .scute.yml syntax".into(),
         }),
-    };
-    outcome_to_result(check_name, &outcome)
+    );
+    report_to_result(&report)
 }
 
-fn outcome_to_result(
-    check_name: &str,
-    outcome: &CheckOutcome,
-) -> Result<CallToolResult, ErrorData> {
-    let schema = CheckReportSchema::from_outcome(check_name, outcome);
+fn report_to_result(report: &CheckReport) -> Result<CallToolResult, ErrorData> {
+    let schema = CheckReportSchema::from(report);
     let value = serde_json::to_value(&schema)
         .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
 
-    if outcome.is_fail() || outcome.is_error() {
+    if report.has_failures() || report.has_errors() {
         Ok(CallToolResult::structured_error(value))
     } else {
         Ok(CallToolResult::structured(value))

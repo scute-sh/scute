@@ -1,6 +1,7 @@
 //! Deterministic fitness checks for software delivery.
 //!
-//! Each check produces a [`CheckOutcome`] with structured evidence.
+//! Each check returns `Result<Vec<Evaluation>, ExecutionError>`.
+//! Use [`report::CheckReport`] to summarize results for presentation.
 //!
 //! # Available checks
 //!
@@ -9,6 +10,7 @@
 
 pub mod commit_message;
 pub mod dependency_freshness;
+pub mod report;
 
 use serde::{Deserialize, Serialize};
 
@@ -56,69 +58,66 @@ pub struct Thresholds {
     pub fail: Option<u64>,
 }
 
-/// Fitness assessment produced when a check executes successfully.
-#[derive(Debug, PartialEq)]
-pub struct Evaluation {
-    pub status: Status,
-    pub observed: u64,
-    pub thresholds: Thresholds,
-    pub evidence: Vec<Evidence>,
-}
-
-impl Evaluation {
-    #[must_use]
-    pub fn new(observed: u64, thresholds: Thresholds, evidence: Vec<Evidence>) -> Self {
-        Self {
-            status: derive_status(observed, &thresholds),
-            observed,
-            thresholds,
-            evidence,
-        }
-    }
-}
-
-/// Outcome of invoking a check against a target.
-///
-/// The `result` carries either a successful [`Evaluation`] or an
-/// [`ExecutionError`] explaining why the check couldn't run.
+/// Result of evaluating a check against a single target.
 ///
 /// ```
 /// use scute_core::commit_message;
 /// use scute_core::commit_message::Definition;
 ///
-/// let outcome = commit_message::check("feat: add login", &Definition::default());
-/// assert_eq!(outcome.target, "feat: add login");
-/// assert!(outcome.is_pass());
-///
-/// let evaluation = outcome.result.unwrap();
-/// assert_eq!(evaluation.observed, 0);
-/// assert!(evaluation.evidence.is_empty());
+/// let results = commit_message::check("feat: add login", &Definition::default()).unwrap();
+/// let eval = &results[0];
+/// assert_eq!(eval.target, "feat: add login");
+/// assert!(eval.is_pass());
 /// ```
 #[derive(Debug, PartialEq)]
-pub struct CheckOutcome {
+pub struct Evaluation {
     pub target: String,
-    pub result: Result<Evaluation, ExecutionError>,
+    pub outcome: Outcome,
 }
 
-impl CheckOutcome {
+impl Evaluation {
     #[must_use]
     pub fn is_pass(&self) -> bool {
-        self.result.as_ref().is_ok_and(|e| e.status == Status::Pass)
+        matches!(&self.outcome, Outcome::Completed { status, .. } if *status == Status::Pass)
     }
 
     #[must_use]
     pub fn is_warn(&self) -> bool {
-        self.result.as_ref().is_ok_and(|e| e.status == Status::Warn)
+        matches!(&self.outcome, Outcome::Completed { status, .. } if *status == Status::Warn)
     }
 
     #[must_use]
     pub fn is_fail(&self) -> bool {
-        self.result.as_ref().is_ok_and(|e| e.status == Status::Fail)
+        matches!(&self.outcome, Outcome::Completed { status, .. } if *status == Status::Fail)
     }
 
     #[must_use]
     pub fn is_error(&self) -> bool {
-        self.result.is_err()
+        matches!(&self.outcome, Outcome::Errored(_))
+    }
+}
+
+/// What happened when a check ran against a target.
+#[derive(Debug, PartialEq)]
+pub enum Outcome {
+    Completed {
+        status: Status,
+        observed: u64,
+        thresholds: Thresholds,
+        evidence: Vec<Evidence>,
+    },
+    Errored(ExecutionError),
+}
+
+impl Outcome {
+    #[must_use]
+    pub fn completed(observed: u64, thresholds: Thresholds, evidence: Vec<Evidence>) -> Self {
+        Self::Completed {
+            status: derive_status(observed, &thresholds),
+            observed,
+            thresholds,
+            evidence,
+        }
     }
 }
 
@@ -155,15 +154,16 @@ pub enum Expected {
 /// the rule name alone isn't enough to act on.
 ///
 /// ```
-/// use scute_core::commit_message;
-/// use scute_core::commit_message::Definition;
+/// use scute_core::{Evidence, Expected};
 ///
-/// let outcome = commit_message::check("banana: do stuff", &Definition::default());
-/// let evaluation = outcome.result.unwrap();
-///
-/// assert_eq!(evaluation.evidence[0].rule.as_deref(), Some("unknown-type"));
-/// assert_eq!(evaluation.evidence[0].found, "banana");
-/// assert!(evaluation.evidence[0].expected.is_some());
+/// let e = Evidence::with_expected(
+///     "unknown-type",
+///     "banana",
+///     Expected::List(vec!["feat".into(), "fix".into()]),
+/// );
+/// assert_eq!(e.rule.as_deref(), Some("unknown-type"));
+/// assert_eq!(e.found, "banana");
+/// assert!(e.expected.is_some());
 /// ```
 #[derive(Debug, PartialEq, Serialize)]
 pub struct Evidence {
@@ -335,5 +335,59 @@ mod tests {
         let status = derive_status(5, &thresholds);
 
         assert_eq!(status, Status::Pass);
+    }
+
+    #[test]
+    fn evaluation_is_pass_for_completed_pass() {
+        let eval = Evaluation {
+            target: "test".into(),
+            outcome: Outcome::completed(
+                0,
+                Thresholds {
+                    warn: None,
+                    fail: Some(0),
+                },
+                vec![],
+            ),
+        };
+
+        assert!(eval.is_pass());
+        assert!(!eval.is_fail());
+        assert!(!eval.is_warn());
+        assert!(!eval.is_error());
+    }
+
+    #[test]
+    fn evaluation_is_fail_for_completed_fail() {
+        let eval = Evaluation {
+            target: "test".into(),
+            outcome: Outcome::completed(
+                1,
+                Thresholds {
+                    warn: None,
+                    fail: Some(0),
+                },
+                vec![],
+            ),
+        };
+
+        assert!(eval.is_fail());
+        assert!(!eval.is_pass());
+    }
+
+    #[test]
+    fn evaluation_is_error_for_errored_outcome() {
+        let eval = Evaluation {
+            target: "test".into(),
+            outcome: Outcome::Errored(ExecutionError {
+                code: "boom".into(),
+                message: "broken".into(),
+                recovery: "fix".into(),
+            }),
+        };
+
+        assert!(eval.is_error());
+        assert!(!eval.is_pass());
+        assert!(!eval.is_fail());
     }
 }
