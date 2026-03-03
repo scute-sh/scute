@@ -210,50 +210,62 @@ mod tests {
     use crate::Status;
     use googletest::prelude::*;
 
+    struct Completed {
+        status: Status,
+        observed: u64,
+        thresholds: Thresholds,
+        evidence: Vec<Evidence>,
+    }
+
+    fn unwrap_completed(outcome: Outcome) -> Completed {
+        match outcome {
+            Outcome::Completed {
+                status,
+                observed,
+                thresholds,
+                evidence,
+            } => Completed {
+                status,
+                observed,
+                thresholds,
+                evidence,
+            },
+            other => panic!("expected Completed, got {other:?}"),
+        }
+    }
+
     #[test]
     fn no_outdated_deps_returns_pass_with_all_fields() {
-        let Outcome::Completed {
-            status,
-            observed,
-            thresholds,
-            evidence,
-        } = evaluate(&[], &Definition::default())
-        else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate(&[], &Definition::default()));
 
-        assert_eq!(status, Status::Pass);
-        assert_eq!(observed, 0);
+        assert_eq!(c.status, Status::Pass);
+        assert_eq!(c.observed, 0);
         assert_eq!(
-            thresholds,
+            c.thresholds,
             Thresholds {
                 warn: None,
                 fail: Some(0)
             }
         );
-        assert!(evidence.is_empty());
+        assert!(c.evidence.is_empty());
     }
 
     #[test]
     fn reports_outdated_dep_count() {
         let deps = vec![dep("a", "1.0.0", "2.0.0"), dep("b", "2.0.0", "3.0.0")];
 
-        let Outcome::Completed { observed, .. } = evaluate(&deps, &Definition::default()) else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate(&deps, &Definition::default()));
 
-        assert_eq!(observed, 2);
+        assert_eq!(c.observed, 2);
     }
 
     #[test]
     fn outdated_deps_above_threshold_fails() {
         let deps = vec![dep("a", "1.0.0", "2.0.0")];
 
-        let Outcome::Completed { status, .. } = evaluate(&deps, &Definition::default()) else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate(&deps, &Definition::default()));
 
-        assert_eq!(status, Status::Fail);
+        assert_eq!(c.status, Status::Fail);
     }
 
     #[test]
@@ -275,15 +287,10 @@ mod tests {
             ..Definition::default()
         };
 
-        let Outcome::Completed {
-            observed, status, ..
-        } = evaluate(&deps, &definition)
-        else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate(&deps, &definition));
 
-        assert_eq!(observed, 5);
-        assert_eq!(status, Status::Fail);
+        assert_eq!(c.observed, 5);
+        assert_eq!(c.status, Status::Fail);
     }
 
     #[test]
@@ -297,50 +304,37 @@ mod tests {
             ..Definition::default()
         };
 
-        let Outcome::Completed {
-            observed, status, ..
-        } = evaluate(&deps, &definition)
-        else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate(&deps, &definition));
 
-        assert_eq!(observed, 2);
-        assert_eq!(status, Status::Pass);
+        assert_eq!(c.observed, 2);
+        assert_eq!(c.status, Status::Pass);
     }
 
     #[test]
     fn evidence_contains_dep_name_current_and_latest() {
         let deps = vec![dep("a", "1.0.0", "2.0.0")];
 
-        let Outcome::Completed { evidence, .. } = evaluate(&deps, &Definition::default()) else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate(&deps, &Definition::default()));
 
-        assert_eq!(evidence.len(), 1);
-        assert_eq!(evidence[0].found, "a 1.0.0");
-        assert_eq!(evidence[0].expected, Some(Expected::Text("2.0.0".into())));
+        assert_eq!(c.evidence.len(), 1);
+        assert_eq!(c.evidence[0].found, "a 1.0.0");
+        assert_eq!(c.evidence[0].expected, Some(Expected::Text("2.0.0".into())));
     }
 
     #[test]
     fn evidence_rule_reflects_outdated_kind() {
         let deps = vec![dep("a", "1.0.0", "2.0.0")];
 
-        let Outcome::Completed { evidence, .. } = evaluate(&deps, &Definition::default()) else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate(&deps, &Definition::default()));
 
-        assert_that!(evidence[0].rule, some(eq("outdated-major")));
+        assert_that!(c.evidence[0].rule, some(eq("outdated-major")));
     }
 
     #[test]
     fn no_definition_defaults_to_major_level() {
-        let Outcome::Completed { observed, .. } =
-            evaluate(&deps_at_every_level(), &Definition::default())
-        else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate(&deps_at_every_level(), &Definition::default()));
 
-        assert_eq!(observed, 1);
+        assert_eq!(c.observed, 1);
     }
 
     #[test]
@@ -350,12 +344,9 @@ mod tests {
             ..Definition::default()
         };
 
-        let Outcome::Completed { observed, .. } = evaluate(&deps_at_every_level(), &definition)
-        else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate(&deps_at_every_level(), &definition));
 
-        assert_eq!(observed, 1);
+        assert_eq!(c.observed, 1);
     }
 
     #[test]
@@ -365,12 +356,9 @@ mod tests {
             ..Definition::default()
         };
 
-        let Outcome::Completed { observed, .. } = evaluate(&deps_at_every_level(), &definition)
-        else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate(&deps_at_every_level(), &definition));
 
-        assert_eq!(observed, 2);
+        assert_eq!(c.observed, 2);
     }
 
     #[test]
@@ -380,12 +368,9 @@ mod tests {
             ..Definition::default()
         };
 
-        let Outcome::Completed { observed, .. } = evaluate(&deps_at_every_level(), &definition)
-        else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate(&deps_at_every_level(), &definition));
 
-        assert_eq!(observed, 3);
+        assert_eq!(c.observed, 3);
     }
 
     fn dep(name: &str, current: &str, latest: &str) -> OutdatedDep {
