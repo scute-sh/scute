@@ -208,238 +208,183 @@ mod tests {
     use crate::Status;
     use googletest::prelude::*;
 
+    struct Completed {
+        status: Status,
+        observed: u64,
+        thresholds: Thresholds,
+        evidence: Vec<Evidence>,
+    }
+
+    fn unwrap_completed(outcome: Outcome) -> Completed {
+        match outcome {
+            Outcome::Completed {
+                status,
+                observed,
+                thresholds,
+                evidence,
+            } => Completed {
+                status,
+                observed,
+                thresholds,
+                evidence,
+            },
+            other => panic!("expected Completed, got {other:?}"),
+        }
+    }
+
     #[test]
     fn message_without_colon_space_separator_fails() {
-        let Outcome::Completed {
-            status,
-            observed,
-            evidence,
-            ..
-        } = evaluate("no separator here", &Definition::default())
-        else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate("no separator here", &Definition::default()));
 
-        assert_eq!(status, Status::Fail);
-        assert_eq!(observed, 1);
-        assert_that!(evidence[0].rule, some(eq("subject-format")));
-        assert_eq!(evidence[0].found, "no separator here");
+        assert_eq!(c.status, Status::Fail);
+        assert_eq!(c.observed, 1);
+        assert_that!(c.evidence[0].rule, some(eq("subject-format")));
+        assert_eq!(c.evidence[0].found, "no separator here");
     }
 
     #[test]
     fn rejects_unknown_type() {
-        let Outcome::Completed {
-            status, evidence, ..
-        } = evaluate("banana: do something", &Definition::default())
-        else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate("banana: do something", &Definition::default()));
 
-        assert_eq!(status, Status::Fail);
-        assert_that!(evidence[0].rule, some(eq("unknown-type")));
-        assert_eq!(evidence[0].found, "banana");
+        assert_eq!(c.status, Status::Fail);
+        assert_that!(c.evidence[0].rule, some(eq("unknown-type")));
+        assert_eq!(c.evidence[0].found, "banana");
     }
 
     #[test]
     fn unknown_type_expected_lists_valid_types() {
-        let Outcome::Completed { evidence, .. } =
-            evaluate("banana: do something", &Definition::default())
-        else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate("banana: do something", &Definition::default()));
 
-        assert!(matches!(evidence[0].expected, Some(Expected::List(_))));
+        assert!(matches!(c.evidence[0].expected, Some(Expected::List(_))));
     }
 
     #[test]
     fn rejects_empty_description() {
-        let Outcome::Completed {
-            status, evidence, ..
-        } = evaluate("feat: ", &Definition::default())
-        else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate("feat: ", &Definition::default()));
 
-        assert_eq!(status, Status::Fail);
-        assert_that!(evidence[0].rule, some(eq("empty-description")));
+        assert_eq!(c.status, Status::Fail);
+        assert_that!(c.evidence[0].rule, some(eq("empty-description")));
     }
 
     #[test]
     fn rejects_whitespace_only_description() {
-        let Outcome::Completed {
-            status, evidence, ..
-        } = evaluate("feat:   \t  ", &Definition::default())
-        else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate("feat:   \t  ", &Definition::default()));
 
-        assert_eq!(status, Status::Fail);
-        assert_that!(evidence[0].rule, some(eq("empty-description")));
+        assert_eq!(c.status, Status::Fail);
+        assert_that!(c.evidence[0].rule, some(eq("empty-description")));
     }
 
     #[test]
     fn accepts_type_regardless_of_case() {
-        let Outcome::Completed {
-            status, evidence, ..
-        } = evaluate("Feat: add login", &Definition::default())
-        else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate("Feat: add login", &Definition::default()));
 
-        assert_eq!(status, Status::Pass);
-        assert!(evidence.is_empty());
+        assert_eq!(c.status, Status::Pass);
+        assert!(c.evidence.is_empty());
     }
 
     #[test]
     fn accepts_scope_in_parentheses() {
-        let Outcome::Completed {
-            status, evidence, ..
-        } = evaluate("feat(auth): add login", &Definition::default())
-        else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate("feat(auth): add login", &Definition::default()));
 
-        assert_eq!(status, Status::Pass);
-        assert!(evidence.is_empty());
+        assert_eq!(c.status, Status::Pass);
+        assert!(c.evidence.is_empty());
     }
 
     #[test]
     fn rejects_empty_scope() {
-        let Outcome::Completed {
-            status, evidence, ..
-        } = evaluate("feat(): add login", &Definition::default())
-        else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate("feat(): add login", &Definition::default()));
 
-        assert_eq!(status, Status::Fail);
-        assert_that!(evidence[0].rule, some(eq("empty-scope")));
+        assert_eq!(c.status, Status::Fail);
+        assert_that!(c.evidence[0].rule, some(eq("empty-scope")));
     }
 
     #[test]
     fn accepts_breaking_change_indicator() {
-        let Outcome::Completed {
-            status, evidence, ..
-        } = evaluate("feat!: breaking change", &Definition::default())
-        else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate("feat!: breaking change", &Definition::default()));
 
-        assert_eq!(status, Status::Pass);
-        assert!(evidence.is_empty());
+        assert_eq!(c.status, Status::Pass);
+        assert!(c.evidence.is_empty());
     }
 
     #[test]
     fn accepts_scope_with_breaking_change() {
-        let Outcome::Completed {
-            status, evidence, ..
-        } = evaluate("feat(api)!: remove endpoint", &Definition::default())
-        else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate(
+            "feat(api)!: remove endpoint",
+            &Definition::default(),
+        ));
 
-        assert_eq!(status, Status::Pass);
-        assert!(evidence.is_empty());
+        assert_eq!(c.status, Status::Pass);
+        assert!(c.evidence.is_empty());
     }
 
     #[test]
     fn multiple_violations_produce_multiple_evidence_entries() {
-        let Outcome::Completed {
-            status,
-            observed,
-            evidence,
-            ..
-        } = evaluate("banana: ", &Definition::default())
-        else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate("banana: ", &Definition::default()));
 
-        assert_eq!(status, Status::Fail);
-        assert_eq!(observed, 1);
-        assert_eq!(evidence.len(), 2);
-        assert_that!(evidence[0].rule, some(eq("unknown-type")));
-        assert_that!(evidence[1].rule, some(eq("empty-description")));
+        assert_eq!(c.status, Status::Fail);
+        assert_eq!(c.observed, 1);
+        assert_eq!(c.evidence.len(), 2);
+        assert_that!(c.evidence[0].rule, some(eq("unknown-type")));
+        assert_that!(c.evidence[1].rule, some(eq("empty-description")));
     }
 
     #[test]
     fn rejects_body_not_separated_by_blank_line() {
-        let Outcome::Completed {
-            status, evidence, ..
-        } = evaluate(
+        let c = unwrap_completed(evaluate(
             "feat: add login\nThis is not separated.",
             &Definition::default(),
-        )
-        else {
-            panic!("expected Completed");
-        };
+        ));
 
-        assert_eq!(status, Status::Fail);
-        assert_that!(evidence[0].rule, some(eq("body-separator")));
-        assert_eq!(evidence[0].found, "This is not separated.");
-        assert_eq!(evidence[0].expected, None);
+        assert_eq!(c.status, Status::Fail);
+        assert_that!(c.evidence[0].rule, some(eq("body-separator")));
+        assert_eq!(c.evidence[0].found, "This is not separated.");
+        assert_eq!(c.evidence[0].expected, None);
     }
 
     #[test]
     fn valid_message_with_footer_passes() {
-        let Outcome::Completed {
-            status, evidence, ..
-        } = evaluate(
+        let c = unwrap_completed(evaluate(
             "feat: add login\n\nSome body text.\n\nReviewed-by: Alice",
             &Definition::default(),
-        )
-        else {
-            panic!("expected Completed");
-        };
+        ));
 
-        assert_eq!(status, Status::Pass);
-        assert!(evidence.is_empty());
+        assert_eq!(c.status, Status::Pass);
+        assert!(c.evidence.is_empty());
     }
 
     #[test]
     fn accepts_footer_with_hash_value_format() {
-        let Outcome::Completed {
-            status, evidence, ..
-        } = evaluate("fix: resolve bug\n\nFixes #123", &Definition::default())
-        else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate(
+            "fix: resolve bug\n\nFixes #123",
+            &Definition::default(),
+        ));
 
-        assert_eq!(status, Status::Pass);
-        assert!(evidence.is_empty());
+        assert_eq!(c.status, Status::Pass);
+        assert!(c.evidence.is_empty());
     }
 
     #[test]
     fn rejects_malformed_footer() {
-        let Outcome::Completed {
-            status, evidence, ..
-        } = evaluate(
+        let c = unwrap_completed(evaluate(
             "feat: add login\n\nSome body.\n\nReviewed-by: Alice\nnot a valid footer",
             &Definition::default(),
-        )
-        else {
-            panic!("expected Completed");
-        };
+        ));
 
-        assert_eq!(status, Status::Fail);
-        assert_that!(evidence[0].rule, some(eq("footer-format")));
-        assert_eq!(evidence[0].found, "not a valid footer");
+        assert_eq!(c.status, Status::Fail);
+        assert_that!(c.evidence[0].rule, some(eq("footer-format")));
+        assert_eq!(c.evidence[0].found, "not a valid footer");
     }
 
     #[test]
     fn rejects_lowercase_breaking_change_footer() {
-        let Outcome::Completed {
-            status, evidence, ..
-        } = evaluate(
+        let c = unwrap_completed(evaluate(
             "feat!: drop API\n\nbreaking change: removed endpoint",
             &Definition::default(),
-        )
-        else {
-            panic!("expected Completed");
-        };
+        ));
 
-        assert_eq!(status, Status::Fail);
-        assert_that!(evidence[0].rule, some(eq("breaking-change-case")));
-        assert_eq!(evidence[0].found, "breaking change");
+        assert_eq!(c.status, Status::Fail);
+        assert_that!(c.evidence[0].rule, some(eq("breaking-change-case")));
+        assert_eq!(c.evidence[0].found, "breaking change");
     }
 
     #[test]
@@ -455,65 +400,44 @@ mod tests {
 
     #[test]
     fn rejects_empty_commit_message() {
-        let Outcome::Completed {
-            status, evidence, ..
-        } = evaluate("", &Definition::default())
-        else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate("", &Definition::default()));
 
-        assert_eq!(status, Status::Fail);
-        assert_that!(evidence[0].rule, some(eq("subject-format")));
+        assert_eq!(c.status, Status::Fail);
+        assert_that!(c.evidence[0].rule, some(eq("subject-format")));
     }
 
     #[test]
     fn rejects_whitespace_only_commit_message() {
-        let Outcome::Completed { status, .. } = evaluate("   \n  \n ", &Definition::default())
-        else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate("   \n  \n ", &Definition::default()));
 
-        assert_eq!(status, Status::Fail);
+        assert_eq!(c.status, Status::Fail);
     }
 
     #[test]
     fn valid_message_with_body_passes() {
-        let Outcome::Completed {
-            status, evidence, ..
-        } = evaluate(
+        let c = unwrap_completed(evaluate(
             "feat: add login\n\nThis adds the login flow.",
             &Definition::default(),
-        )
-        else {
-            panic!("expected Completed");
-        };
+        ));
 
-        assert_eq!(status, Status::Pass);
-        assert!(evidence.is_empty());
+        assert_eq!(c.status, Status::Pass);
+        assert!(c.evidence.is_empty());
     }
 
     #[test]
     fn valid_message_returns_pass_with_all_fields() {
-        let Outcome::Completed {
-            status,
-            observed,
-            thresholds,
-            evidence,
-        } = evaluate("feat: add login", &Definition::default())
-        else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate("feat: add login", &Definition::default()));
 
-        assert_eq!(status, Status::Pass);
-        assert_eq!(observed, 0);
+        assert_eq!(c.status, Status::Pass);
+        assert_eq!(c.observed, 0);
         assert_eq!(
-            thresholds,
+            c.thresholds,
             Thresholds {
                 warn: None,
                 fail: Some(0)
             }
         );
-        assert!(evidence.is_empty());
+        assert!(c.evidence.is_empty());
     }
 
     #[test]
@@ -533,12 +457,10 @@ mod tests {
             ..Definition::default()
         };
 
-        let Outcome::Completed { thresholds, .. } = evaluate("feat: add login", &definition) else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate("feat: add login", &definition));
 
         assert_eq!(
-            thresholds,
+            c.thresholds,
             Thresholds {
                 warn: Some(1),
                 fail: Some(3),
@@ -548,14 +470,10 @@ mod tests {
 
     #[test]
     fn subject_format_expected_describes_format() {
-        let Outcome::Completed { evidence, .. } =
-            evaluate("no separator here", &Definition::default())
-        else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate("no separator here", &Definition::default()));
 
         assert_eq!(
-            evidence[0].expected,
+            c.evidence[0].expected,
             Some(Expected::Text("type(scope): description".into()))
         );
     }
@@ -567,42 +485,36 @@ mod tests {
             ..Definition::default()
         };
 
-        let Outcome::Completed { evidence, .. } = evaluate("feat: add login", &definition) else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate("feat: add login", &definition));
 
         assert_eq!(
-            evidence[0].expected,
+            c.evidence[0].expected,
             Some(Expected::List(vec!["hotfix".into(), "deploy".into()]))
         );
     }
 
     #[test]
     fn footer_format_expected_describes_format() {
-        let Outcome::Completed { evidence, .. } = evaluate(
+        let c = unwrap_completed(evaluate(
             "feat: add login\n\nSome body.\n\nReviewed-by: Alice\nnot a valid footer",
             &Definition::default(),
-        ) else {
-            panic!("expected Completed");
-        };
+        ));
 
         assert_eq!(
-            evidence[0].expected,
+            c.evidence[0].expected,
             Some(Expected::Text("token: value | token #value".into()))
         );
     }
 
     #[test]
     fn breaking_change_case_expected_shows_valid_casings() {
-        let Outcome::Completed { evidence, .. } = evaluate(
+        let c = unwrap_completed(evaluate(
             "feat!: drop API\n\nbreaking change: removed endpoint",
             &Definition::default(),
-        ) else {
-            panic!("expected Completed");
-        };
+        ));
 
         assert_eq!(
-            evidence[0].expected,
+            c.evidence[0].expected,
             Some(Expected::List(vec![
                 "BREAKING CHANGE".into(),
                 "BREAKING-CHANGE".into(),
@@ -617,14 +529,9 @@ mod tests {
             ..Definition::default()
         };
 
-        let Outcome::Completed {
-            status, evidence, ..
-        } = evaluate("hotfix: urgent patch", &definition)
-        else {
-            panic!("expected Completed");
-        };
+        let c = unwrap_completed(evaluate("hotfix: urgent patch", &definition));
 
-        assert_eq!(status, Status::Pass);
-        assert!(evidence.is_empty());
+        assert_eq!(c.status, Status::Pass);
+        assert!(c.evidence.is_empty());
     }
 }
