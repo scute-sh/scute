@@ -70,12 +70,22 @@ value.
 - **Duplicated domain strings.** The same concept hardcoded as a string
   literal in multiple places. The coupling is implicit and breaks silently
   when one occurrence changes without the other.
+- **Overparameterization.** (×1) Extracting a helper but keeping the
+  hardcoded value as a parameter instead of encapsulating it. If every
+  call site passes the same value, the helper should own that value.
+- **Solution-space anchoring.** (×1) Fixating on how existing code works
+  (helpers, models, constructors) instead of stepping back to the problem
+  space. Leads to contorted designs that serve the implementation rather than
+  the user. The question should always be "what does the consumer need?" not
+  "how do I make the data fit the current helper?"
 - **Premature design.** (×2) Designing based on anticipated needs instead of
   letting usage drive the shape. If nothing uses it yet, it shouldn't exist yet.
 - **Premature optimization.** Adding complexity to avoid trivial costs.
   Extra variables, match arms, or type gymnastics to save an allocation
   that doesn't matter. Simplicity wins until profiling says otherwise.
-- **Poor variable names.** Names that don't communicate intent or that mislead.
+- **Poor variable names.** (×3) Names that don't communicate intent or that mislead.
+  Defaulting to abbreviations instead of treating naming as a design decision.
+  Repeatedly corrected on the same pattern.
 - **Formatting and linting not enforced.** (×2) Tools exist but aren't wired
   into the workflow. The codebase drifts from its own standards one PR at a
   time. Trivially automatable, yet consistently overlooked.

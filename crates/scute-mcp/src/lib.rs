@@ -100,15 +100,15 @@ impl ScuteMcp {
         Parameters(input): Parameters<CheckDependencyFreshnessInput>,
     ) -> Result<CallToolResult, ErrorData> {
         let project_root = resolve_project_root(&peer).await?;
-        let path = match input.path {
-            Some(p) => PathBuf::from(p),
-            None => project_root.clone(),
-        };
+        let target = input
+            .path
+            .map(PathBuf::from)
+            .unwrap_or(project_root.clone());
         let definition = match scute_config::load_freshness_definition(&project_root) {
             Ok(def) => def,
             Err(e) => return config_error(dependency_freshness::CHECK_NAME, &e),
         };
-        let result = dependency_freshness::check(&path, &definition);
+        let result = dependency_freshness::check(&target, &definition);
         report_to_result(&CheckReport::new(dependency_freshness::CHECK_NAME, result))
     }
 }

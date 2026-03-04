@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use crate::{Evaluation, Evidence, ExecutionError, Expected, Outcome, Thresholds};
+use crate::{Evaluation, Evidence, ExecutionError, Expected, Outcome, Status, Thresholds};
 
 pub const CHECK_NAME: &str = "dependency-freshness";
 
@@ -52,6 +52,31 @@ impl OutdatedDep {
             Level::Patch
         }
     }
+
+    fn gap(&self) -> u64 {
+        match self.kind() {
+            Level::Major => self.latest.major - self.current.major,
+            Level::Minor => self.latest.minor - self.current.minor,
+            Level::Patch => self.latest.patch - self.current.patch,
+        }
+    }
+
+    fn measure_gap(&self, level: Level, configured_thresholds: &Thresholds) -> (u64, Thresholds) {
+        use std::cmp::Ordering;
+        match self.kind().cmp(&level) {
+            Ordering::Greater => (self.gap(), ZERO_TOLERANCE),
+            Ordering::Equal => (self.gap(), configured_thresholds.clone()),
+            Ordering::Less => (0, configured_thresholds.clone()),
+        }
+    }
+
+    fn to_evidence(&self) -> Evidence {
+        Evidence::with_expected(
+            &format!("outdated-{}", self.kind()),
+            &format!("{} {}", self.name, self.current),
+            Expected::Text(self.latest.to_string()),
+        )
+    }
 }
 
 /// Run the dependency-freshness check against a Cargo project.
@@ -69,10 +94,7 @@ pub fn check(target: &Path, definition: &Definition) -> Result<Vec<Evaluation>, 
 
     let outdated = fetch_outdated(&resolved).map_err(classify_error)?;
 
-    Ok(vec![Evaluation {
-        target: resolved.display().to_string(),
-        outcome: evaluate(&outdated, definition),
-    }])
+    Ok(evaluate(&resolved, &outdated, definition))
 }
 
 #[derive(Debug)]
@@ -148,23 +170,50 @@ pub fn fetch_outdated(target: &Path) -> Result<Vec<OutdatedDep>, FetchError> {
     Ok(parse_cargo_outdated(&stdout))
 }
 
-fn evaluate(outdated: &[OutdatedDep], definition: &Definition) -> Outcome {
-    let level = definition.level.unwrap_or_default();
-    let evidence: Vec<Evidence> = outdated
-        .iter()
-        .filter(|dep| dep.kind() >= level)
-        .map(|dep| {
-            Evidence::with_expected(
-                &format!("outdated-{}", dep.kind()),
-                &format!("{} {}", dep.name, dep.current),
-                Expected::Text(dep.latest.to_string()),
-            )
-        })
-        .collect();
-    let observed = evidence.len() as u64;
-    let thresholds = definition.thresholds.clone().unwrap_or(DEFAULT_THRESHOLDS);
+const ZERO_TOLERANCE: Thresholds = Thresholds {
+    warn: None,
+    fail: Some(0),
+};
 
-    Outcome::completed(observed, thresholds, evidence)
+fn evaluate(target: &Path, outdated: &[OutdatedDep], definition: &Definition) -> Vec<Evaluation> {
+    let level = definition.level.unwrap_or_default();
+    let configured_thresholds = definition.thresholds.clone().unwrap_or(DEFAULT_THRESHOLDS);
+
+    if outdated.is_empty() {
+        return vec![Evaluation {
+            target: target.display().to_string(),
+            outcome: Outcome::completed(0, configured_thresholds, vec![]),
+        }];
+    }
+
+    outdated
+        .iter()
+        .map(|dependency| evaluate_dependency(dependency, level, &configured_thresholds))
+        .collect()
+}
+
+fn evaluate_dependency(
+    dependency: &OutdatedDep,
+    level: Level,
+    configured_thresholds: &Thresholds,
+) -> Evaluation {
+    let (observed, effective_thresholds) = dependency.measure_gap(level, configured_thresholds);
+    let status = crate::derive_status(observed, &effective_thresholds);
+    let evidence = if status == Status::Pass {
+        vec![]
+    } else {
+        vec![dependency.to_evidence()]
+    };
+
+    Evaluation {
+        target: dependency.name.clone(),
+        outcome: Outcome::Completed {
+            status,
+            observed,
+            thresholds: effective_thresholds,
+            evidence,
+        },
+    }
 }
 
 #[must_use]
@@ -204,170 +253,17 @@ fn parse_cargo_outdated(output: &str) -> Vec<OutdatedDep> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Status;
+    use crate::Expected;
     use googletest::prelude::*;
 
-    struct Completed {
-        status: Status,
-        observed: u64,
-        thresholds: Thresholds,
-        evidence: Vec<Evidence>,
+    fn evaluate_all(deps: &[OutdatedDep], definition: &Definition) -> Vec<Evaluation> {
+        evaluate(Path::new("/any"), deps, definition)
     }
 
-    fn unwrap_completed(outcome: Outcome) -> Completed {
-        match outcome {
-            Outcome::Completed {
-                status,
-                observed,
-                thresholds,
-                evidence,
-            } => Completed {
-                status,
-                observed,
-                thresholds,
-                evidence,
-            },
-            other => panic!("expected Completed, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn no_outdated_deps_returns_pass_with_all_fields() {
-        let c = unwrap_completed(evaluate(&[], &Definition::default()));
-
-        assert_eq!(c.status, Status::Pass);
-        assert_eq!(c.observed, 0);
-        assert_eq!(
-            c.thresholds,
-            Thresholds {
-                warn: None,
-                fail: Some(0)
-            }
-        );
-        assert!(c.evidence.is_empty());
-    }
-
-    #[test]
-    fn reports_outdated_dep_count() {
-        let deps = vec![dep("a", "1.0.0", "2.0.0"), dep("b", "2.0.0", "3.0.0")];
-
-        let c = unwrap_completed(evaluate(&deps, &Definition::default()));
-
-        assert_eq!(c.observed, 2);
-    }
-
-    #[test]
-    fn outdated_deps_above_threshold_fails() {
-        let deps = vec![dep("a", "1.0.0", "2.0.0")];
-
-        let c = unwrap_completed(evaluate(&deps, &Definition::default()));
-
-        assert_eq!(c.status, Status::Fail);
-    }
-
-    #[test]
-    fn custom_fail_threshold_overrides_default() {
-        let deps: Vec<OutdatedDep> = (0..5)
-            .map(|i| {
-                dep(
-                    &format!("d{i}"),
-                    &format!("{i}.0.0"),
-                    &format!("{}.0.0", i + 1),
-                )
-            })
-            .collect();
-        let definition = Definition {
-            thresholds: Some(Thresholds {
-                warn: None,
-                fail: Some(3),
-            }),
-            ..Definition::default()
-        };
-
-        let c = unwrap_completed(evaluate(&deps, &definition));
-
-        assert_eq!(c.observed, 5);
-        assert_eq!(c.status, Status::Fail);
-    }
-
-    #[test]
-    fn observed_below_warn_threshold_passes() {
-        let deps = vec![dep("a", "1.0.0", "2.0.0"), dep("b", "2.0.0", "3.0.0")];
-        let definition = Definition {
-            thresholds: Some(Thresholds {
-                warn: Some(3),
-                fail: Some(10),
-            }),
-            ..Definition::default()
-        };
-
-        let c = unwrap_completed(evaluate(&deps, &definition));
-
-        assert_eq!(c.observed, 2);
-        assert_eq!(c.status, Status::Pass);
-    }
-
-    #[test]
-    fn evidence_contains_dep_name_current_and_latest() {
-        let deps = vec![dep("a", "1.0.0", "2.0.0")];
-
-        let c = unwrap_completed(evaluate(&deps, &Definition::default()));
-
-        assert_eq!(c.evidence.len(), 1);
-        assert_eq!(c.evidence[0].found, "a 1.0.0");
-        assert_eq!(c.evidence[0].expected, Some(Expected::Text("2.0.0".into())));
-    }
-
-    #[test]
-    fn evidence_rule_reflects_outdated_kind() {
-        let deps = vec![dep("a", "1.0.0", "2.0.0")];
-
-        let c = unwrap_completed(evaluate(&deps, &Definition::default()));
-
-        assert_that!(c.evidence[0].rule, some(eq("outdated-major")));
-    }
-
-    #[test]
-    fn no_definition_defaults_to_major_level() {
-        let c = unwrap_completed(evaluate(&deps_at_every_level(), &Definition::default()));
-
-        assert_eq!(c.observed, 1);
-    }
-
-    #[test]
-    fn major_level_excludes_minor_gap_deps() {
-        let definition = Definition {
-            level: Some(Level::Major),
-            ..Definition::default()
-        };
-
-        let c = unwrap_completed(evaluate(&deps_at_every_level(), &definition));
-
-        assert_eq!(c.observed, 1);
-    }
-
-    #[test]
-    fn minor_level_includes_major_and_minor_gaps() {
-        let definition = Definition {
-            level: Some(Level::Minor),
-            ..Definition::default()
-        };
-
-        let c = unwrap_completed(evaluate(&deps_at_every_level(), &definition));
-
-        assert_eq!(c.observed, 2);
-    }
-
-    #[test]
-    fn patch_level_includes_all_gaps() {
-        let definition = Definition {
-            level: Some(Level::Patch),
-            ..Definition::default()
-        };
-
-        let c = unwrap_completed(evaluate(&deps_at_every_level(), &definition));
-
-        assert_eq!(c.observed, 3);
+    fn evaluate_one(dep: OutdatedDep, definition: &Definition) -> Evaluation {
+        let mut evals = evaluate_all(&[dep], definition);
+        assert_eq!(evals.len(), 1, "expected exactly one evaluation");
+        evals.remove(0)
     }
 
     fn dep(name: &str, current: &str, latest: &str) -> OutdatedDep {
@@ -378,12 +274,194 @@ mod tests {
         }
     }
 
-    fn deps_at_every_level() -> Vec<OutdatedDep> {
-        vec![
-            dep("a", "1.0.0", "2.0.0"),
-            dep("b", "1.0.0", "1.1.0"),
-            dep("c", "1.0.0", "1.0.1"),
-        ]
+    fn patch_level_with_thresholds(warn: u64, fail: u64) -> Definition {
+        Definition {
+            level: Some(Level::Patch),
+            thresholds: Some(Thresholds {
+                warn: Some(warn),
+                fail: Some(fail),
+            }),
+        }
+    }
+
+    fn major_level_with_thresholds(warn: u64, fail: u64) -> Definition {
+        Definition {
+            level: Some(Level::Major),
+            thresholds: Some(Thresholds {
+                warn: Some(warn),
+                fail: Some(fail),
+            }),
+        }
+    }
+
+    fn extract_observed(outcome: &Outcome) -> u64 {
+        match outcome {
+            Outcome::Completed { observed, .. } => *observed,
+            other => panic!("expected Completed, got {other:?}"),
+        }
+    }
+
+    fn extract_evidence(outcome: &Outcome) -> &[Evidence] {
+        match outcome {
+            Outcome::Completed { evidence, .. } => evidence,
+            other => panic!("expected Completed, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn single_major_dep_at_default_level_fails() {
+        let eval = evaluate_one(dep("a", "1.0.0", "2.0.0"), &Definition::default());
+
+        assert!(eval.is_fail());
+    }
+
+    #[test]
+    fn major_gap_is_observed_value() {
+        let eval = evaluate_one(dep("a", "1.0.0", "3.0.0"), &Definition::default());
+
+        assert_that!(extract_observed(&eval.outcome), eq(2));
+    }
+
+    #[test]
+    fn evaluation_target_is_dep_name() {
+        let eval = evaluate_one(dep("serde", "1.0.0", "2.0.0"), &Definition::default());
+
+        assert_eq!(eval.target, "serde");
+    }
+
+    #[test]
+    fn same_level_gap_within_warn_threshold_passes() {
+        let definition = patch_level_with_thresholds(2, 5);
+
+        let eval = evaluate_one(dep("a", "1.0.0", "1.0.1"), &definition);
+
+        assert!(eval.is_pass());
+    }
+
+    #[test]
+    fn passing_evaluation_has_no_evidence() {
+        let definition = patch_level_with_thresholds(2, 5);
+
+        let eval = evaluate_one(dep("a", "1.0.0", "1.0.1"), &definition);
+
+        assert_that!(extract_evidence(&eval.outcome), is_empty());
+    }
+
+    #[test]
+    fn same_level_gap_between_warn_and_fail_warns() {
+        let definition = patch_level_with_thresholds(2, 5);
+
+        let eval = evaluate_one(dep("a", "1.0.0", "1.0.4"), &definition);
+
+        assert!(eval.is_warn());
+    }
+
+    #[test]
+    fn same_level_gap_above_fail_threshold_fails() {
+        let definition = patch_level_with_thresholds(2, 5);
+
+        let eval = evaluate_one(dep("a", "1.0.0", "1.0.8"), &definition);
+
+        assert!(eval.is_fail());
+    }
+
+    #[test]
+    fn non_passing_evidence_includes_rule_and_versions() {
+        let definition = patch_level_with_thresholds(2, 5);
+
+        let eval = evaluate_one(dep("a", "1.0.0", "1.0.4"), &definition);
+
+        assert_that!(
+            extract_evidence(&eval.outcome)[0].rule,
+            some(eq("outdated-patch"))
+        );
+    }
+
+    #[test]
+    fn evidence_found_shows_dep_name_and_current_version() {
+        let definition = patch_level_with_thresholds(2, 5);
+
+        let eval = evaluate_one(dep("serde", "1.0.0", "1.0.4"), &definition);
+
+        let evidence = extract_evidence(&eval.outcome);
+        assert_eq!(evidence[0].found, "serde 1.0.0");
+    }
+
+    #[test]
+    fn evidence_expected_shows_latest_version() {
+        let definition = patch_level_with_thresholds(2, 5);
+
+        let eval = evaluate_one(dep("a", "1.0.0", "1.0.4"), &definition);
+
+        let evidence = extract_evidence(&eval.outcome);
+        assert_eq!(evidence[0].expected, Some(Expected::Text("1.0.4".into())));
+    }
+
+    #[test]
+    fn superior_drift_fails_with_zero_tolerance() {
+        let definition = patch_level_with_thresholds(2, 5);
+
+        let eval = evaluate_one(dep("a", "1.0.1", "1.1.0"), &definition);
+
+        assert!(eval.is_fail());
+    }
+
+    #[test]
+    fn superior_drift_uses_gap_at_superior_level() {
+        let definition = patch_level_with_thresholds(2, 5);
+
+        let eval = evaluate_one(dep("a", "1.0.1", "1.1.0"), &definition);
+
+        assert_that!(extract_observed(&eval.outcome), eq(1));
+    }
+
+    #[test]
+    fn superior_drift_evidence_uses_superior_kind() {
+        let definition = patch_level_with_thresholds(2, 5);
+
+        let eval = evaluate_one(dep("a", "1.0.1", "1.1.0"), &definition);
+
+        assert_that!(
+            extract_evidence(&eval.outcome)[0].rule,
+            some(eq("outdated-minor"))
+        );
+    }
+
+    #[test]
+    fn kind_below_configured_level_passes() {
+        let definition = major_level_with_thresholds(1, 3);
+
+        let eval = evaluate_one(dep("a", "1.0.0", "1.0.5"), &definition);
+
+        assert!(eval.is_pass());
+    }
+
+    #[test]
+    fn kind_below_configured_level_has_zero_observed() {
+        let definition = major_level_with_thresholds(1, 3);
+
+        let eval = evaluate_one(dep("a", "1.0.0", "1.0.5"), &definition);
+
+        assert_that!(extract_observed(&eval.outcome), eq(0));
+    }
+
+    #[test]
+    fn no_outdated_deps_returns_passing_evaluation() {
+        let evals = evaluate_all(&[], &Definition::default());
+
+        assert_eq!(evals.len(), 1);
+        assert!(evals[0].is_pass());
+    }
+
+    #[test]
+    fn multiple_deps_return_one_evaluation_per_dep() {
+        let deps = [dep("a", "1.0.0", "2.0.0"), dep("b", "1.0.0", "3.0.0")];
+
+        let evals = evaluate_all(&deps, &Definition::default());
+
+        assert_eq!(evals.len(), 2);
+        assert_eq!(evals[0].target, "a");
+        assert_eq!(evals[1].target, "b");
     }
 
     #[test]

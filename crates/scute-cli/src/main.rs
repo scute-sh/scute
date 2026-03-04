@@ -1,4 +1,5 @@
 use std::io::{IsTerminal, Read};
+use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -71,7 +72,7 @@ fn run(cli: Cli) -> Result<()> {
     match cli.command {
         Commands::Mcp => scute_mcp::run().map_err(|e| anyhow::anyhow!(e)),
         Commands::Check { check } => {
-            let cwd = std::env::current_dir()?;
+            let project_root = project_root();
             match check {
                 Checks::List => {
                     let checks = [commit_message::CHECK_NAME, dependency_freshness::CHECK_NAME];
@@ -80,17 +81,14 @@ fn run(cli: Cli) -> Result<()> {
                 }
                 Checks::CommitMessage { message } => {
                     let message = resolve_message(message)?;
-                    let definition = scute_config::load_commit_message_definition(&cwd)
+                    let definition = scute_config::load_commit_message_definition(&project_root)
                         .unwrap_or_else(|e| invalid_config(&e));
                     let result = commit_message::check(&message, &definition);
                     output(&CheckReport::new(commit_message::CHECK_NAME, result))
                 }
                 Checks::DependencyFreshness { path } => {
-                    let target = match path {
-                        Some(p) => p.into(),
-                        None => cwd.clone(),
-                    };
-                    let definition = scute_config::load_freshness_definition(&cwd)
+                    let target = resolve_target_path(path);
+                    let definition = scute_config::load_freshness_definition(&project_root)
                         .unwrap_or_else(|e| invalid_config(&e));
                     let result = dependency_freshness::check(&target, &definition);
                     output(&CheckReport::new(dependency_freshness::CHECK_NAME, result))
@@ -163,6 +161,14 @@ fn output(report: &CheckReport) -> Result<()> {
         std::process::exit(1);
     }
     Ok(())
+}
+
+fn project_root() -> PathBuf {
+    std::env::current_dir().expect("working directory accessible")
+}
+
+fn resolve_target_path(path: Option<String>) -> PathBuf {
+    path.map_or_else(project_root, PathBuf::from)
 }
 
 fn resolve_message(arg: Option<String>) -> Result<String> {

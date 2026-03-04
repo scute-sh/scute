@@ -107,15 +107,6 @@ mod dependency_freshness {
 
     #[test_case(Cli)]
     #[test_case(Mcp)]
-    fn without_path_defaults_to_working_directory(interface: Interface) {
-        Scute::new(interface)
-            .dependency("itoa", "=0.4.8")
-            .check(&["dependency-freshness"])
-            .expect_target_matches_dir();
-    }
-
-    #[test_case(Cli)]
-    #[test_case(Mcp)]
     fn nonexistent_path_produces_error(interface: Interface) {
         Scute::new(interface)
             .check(&["dependency-freshness", "/nonexistent/path"])
