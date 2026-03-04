@@ -1,12 +1,13 @@
-- we are in **2026**, forward this to all subagents
 - See @README for the overview of what Scute is about.
-- See @handbook/vision.md @handbook/attributes.md and @handbook/roadmap.md to understand more about the project context, goals, and the direction we're headed.
+- See @handbook/vision.md @handbook/attributes.md @handbook/roadmap.md for project context, goals, and direction.
+- Don't be lazy. Don't cut corners. Think before applying a pattern.
+- Before implementing a non-trivial solution, present 2-3 alternatives with trade-offs. We decide together, then build.
 
 # Workflow
 
 ## Feedback Loops and How to Self-Correct
 
-We use the MCP Scute to give you strong feedback loops so you can correct yourself as you work. Use the provided tools actively during the process. Abuse it to your advantage.
+We use the MCP Scute to give you strong feedback loops so you can correct yourself as you work. Use them proactively and aggressively. Don't wait to be told.
 
 ## 🛑 When course-corrected
 
@@ -27,7 +28,8 @@ When you need to understand how something behaves (an API, an edge case, a libra
 
 ## Before committing
 
-Run all three, in this order: `cargo fmt`, `cargo clippy`, `cargo test`. All must pass. Don't treat "tests pass" as "ready to commit."
+- Run all three, in this order: `cargo fmt`, `cargo clippy`, `cargo test`. All must pass. Don't treat "tests pass" as "ready to commit."
+- Take a step back, and think. Don't blindly follow the workflow.
 
 # Testing
 

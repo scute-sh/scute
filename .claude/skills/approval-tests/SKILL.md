@@ -77,19 +77,19 @@ See language references for implementation details.
 
 Detect language from project files, then read the appropriate reference for installation, quick start, core patterns, and links to deeper reference files:
 
+- [rust.md](rust.md) - Rust (`Cargo.toml`)
 - [python.md](python.md) - Python (`pyproject.toml`, `setup.py`, `requirements.txt`)
 - [nodejs.md](nodejs.md) - JavaScript/TypeScript (`package.json`)
 - [java.md](java.md) - Java (`pom.xml`, `build.gradle`)
 
 ## Anti-Patterns
 
-- Don't write assertions for complex objects - use verify_as_json() instead
-- Don't commit .received files - they're temporary
+- Don't write assertions for complex objects - use snapshot verification instead
+- Don't commit temporary files (`.received` / `.snap.new`) - they're transient
 - Don't forget scrubbers for timestamps, GUIDs, random values
 - Don't over-verify - one approval per logical behavior. Large approvals hide signal in noise; unrelated changes break tests.
-- Don't hand-edit .approved files - always generate via test. Hand-edited files may not match actual code output.
-- Don't use verify_all for structured data - use `verify_as_json({"items": items})`
+- Don't hand-edit approved files - always generate via test. Hand-edited files may not match actual code output.
 - Don't mix approvals with assertions - the approval captures everything
-- Don't call verify() multiple times without NamerFactory - each overwrites the same file
+- Don't call verify() multiple times without distinct names - each overwrites the same file
 
 Flaky tests across environments usually means unscrubbed dynamic data (timestamps, UUIDs, ports, paths).

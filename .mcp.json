@@ -2,7 +2,7 @@
   "mcpServers": {
     "scute": {
       "type": "stdio",
-      "command": "./scute",
+      "command": "scute",
       "args": ["mcp"]
     }
   }
