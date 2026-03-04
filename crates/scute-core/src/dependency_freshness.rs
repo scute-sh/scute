@@ -28,6 +28,11 @@ const DEFAULT_THRESHOLDS: Thresholds = Thresholds {
     fail: Some(0),
 };
 
+const ZERO_TOLERANCE: Thresholds = Thresholds {
+    warn: None,
+    fail: Some(0),
+};
+
 #[derive(Debug, Default)]
 pub struct Definition {
     pub level: Option<Level>,
@@ -35,13 +40,13 @@ pub struct Definition {
 }
 
 #[derive(Debug)]
-pub struct OutdatedDep {
+pub struct OutdatedDependency {
     pub name: String,
     pub current: semver::Version,
     pub latest: semver::Version,
 }
 
-impl OutdatedDep {
+impl OutdatedDependency {
     #[must_use]
     pub fn kind(&self) -> Level {
         if self.current.major != self.latest.major {
@@ -55,9 +60,9 @@ impl OutdatedDep {
 
     fn gap(&self) -> u64 {
         match self.kind() {
-            Level::Major => self.latest.major - self.current.major,
-            Level::Minor => self.latest.minor - self.current.minor,
-            Level::Patch => self.latest.patch - self.current.patch,
+            Level::Major => self.latest.major.saturating_sub(self.current.major),
+            Level::Minor => self.latest.minor.saturating_sub(self.current.minor),
+            Level::Patch => self.latest.patch.saturating_sub(self.current.patch),
         }
     }
 
@@ -153,7 +158,7 @@ fn classify_error(err: FetchError) -> ExecutionError {
 }
 
 #[doc(hidden)]
-pub fn fetch_outdated(target: &Path) -> Result<Vec<OutdatedDep>, FetchError> {
+pub fn fetch_outdated(target: &Path) -> Result<Vec<OutdatedDependency>, FetchError> {
     let output = std::process::Command::new("cargo")
         .args(["outdated", "--format", "json", "--depth", "1"])
         .current_dir(target)
@@ -170,12 +175,11 @@ pub fn fetch_outdated(target: &Path) -> Result<Vec<OutdatedDep>, FetchError> {
     Ok(parse_cargo_outdated(&stdout))
 }
 
-const ZERO_TOLERANCE: Thresholds = Thresholds {
-    warn: None,
-    fail: Some(0),
-};
-
-fn evaluate(target: &Path, outdated: &[OutdatedDep], definition: &Definition) -> Vec<Evaluation> {
+fn evaluate(
+    target: &Path,
+    outdated: &[OutdatedDependency],
+    definition: &Definition,
+) -> Vec<Evaluation> {
     let level = definition.level.unwrap_or_default();
     let configured_thresholds = definition.thresholds.clone().unwrap_or(DEFAULT_THRESHOLDS);
 
@@ -193,7 +197,7 @@ fn evaluate(target: &Path, outdated: &[OutdatedDep], definition: &Definition) ->
 }
 
 fn evaluate_dependency(
-    dependency: &OutdatedDep,
+    dependency: &OutdatedDependency,
     level: Level,
     configured_thresholds: &Thresholds,
 ) -> Evaluation {
@@ -217,37 +221,36 @@ fn evaluate_dependency(
 }
 
 #[must_use]
-fn parse_cargo_outdated(output: &str) -> Vec<OutdatedDep> {
-    let mut deps = Vec::new();
-    for line in output.lines() {
-        let Ok(v) = serde_json::from_str::<serde_json::Value>(line) else {
-            continue;
-        };
-        if let Some(entries) = v["dependencies"].as_array() {
-            for entry in entries {
-                let name = entry["name"].as_str().unwrap_or("");
-                let current = entry["project"].as_str().unwrap_or("");
-                let latest = entry["latest"].as_str().unwrap_or("");
-                if latest == "---" || latest == "Removed" {
-                    continue;
-                }
-                let (Ok(current), Ok(latest)) = (
-                    current.parse::<semver::Version>(),
-                    latest.parse::<semver::Version>(),
-                ) else {
-                    continue;
-                };
-                if current != latest {
-                    deps.push(OutdatedDep {
-                        name: name.into(),
-                        current,
-                        latest,
-                    });
-                }
-            }
-        }
+fn parse_cargo_outdated(output: &str) -> Vec<OutdatedDependency> {
+    output
+        .lines()
+        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
+        .flat_map(|v| {
+            v.get("dependencies")
+                .and_then(|d| d.as_array().cloned())
+                .unwrap_or_default()
+        })
+        .filter_map(|entry| parse_dependency(&entry))
+        .collect()
+}
+
+fn parse_dependency(entry: &serde_json::Value) -> Option<OutdatedDependency> {
+    let name = entry["name"].as_str()?;
+    let current_str = entry["project"].as_str()?;
+    let latest_str = entry["latest"].as_str()?;
+
+    if latest_str == "---" || latest_str == "Removed" {
+        return None;
     }
-    deps
+
+    let current = current_str.parse::<semver::Version>().ok()?;
+    let latest = latest_str.parse::<semver::Version>().ok()?;
+
+    (current != latest).then(|| OutdatedDependency {
+        name: name.into(),
+        current,
+        latest,
+    })
 }
 
 #[cfg(test)]
@@ -256,18 +259,18 @@ mod tests {
     use crate::Expected;
     use googletest::prelude::*;
 
-    fn evaluate_all(deps: &[OutdatedDep], definition: &Definition) -> Vec<Evaluation> {
+    fn evaluate_all(deps: &[OutdatedDependency], definition: &Definition) -> Vec<Evaluation> {
         evaluate(Path::new("/any"), deps, definition)
     }
 
-    fn evaluate_one(dep: OutdatedDep, definition: &Definition) -> Evaluation {
+    fn evaluate_one(dep: OutdatedDependency, definition: &Definition) -> Evaluation {
         let mut evals = evaluate_all(&[dep], definition);
         assert_eq!(evals.len(), 1, "expected exactly one evaluation");
         evals.remove(0)
     }
 
-    fn dep(name: &str, current: &str, latest: &str) -> OutdatedDep {
-        OutdatedDep {
+    fn dep(name: &str, current: &str, latest: &str) -> OutdatedDependency {
+        OutdatedDependency {
             name: name.into(),
             current: current.parse().unwrap(),
             latest: latest.parse().unwrap(),
@@ -323,7 +326,7 @@ mod tests {
     }
 
     #[test]
-    fn evaluation_target_is_dep_name() {
+    fn evaluation_target_is_dependency_name() {
         let eval = evaluate_one(dep("serde", "1.0.0", "2.0.0"), &Definition::default());
 
         assert_eq!(eval.target, "serde");
@@ -500,5 +503,77 @@ mod tests {
         let result = classify_error(err);
 
         assert_eq!(result.code, "tool_failed");
+    }
+
+    #[test]
+    fn parses_empty_output_as_no_deps() {
+        assert!(parse_cargo_outdated("").is_empty());
+    }
+
+    #[test]
+    fn parses_empty_dependencies_array_as_no_deps() {
+        assert!(parse_cargo_outdated(r#"{"dependencies":[]}"#).is_empty());
+    }
+
+    #[test]
+    fn mixed_levels_evaluate_independently() {
+        let deps = [dep("a", "1.0.0", "1.0.5"), dep("b", "1.0.0", "2.0.0")];
+        let definition = Definition {
+            level: Some(Level::Patch),
+            thresholds: Some(Thresholds {
+                warn: Some(2),
+                fail: Some(10),
+            }),
+        };
+
+        let evals = evaluate_all(&deps, &definition);
+
+        assert!(evals[0].is_warn(), "patch drift at patch level should warn");
+        assert!(
+            evals[1].is_fail(),
+            "major drift at patch level should fail (superior drift)"
+        );
+    }
+
+    #[test]
+    fn gap_saturates_on_downgrade() {
+        let d = dep("a", "2.0.0", "1.0.0");
+
+        assert_eq!(d.gap(), 0);
+    }
+
+    #[test]
+    fn skips_non_json_lines() {
+        let output = "some garbage\n{\"dependencies\":[]}\nmore garbage";
+
+        assert!(parse_cargo_outdated(output).is_empty());
+    }
+
+    #[test]
+    fn skips_entries_with_unparseable_versions() {
+        let output = r#"{"dependencies":[{"name":"a","project":"not-semver","latest":"1.0.0"}]}"#;
+
+        assert!(parse_cargo_outdated(output).is_empty());
+    }
+
+    #[test]
+    fn skips_entries_with_removed_latest() {
+        let output = r#"{"dependencies":[{"name":"a","project":"1.0.0","latest":"Removed"}]}"#;
+
+        assert!(parse_cargo_outdated(output).is_empty());
+    }
+
+    #[test]
+    fn skips_entries_with_dashes_latest() {
+        let output = r#"{"dependencies":[{"name":"a","project":"1.0.0","latest":"---"}]}"#;
+
+        assert!(parse_cargo_outdated(output).is_empty());
+    }
+
+    #[test]
+    fn skips_entries_where_current_equals_latest() {
+        let output = r#"{"dependencies":[{"name":"a","project":"1.0.0","latest":"1.0.0"}]}"#;
+
+        assert!(parse_cargo_outdated(output).is_empty());
     }
 }
