@@ -172,6 +172,52 @@ value.
   have. The copy is plausible but wrong because nobody checked the
   implementation before writing it.
 
+## Agent-Driven Codebase Decay
+
+The entries above describe bad practices that agents amplify. The entries below
+are different: they describe **emergent properties** of codebases where agents
+are the primary code producers. Individual commits look fine. The damage is
+cumulative and only visible when you zoom out.
+
+The root cause is the same across all of them: **agents optimize locally, not
+globally.** They solve the task in front of them without considering the
+codebase as a whole. A human dev with taste would feel the drift, open a file
+and think "this is getting unwieldy." An agent never has that moment.
+
+- **Additive-only growth.** Agents add code but never subtract. No proactive
+  refactoring, no splitting a module that's taken on too much responsibility.
+  The codebase grows linearly with features instead of logarithmically. Files
+  get longer, modules accumulate concerns, but nothing gets restructured
+  unless someone explicitly asks. Over time, the cost of each new change
+  increases because nothing was simplified along the way.
+- **Structural duplication.** Not copy-paste (that's detectable with basic
+  tooling). Agents write new functions that do 80% of what an existing
+  function does because they didn't look hard enough or didn't think about
+  composability. Three slightly different implementations of the same logic,
+  each locally clean, collectively a maintenance burden. The duplication is
+  semantic, not textual, which makes it invisible to naive detection.
+- **Global incoherence.** Each change is locally correct but globally
+  inconsistent. One module uses pattern A, another uses pattern B for the
+  same problem. No ubiquitous language, no conceptual integrity across
+  modules. The codebase reads like it was written by a different person every
+  day, because it effectively was. Nobody is minding the whole.
+- **Unnecessary abstraction.** Interfaces with one implementation. Factories
+  that build one thing. Strategy patterns where a plain function would do.
+  Agents apply patterns from their training data regardless of whether the
+  current context warrants them. The result is over-engineered code that's
+  harder to read and harder to change than the naive version would have been.
+- **Module bloat.** Files and modules keep growing instead of being split.
+  Public API surface expands disproportionally to functionality. No agent
+  looks at a module and thinks "this has too many responsibilities." They
+  add the next function where it seems to fit, and the module quietly
+  becomes a god object.
+- **Hidden change coupling.** Files that always change together but aren't
+  co-located. The import graph looks clean, but in practice, touching
+  module A means you always need to touch module B. These invisible
+  dependencies accumulate because agents don't track cross-cutting change
+  patterns across sessions. The coupling only surfaces when a "simple
+  change" cascades into five files across three modules.
+
 ---
 
 ## How to Read This
