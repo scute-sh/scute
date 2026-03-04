@@ -343,7 +343,7 @@ Only after all gates pass: Feature is complete.
 
 ### Cleanup
 
-Delete playground files (`{feature-name}-criteria.md`, `{feature-name}-scout.md`, `{feature-name}-sketch.md`).
+Remove playground files from disk (`{feature-name}-criteria.md`, `{feature-name}-scout.md`, `{feature-name}-sketch.md`). These are working files, not tracked by git.
 
 ---
 
