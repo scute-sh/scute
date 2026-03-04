@@ -173,7 +173,7 @@ Choose based on slice type:
 - **Integration/API** → `/tdd` with contract tests
 - **UI/Output formatting** → `/approval-tests`
 
-The invoked skill handles red-green-refactor. This skill handles orchestration.
+Properly invoke (load) the selected skill. It handles red-green-refactor and the build workflow.
 
 ### Build Loop (per slice)
 

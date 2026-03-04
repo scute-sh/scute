@@ -4,6 +4,10 @@
 
 # Workflow
 
+## Feedback Loops and How to Self-Correct
+
+We use the MCP Scute to give you strong feedback loops so you can correct yourself as you work. Use the provided tools actively during the process. Abuse it to your advantage.
+
 ## 🛑 When course-corrected
 
 **Trigger:** The user corrects, reminds, or redirects you. This includes explicit corrections AND gentle nudges like "did you forget...?"
