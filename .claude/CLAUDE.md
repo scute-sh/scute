@@ -28,7 +28,7 @@ When you need to understand how something behaves (an API, an edge case, a libra
 
 ## Before committing
 
-- Run all three, in this order: `cargo fmt`, `cargo clippy`, `cargo test`. All must pass. Don't treat "tests pass" as "ready to commit."
+- Run all three, in this order: `cargo fmt`, `cargo clippy --all-targets`, `cargo test`. All must pass. Don't treat "tests pass" as "ready to commit."
 - Take a step back, and think. Don't blindly follow the workflow.
 
 # Testing
