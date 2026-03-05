@@ -225,4 +225,4 @@ about software, watch the repo, open issues, start conversations.
 
 ## License
 
-TBD. Will be a permissive open-source license.
+Apache 2.0. See [LICENSE](LICENSE).
