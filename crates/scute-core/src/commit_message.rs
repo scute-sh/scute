@@ -228,7 +228,7 @@ mod tests {
                 thresholds,
                 evidence,
             },
-            other => panic!("expected Completed, got {other:?}"),
+            other @ Outcome::Errored(_) => panic!("expected Completed, got {other:?}"),
         }
     }
 

@@ -300,14 +300,14 @@ mod tests {
     fn extract_observed(outcome: &Outcome) -> u64 {
         match outcome {
             Outcome::Completed { observed, .. } => *observed,
-            other => panic!("expected Completed, got {other:?}"),
+            other @ Outcome::Errored(_) => panic!("expected Completed, got {other:?}"),
         }
     }
 
     fn extract_evidence(outcome: &Outcome) -> &[Evidence] {
         match outcome {
             Outcome::Completed { evidence, .. } => evidence,
-            other => panic!("expected Completed, got {other:?}"),
+            other @ Outcome::Errored(_) => panic!("expected Completed, got {other:?}"),
         }
     }
 
