@@ -1,7 +1,9 @@
+mod check;
 mod detect;
 pub mod language;
 mod tokenize;
 
+pub use check::{CHECK_NAME, Definition, check};
 pub use detect::{CloneGroup, Occurrence, detect_clones};
 pub use language::{LanguageConfig, NodeRole};
 pub use tokenize::{Token, TokenizeError, tokenize};

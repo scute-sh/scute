@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use scute_core::{Thresholds, commit_message, dependency_freshness};
+use scute_core::{Thresholds, code_similarity, commit_message, dependency_freshness};
 use serde::Deserialize;
 
 #[derive(Deserialize)]
@@ -70,6 +70,39 @@ fn strip_internal_types(msg: &str) -> String {
         }
     }
     msg.to_string()
+}
+
+pub fn load_code_similarity_definition(
+    dir: &Path,
+) -> Result<code_similarity::Definition, ConfigError> {
+    let entry = load_check_entry(dir, code_similarity::CHECK_NAME)?;
+    code_similarity_definition_from(entry)
+}
+
+fn code_similarity_definition_from(
+    entry: Option<CheckEntry>,
+) -> Result<code_similarity::Definition, ConfigError> {
+    let Some(entry) = entry else {
+        return Ok(code_similarity::Definition::default());
+    };
+    let min_tokens = match entry.config {
+        Some(c) => {
+            serde_json::from_value::<CodeSimilarityConfig>(c)
+                .map_err(|e| ConfigError::InvalidCheckConfig(e.to_string()))?
+                .min_tokens
+        }
+        None => None,
+    };
+    Ok(code_similarity::Definition {
+        min_tokens,
+        thresholds: entry.thresholds,
+    })
+}
+
+#[derive(Deserialize)]
+struct CodeSimilarityConfig {
+    #[serde(alias = "min-tokens")]
+    min_tokens: Option<usize>,
 }
 
 #[derive(Deserialize)]
@@ -188,6 +221,49 @@ mod tests {
         );
 
         assert!(freshness_definition_from(Some(entry)).is_err());
+    }
+
+    #[test]
+    fn no_entry_returns_default_code_similarity_definition() {
+        let definition = code_similarity_definition_from(None).unwrap();
+
+        assert_eq!(definition.min_tokens, None);
+        assert_eq!(definition.thresholds, None);
+    }
+
+    #[test]
+    fn code_similarity_config_reads_min_tokens_from_entry() {
+        let entry = check_entry_from_yaml(
+            r"
+            config:
+              min-tokens: 10
+            ",
+        );
+
+        let definition = code_similarity_definition_from(Some(entry)).unwrap();
+
+        assert_eq!(definition.min_tokens, Some(10));
+    }
+
+    #[test]
+    fn code_similarity_config_reads_thresholds_from_entry() {
+        let entry = check_entry_from_yaml(
+            r"
+            thresholds:
+              warn: 20
+              fail: 50
+            ",
+        );
+
+        let definition = code_similarity_definition_from(Some(entry)).unwrap();
+
+        assert_eq!(
+            definition.thresholds,
+            Some(Thresholds {
+                warn: Some(20),
+                fail: Some(50),
+            })
+        );
     }
 
     fn check_entry_from_yaml(yaml: &str) -> CheckEntry {

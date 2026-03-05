@@ -80,6 +80,11 @@ impl Scute {
         self
     }
 
+    pub fn source_file(mut self, name: &str, content: &str) -> Self {
+        self.project = self.project.source_file(name, content);
+        self
+    }
+
     pub fn scute_config(mut self, yaml: &str) -> Self {
         self.project = self.project.scute_config(yaml);
         self

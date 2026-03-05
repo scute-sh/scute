@@ -19,3 +19,4 @@ tree-sitter-typescript = "0.23"
 googletest = { workspace = true }
 insta = "1"
 scute-test-utils = { path = "../scute-test-utils" }
+tempfile = "3"

@@ -7,7 +7,7 @@ mod output;
 
 use output::CheckReportJson;
 use scute_core::report::CheckReport;
-use scute_core::{ExecutionError, commit_message, dependency_freshness};
+use scute_core::{ExecutionError, code_similarity, commit_message, dependency_freshness};
 use serde::Serialize;
 
 #[derive(Debug, Parser)]
@@ -39,6 +39,11 @@ enum Checks {
     CommitMessage {
         /// Commit message to check
         message: Option<String>,
+    },
+    /// Find code duplication
+    CodeSimilarity {
+        /// Path to the project directory (defaults to working directory)
+        path: Option<String>,
     },
     /// Find outdated dependencies
     DependencyFreshness {
@@ -75,9 +80,20 @@ fn run(cli: Cli) -> Result<()> {
             let project_root = project_root();
             match check {
                 Checks::List => {
-                    let checks = [commit_message::CHECK_NAME, dependency_freshness::CHECK_NAME];
+                    let checks = [
+                        code_similarity::CHECK_NAME,
+                        commit_message::CHECK_NAME,
+                        dependency_freshness::CHECK_NAME,
+                    ];
                     println!("{}", serde_json::to_string(&checks)?);
                     Ok(())
+                }
+                Checks::CodeSimilarity { path } => {
+                    let target = resolve_target_path(path);
+                    let definition = scute_config::load_code_similarity_definition(&project_root)
+                        .unwrap_or_else(|e| invalid_config(&e));
+                    let result = code_similarity::check(&target, &definition);
+                    output(&CheckReport::new(code_similarity::CHECK_NAME, result))
                 }
                 Checks::CommitMessage { message } => {
                     let message = resolve_message(message)?;
@@ -110,7 +126,8 @@ fn classify_clap_error(err: &clap::Error) -> ExecutionError {
                 code: "unknown_check".into(),
                 message: format!("unknown check: {name}"),
                 recovery: format!(
-                    "available checks: {}, {}",
+                    "available checks: {}, {}, {}",
+                    code_similarity::CHECK_NAME,
                     commit_message::CHECK_NAME,
                     dependency_freshness::CHECK_NAME
                 ),

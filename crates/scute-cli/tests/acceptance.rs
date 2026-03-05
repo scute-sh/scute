@@ -159,6 +159,38 @@ checks:
     }
 }
 
+mod code_similarity {
+    use scute_test_utils::{Interface, Scute};
+    use test_case::test_case;
+
+    use Interface::Cli;
+
+    #[test_case(Cli)]
+    fn duplicated_code_reports_failure(interface: Interface) {
+        Scute::new(interface)
+            .source_file("a.rs", "fn foo(x: i32) -> i32 { x + 1 }")
+            .source_file("b.rs", "fn bar(y: i32) -> i32 { y + 1 }")
+            .scute_config(
+                r"
+checks:
+  code-similarity:
+    thresholds:
+      fail: 0
+    config:
+      min_tokens: 5
+",
+            )
+            .check(&["code-similarity"])
+            .expect_fail();
+    }
+    #[test_case(Cli)]
+    fn nonexistent_path_produces_error(interface: Interface) {
+        Scute::new(interface)
+            .check(&["code-similarity", "/nonexistent/path"])
+            .expect_error("invalid_target");
+    }
+}
+
 mod config {
     use scute_test_utils::{Interface, Scute};
     use test_case::test_case;

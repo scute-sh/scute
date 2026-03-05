@@ -943,6 +943,7 @@ dependencies = [
  "semver",
  "serde",
  "serde_json",
+ "tempfile",
  "tree-sitter",
  "tree-sitter-rust",
  "tree-sitter-typescript",

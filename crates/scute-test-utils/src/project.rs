@@ -9,6 +9,7 @@ pub struct TestProject {
     kind: ProjectKind,
     dependencies: Vec<(String, String)>,
     dev_dependencies: Vec<(String, String)>,
+    source_files: Vec<(String, String)>,
     scute_config: Option<String>,
 }
 
@@ -18,6 +19,7 @@ impl TestProject {
             kind: ProjectKind::Empty,
             dependencies: Vec::new(),
             dev_dependencies: Vec::new(),
+            source_files: Vec::new(),
             scute_config: None,
         }
     }
@@ -27,6 +29,7 @@ impl TestProject {
             kind: ProjectKind::Cargo,
             dependencies: Vec::new(),
             dev_dependencies: Vec::new(),
+            source_files: Vec::new(),
             scute_config: None,
         }
     }
@@ -41,6 +44,11 @@ impl TestProject {
         self
     }
 
+    pub fn source_file(mut self, name: &str, content: &str) -> Self {
+        self.source_files.push((name.into(), content.into()));
+        self
+    }
+
     pub fn scute_config(mut self, yaml: &str) -> Self {
         self.scute_config = Some(yaml.into());
         self
@@ -50,6 +58,13 @@ impl TestProject {
         let dir = TempDir::new().unwrap();
         if matches!(self.kind, ProjectKind::Cargo) {
             setup_cargo_project(&dir, &self.dependencies, &self.dev_dependencies);
+        }
+        for (name, content) in &self.source_files {
+            let path = dir.path().join(name);
+            if let Some(parent) = path.parent() {
+                std::fs::create_dir_all(parent).unwrap();
+            }
+            std::fs::write(path, content).unwrap();
         }
         if let Some(yaml) = &self.scute_config {
             std::fs::write(dir.path().join(".scute.yml"), yaml).unwrap();

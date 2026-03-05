@@ -8,3 +8,9 @@ checks:
       fail: 8
     config:
       level: minor
+  code-similarity:
+    thresholds:
+      warn: 150
+      fail: 200
+    config:
+      min-tokens: 25

@@ -5,6 +5,7 @@
 //!
 //! # Available checks
 //!
+//! - [`code_similarity::check`] — Code duplication detection
 //! - [`commit_message`] — Conventional Commits validation
 //! - [`dependency_freshness`] — Cargo dependency freshness
 

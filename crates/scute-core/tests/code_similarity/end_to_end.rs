@@ -1,26 +1,8 @@
-use scute_core::code_similarity::{CloneGroup, SourceEntry, find_clones, language};
+use scute_core::code_similarity::{SourceEntry, find_clones, language};
+
+use super::helpers::snapshot;
 
 const LOW_TOKEN_THRESHOLD: usize = 10;
-
-fn snapshot(groups: &[CloneGroup]) -> String {
-    if groups.is_empty() {
-        return "(no clones)".to_string();
-    }
-    groups
-        .iter()
-        .enumerate()
-        .map(|(i, g)| {
-            let header = format!("Group {} ({} tokens):", i + 1, g.token_count);
-            let occs: Vec<String> = g
-                .occurrences
-                .iter()
-                .map(|o| format!("  {}:{}-{}", o.source_id, o.start_line, o.end_line))
-                .collect();
-            format!("{header}\n{}", occs.join("\n"))
-        })
-        .collect::<Vec<_>>()
-        .join("\n\n")
-}
 
 #[test]
 fn detects_duplication_across_rust_files() {
