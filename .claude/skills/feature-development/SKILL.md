@@ -24,16 +24,23 @@ Multi-phase workflow for complex features: requirements → design → TDD → h
 
 ## Phase 1: Understand
 
-**Goal**: Know exactly what success looks like before writing code.
+**Goal**: Know exactly what success looks like before even thinking about code.
+
+Stay in the problem space. If you're naming functions, data structures, or config keys, you've left the problem space.
 
 1. Restate the requirement in your own words
-2. Identify:
+2. **Map persona scenarios** — For each persona, describe:
+   - Who are they?
+   - What triggers them to reach for this feature?
+   - What are they trying to accomplish?
+   - What does a good outcome look like from their perspective?
+3. From those scenarios, identify:
    - **Inputs**: What data/events trigger this feature?
    - **Outputs**: What should change? What should users see?
    - **Boundaries**: What's explicitly out of scope?
    - **Unknowns**: What needs clarification?
-3. If unknowns exist, ask the user — don't guess on important decisions
-4. Write acceptance criteria to `playground/{feature-name}-criteria.md`:
+4. If unknowns exist, ask the user — don't guess on important decisions
+5. Write acceptance criteria to `playground/{feature-name}-criteria.md`:
 
    ```
    # [Feature Name] Acceptance Criteria
