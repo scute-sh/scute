@@ -1,0 +1,7 @@
+---
+source: scute-core/tests/code_similarity/end_to_end.rs
+expression: snapshot(&groups)
+---
+Group 1 (68 tokens):
+  validators/email.rs:1-10
+  validators/username.rs:1-10

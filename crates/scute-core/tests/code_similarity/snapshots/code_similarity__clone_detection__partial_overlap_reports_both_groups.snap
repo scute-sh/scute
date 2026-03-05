@@ -1,0 +1,12 @@
+---
+source: scute-core/tests/code_similarity/clone_detection.rs
+expression: snapshot(&groups)
+---
+Group 1 (37 tokens):
+  a.rs:1-1
+  b.rs:1-1
+
+Group 2 (30 tokens):
+  a.rs:1-1
+  b.rs:1-1
+  c.rs:1-1

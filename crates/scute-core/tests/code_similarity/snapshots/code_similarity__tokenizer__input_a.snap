@@ -1,0 +1,5 @@
+---
+source: scute-core/tests/code_similarity/tokenizer.rs
+expression: "&tokens_a"
+---
+fn $ID ( $ID : $ID , $ID : $ID ) -> $ID { let $ID = $ID ( $ID , $ID , $LIT ) ; if $ID . $ID { return $ID . $ID ; } else { return $LIT ; } }

@@ -1,0 +1,7 @@
+---
+source: scute-core/tests/code_similarity/end_to_end.rs
+expression: snapshot(&groups)
+---
+Group 1 (16 tokens):
+  a.rs:1-1
+  b.rs:1-1

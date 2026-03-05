@@ -1,0 +1,5 @@
+---
+source: scute-core/tests/code_similarity/tokenizer.rs
+expression: "token_labels(source, &language::typescript())"
+---
+const $ID = ( $ID : $ID ) => { $ID . $ID ( $LIT , $ID ) ; return $LIT ; }

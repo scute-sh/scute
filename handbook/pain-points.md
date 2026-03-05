@@ -28,7 +28,7 @@ value.
   structured around Given/When/Then or any recognizable pattern.
 - **Bloated test bodies.** Tests that are too long to scan. The story they tell
   is buried under setup noise and assertion volume.
-- **Logic in tests.** Loops, conditionals, and computation inside test code.
+- **Logic in tests.** (×1) Loops, conditionals, and computation inside test code.
   Tests should be linear and declarative.
 - **Magic values.** Unnamed literals scattered through assertions with no
   indication of what they represent or why that value matters.
@@ -141,7 +141,7 @@ value.
   in principle but applied inconsistently. Fixes address only the examples
   explicitly called out, missing the same issue elsewhere. The pattern is
   understood, but the rigor to apply it exhaustively is missing.
-- **Checklists skipped under momentum.** (×12) Established workflows and
+- **Checklists skipped under momentum.** (×13) Established workflows and
   checklists exist but get bypassed when focus is on "just get the thing done."
   The process is known, the trigger is clear, but urgency wins over discipline.
   Especially common with agents who optimize for task completion over process

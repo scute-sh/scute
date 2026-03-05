@@ -7,10 +7,15 @@ edition = "2024"
 workspace = true
 
 [dependencies]
+libsais = "0.2"
 semver = "1"
 serde = { workspace = true }
 serde_json = { workspace = true }
+tree-sitter = "0.26"
+tree-sitter-rust = "0.24"
+tree-sitter-typescript = "0.23"
 
 [dev-dependencies]
 googletest = { workspace = true }
+insta = "1"
 scute-test-utils = { path = "../scute-test-utils" }
