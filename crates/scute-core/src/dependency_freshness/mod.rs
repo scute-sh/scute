@@ -143,13 +143,15 @@ fn classify_error(err: FetchError) -> ExecutionError {
 pub fn fetch_outdated(target: &Path) -> Result<Vec<OutdatedDependency>, FetchError> {
     let direct_deps = cargo_metadata::collect_direct_deps(target)?;
 
+    let latest_versions = fetch_latest_versions(&direct_deps);
+
     let mut outdated = Vec::new();
     let mut errors = Vec::new();
 
-    for dep in &direct_deps {
-        match crates_io::fetch_latest_version(&dep.name) {
-            Ok(Some(latest)) if latest > dep.version => {
-                outdated.push(as_outdated(dep, latest, target));
+    for (dep, result) in &latest_versions {
+        match result {
+            Ok(Some(latest)) if latest > &dep.version => {
+                outdated.push(as_outdated(dep, latest.clone(), target));
             }
             Ok(_) => {}
             Err(e) => errors.push(format!("{}: {e}", dep.name)),
@@ -177,6 +179,22 @@ fn as_outdated(
         latest,
         location: dep.location_relative_to(target),
     }
+}
+
+fn fetch_latest_versions(
+    deps: &[cargo_metadata::DirectDep],
+) -> Vec<(
+    &cargo_metadata::DirectDep,
+    Result<Option<semver::Version>, FetchError>,
+)> {
+    std::thread::scope(|s| {
+        let handles: Vec<_> = deps
+            .iter()
+            .map(|dep| s.spawn(move || (dep, crates_io::fetch_latest_version(&dep.name))))
+            .collect();
+
+        handles.into_iter().map(|h| h.join().unwrap()).collect()
+    })
 }
 
 fn evaluate(
