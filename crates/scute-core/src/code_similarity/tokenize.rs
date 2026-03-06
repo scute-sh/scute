@@ -74,7 +74,7 @@ fn collect_tokens(
                 tokens.push(Token::new("$LIT", &node));
                 return;
             }
-            NodeRole::Comment => return,
+            NodeRole::Comment | NodeRole::Decoration => return,
             NodeRole::Other => {
                 if node.child_count() == 0 {
                     let text = node.utf8_text(source).unwrap_or("");

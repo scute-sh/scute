@@ -76,3 +76,47 @@ fn transform(a: u32, b: u32) -> u32 {
         "Type-2 clones should normalize to the same token sequence"
     );
 }
+
+#[test]
+fn strips_rust_attributes() {
+    let source = "\
+#[derive(Debug, Clone)]
+#[serde(rename_all = \"camelCase\")]
+struct Foo {
+    bar: String,
+}";
+
+    insta::assert_snapshot!(token_labels(source, &language::rust()));
+}
+
+#[test]
+fn strips_rust_inner_attributes() {
+    let source = "\
+#![allow(unused)]
+fn main() {}";
+
+    insta::assert_snapshot!(token_labels(source, &language::rust()));
+}
+
+#[test]
+fn strips_typescript_decorators() {
+    let source = "\
+@Injectable()
+@Component({ selector: 'app-root' })
+class AppComponent {
+  name: string = 'hello';
+}";
+
+    insta::assert_snapshot!(token_labels(source, &language::typescript()));
+}
+
+#[test]
+fn preserves_macro_invocations() {
+    let source = "\
+fn example() {
+    let v = vec![1, 2, 3];
+    assert_eq!(v.len(), 3);
+}";
+
+    insta::assert_snapshot!(token_labels(source, &language::rust()));
+}

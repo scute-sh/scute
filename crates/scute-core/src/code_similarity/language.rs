@@ -33,6 +33,7 @@ pub enum NodeRole {
     Identifier,
     Literal,
     Comment,
+    Decoration,
     Other,
 }
 
@@ -68,6 +69,10 @@ pub fn rust() -> LanguageConfig {
                 ],
             ),
             (NodeRole::Comment, &["line_comment", "block_comment"]),
+            (
+                NodeRole::Decoration,
+                &["attribute_item", "inner_attribute_item"],
+            ),
         ],
     )
 }
@@ -102,6 +107,7 @@ pub fn typescript() -> LanguageConfig {
                 ],
             ),
             (NodeRole::Comment, &["comment"]),
+            (NodeRole::Decoration, &["decorator"]),
         ],
     )
 }
