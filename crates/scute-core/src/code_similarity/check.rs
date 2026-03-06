@@ -78,7 +78,7 @@ pub fn check(
         Err(errors) => return Ok(errors),
     };
 
-    let sources = read_sources(&canonical_dir)?;
+    let sources = read_sources(&canonical_dir);
     let clone_groups = detect_clones(&sources, min_tokens)?;
     let relevant = filter_by_focus(&clone_groups, &focus_files);
 
@@ -115,17 +115,14 @@ fn filter_by_focus<'a>(
         .collect()
 }
 
-fn read_sources(
-    dir: &Path,
-) -> Result<Vec<(String, String, &'static LanguageConfig)>, ExecutionError> {
-    let files = discover_files(dir)?;
-    Ok(files
+fn read_sources(dir: &Path) -> Vec<(String, String, &'static LanguageConfig)> {
+    discover_files(dir)
         .into_iter()
         .filter_map(|(path, lang)| {
             let content = std::fs::read_to_string(&path).ok()?;
             Some((path.display().to_string(), content, lang))
         })
-        .collect())
+        .collect()
 }
 
 fn validate_source_dir(source_dir: &Path) -> Result<PathBuf, ExecutionError> {
@@ -205,31 +202,22 @@ fn build_evaluations(
         .collect()
 }
 
-fn discover_files(dir: &Path) -> Result<Vec<(PathBuf, &'static LanguageConfig)>, ExecutionError> {
-    let mut files = Vec::new();
-    visit_dir(dir, &mut files).map_err(|e| ExecutionError {
-        code: "invalid_target".into(),
-        message: format!("cannot read directory {}: {e}", dir.display()),
-        recovery: "check that the path exists and is a directory".into(),
-    })?;
+fn discover_files(dir: &Path) -> Vec<(PathBuf, &'static LanguageConfig)> {
+    let mut files = visit_dir(dir);
     files.sort_by(|(a, _), (b, _)| a.cmp(b));
-    Ok(files)
+    files
 }
 
-fn visit_dir(
-    dir: &Path,
-    files: &mut Vec<(PathBuf, &'static LanguageConfig)>,
-) -> std::io::Result<()> {
-    for entry in std::fs::read_dir(dir)? {
-        let entry = entry?;
-        let path = entry.path();
-        if path.is_dir() {
-            visit_dir(&path, files)?;
-        } else if let Some(lang) = language_for_path(&path) {
-            files.push((path, lang));
-        }
-    }
-    Ok(())
+fn visit_dir(dir: &Path) -> Vec<(PathBuf, &'static LanguageConfig)> {
+    ignore::WalkBuilder::new(dir)
+        .build()
+        .filter_map(Result::ok)
+        .filter(|e| e.file_type().is_some_and(|ft| ft.is_file()))
+        .filter_map(|e| {
+            let lang = language_for_path(e.path())?;
+            Some((e.into_path(), lang))
+        })
+        .collect()
 }
 
 fn language_for_path(path: &Path) -> Option<&'static LanguageConfig> {
@@ -301,7 +289,10 @@ mod tests {
 
     const LOW_THRESHOLD: Definition = Definition {
         min_tokens: Some(5),
-        thresholds: None,
+        thresholds: Some(Thresholds {
+            warn: Some(5),
+            fail: Some(10),
+        }),
     };
 
     fn check_dir(dir: &Path) -> Vec<Evaluation> {
@@ -444,6 +435,27 @@ mod tests {
         let evidence = unwrap_evidence(&evals[0]);
         assert_location_contains(evidence, "src");
         assert_location_contains(evidence, "lib");
+    }
+
+    #[test]
+    fn skips_gitignored_directories() {
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        write_file(dir.path(), ".gitignore", "vendor/\n");
+        write_file(dir.path(), "src/a.rs", "fn foo(x: i32) -> i32 { x + 1 }");
+        write_file(
+            dir.path(),
+            "vendor/lib/b.rs",
+            "fn bar(y: i32) -> i32 { y + 1 }",
+        );
+
+        let evals = check_dir(dir.path());
+
+        // vendor/ is gitignored → only src/a.rs discovered → no clone pair
+        assert!(
+            evals.iter().all(Evaluation::is_pass),
+            "vendor/ should be excluded, got: {evals:?}"
+        );
     }
 
     #[test]
