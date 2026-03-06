@@ -19,7 +19,7 @@ use serde::{Deserialize, Serialize};
 /// Whether a check passed, warned, or failed.
 ///
 /// Derived by comparing the `observed` value against [`Thresholds`].
-#[derive(Debug, PartialEq, Serialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Status {
     Pass,

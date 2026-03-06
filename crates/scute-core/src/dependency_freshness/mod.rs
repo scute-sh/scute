@@ -1,3 +1,6 @@
+mod cargo_metadata;
+mod crates_io;
+
 use std::path::Path;
 
 use crate::{Evaluation, Evidence, ExecutionError, Expected, Outcome, Status, Thresholds};
@@ -44,6 +47,7 @@ pub struct OutdatedDependency {
     pub name: String,
     pub current: semver::Version,
     pub latest: semver::Version,
+    pub location: Option<String>,
 }
 
 impl OutdatedDependency {
@@ -76,11 +80,12 @@ impl OutdatedDependency {
     }
 
     fn to_evidence(&self) -> Evidence {
-        Evidence::with_expected(
-            &format!("outdated-{}", self.kind()),
-            &format!("{} {}", self.name, self.current),
-            Expected::Text(self.latest.to_string()),
-        )
+        Evidence {
+            rule: Some(format!("outdated-{}", self.kind())),
+            location: self.location.clone(),
+            found: format!("{} {}", self.name, self.current),
+            expected: Some(Expected::Text(self.latest.to_string())),
+        }
     }
 }
 
@@ -88,8 +93,8 @@ impl OutdatedDependency {
 ///
 /// # Errors
 ///
-/// Returns `Err` when the target path doesn't exist, `cargo-outdated`
-/// isn't installed, or the external tool crashes.
+/// Returns `Err` when the target path doesn't exist or the dependency
+/// data can't be fetched.
 pub fn check(target: &Path, definition: &Definition) -> Result<Vec<Evaluation>, ExecutionError> {
     let resolved = target.canonicalize().map_err(|_| ExecutionError {
         code: "invalid_target".into(),
@@ -103,76 +108,75 @@ pub fn check(target: &Path, definition: &Definition) -> Result<Vec<Evaluation>, 
 }
 
 #[derive(Debug)]
-#[doc(hidden)]
 pub enum FetchError {
-    NotFound(std::io::Error),
-    ToolFailed(String),
+    /// Target path doesn't contain a valid project.
+    InvalidTarget(String),
+    /// Something else went wrong. The String carries details for debugging.
+    Failed(String),
 }
 
 impl std::fmt::Display for FetchError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            Self::NotFound(e) => write!(f, "cargo-outdated not found: {e}"),
-            Self::ToolFailed(msg) => write!(f, "cargo outdated failed: {msg}"),
+            Self::InvalidTarget(msg) => write!(f, "invalid target: {msg}"),
+            Self::Failed(msg) => write!(f, "fetch failed: {msg}"),
         }
     }
 }
 
 fn classify_error(err: FetchError) -> ExecutionError {
     match err {
-        FetchError::NotFound(io_err) => {
-            if io_err.kind() == std::io::ErrorKind::NotFound {
-                ExecutionError {
-                    code: "missing_tool".into(),
-                    message: "cargo-outdated is not installed".into(),
-                    recovery: "install it with: cargo install cargo-outdated".into(),
-                }
-            } else {
-                ExecutionError {
-                    code: "tool_failed".into(),
-                    message: format!("could not run cargo-outdated: {io_err}"),
-                    recovery:
-                        "check that cargo-outdated is installed: cargo install cargo-outdated"
-                            .into(),
-                }
-            }
-        }
-        FetchError::ToolFailed(stderr) => {
-            if stderr.contains("not a cargo project")
-                || stderr.contains("could not find `Cargo.toml`")
-            {
-                ExecutionError {
-                    code: "invalid_target".into(),
-                    message: "target is not a valid Cargo project".into(),
-                    recovery: "pass a directory containing a Cargo.toml".into(),
-                }
-            } else {
-                ExecutionError {
-                    code: "tool_failed".into(),
-                    message: format!("cargo-outdated failed: {stderr}"),
-                    recovery: "verify cargo-outdated works by running: cargo outdated --format json --depth 1".into(),
-                }
-            }
-        }
+        FetchError::InvalidTarget(msg) => ExecutionError {
+            code: "invalid_target".into(),
+            message: msg,
+            recovery: "pass a directory containing a Cargo.toml".into(),
+        },
+        FetchError::Failed(msg) => ExecutionError {
+            code: "tool_failed".into(),
+            message: msg,
+            recovery: "check the project directory and try again".into(),
+        },
     }
 }
 
 #[doc(hidden)]
 pub fn fetch_outdated(target: &Path) -> Result<Vec<OutdatedDependency>, FetchError> {
-    let output = std::process::Command::new("cargo")
-        .args(["outdated", "--format", "json", "--depth", "1"])
-        .current_dir(target)
-        .output()
-        .map_err(FetchError::NotFound)?;
+    let direct_deps = cargo_metadata::collect_direct_deps(target)?;
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).into_owned();
-        return Err(FetchError::ToolFailed(stderr));
+    let mut outdated = Vec::new();
+    let mut errors = Vec::new();
+
+    for dep in &direct_deps {
+        match crates_io::fetch_latest_version(&dep.name) {
+            Ok(Some(latest)) if latest > dep.version => {
+                outdated.push(as_outdated(dep, latest, target));
+            }
+            Ok(_) => {}
+            Err(e) => errors.push(format!("{}: {e}", dep.name)),
+        }
     }
 
-    let stdout =
-        String::from_utf8(output.stdout).map_err(|e| FetchError::ToolFailed(e.to_string()))?;
-    Ok(parse_cargo_outdated(&stdout))
+    if outdated.is_empty() && errors.len() == direct_deps.len() && !direct_deps.is_empty() {
+        return Err(FetchError::Failed(format!(
+            "all registry lookups failed: {}",
+            errors.join(", ")
+        )));
+    }
+
+    Ok(outdated)
+}
+
+fn as_outdated(
+    dep: &cargo_metadata::DirectDep,
+    latest: semver::Version,
+    target: &Path,
+) -> OutdatedDependency {
+    OutdatedDependency {
+        name: dep.name.clone(),
+        current: dep.version.clone(),
+        latest,
+        location: dep.location_relative_to(target),
+    }
 }
 
 fn evaluate(
@@ -220,44 +224,12 @@ fn evaluate_dependency(
     }
 }
 
-#[must_use]
-fn parse_cargo_outdated(output: &str) -> Vec<OutdatedDependency> {
-    output
-        .lines()
-        .filter_map(|line| serde_json::from_str::<serde_json::Value>(line).ok())
-        .flat_map(|v| {
-            v.get("dependencies")
-                .and_then(|d| d.as_array().cloned())
-                .unwrap_or_default()
-        })
-        .filter_map(|entry| parse_dependency(&entry))
-        .collect()
-}
-
-fn parse_dependency(entry: &serde_json::Value) -> Option<OutdatedDependency> {
-    let name = entry["name"].as_str()?;
-    let current_str = entry["project"].as_str()?;
-    let latest_str = entry["latest"].as_str()?;
-
-    if latest_str == "---" || latest_str == "Removed" {
-        return None;
-    }
-
-    let current = current_str.parse::<semver::Version>().ok()?;
-    let latest = latest_str.parse::<semver::Version>().ok()?;
-
-    (current != latest).then(|| OutdatedDependency {
-        name: name.into(),
-        current,
-        latest,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Expected;
+    use crate::{Expected, Status};
     use googletest::prelude::*;
+    use test_case::test_case;
 
     fn evaluate_all(deps: &[OutdatedDependency], definition: &Definition) -> Vec<Evaluation> {
         evaluate(Path::new("/any"), deps, definition)
@@ -274,6 +246,7 @@ mod tests {
             name: name.into(),
             current: current.parse().unwrap(),
             latest: latest.parse().unwrap(),
+            location: None,
         }
     }
 
@@ -294,6 +267,13 @@ mod tests {
                 warn: Some(warn),
                 fail: Some(fail),
             }),
+        }
+    }
+
+    fn extract_status(outcome: &Outcome) -> Status {
+        match outcome {
+            Outcome::Completed { status, .. } => *status,
+            other @ Outcome::Errored(_) => panic!("expected Completed, got {other:?}"),
         }
     }
 
@@ -332,13 +312,15 @@ mod tests {
         assert_eq!(eval.target, "serde");
     }
 
-    #[test]
-    fn same_level_gap_within_warn_threshold_passes() {
+    #[test_case("1.0.1", Status::Pass ; "below warn threshold passes")]
+    #[test_case("1.0.4", Status::Warn ; "between thresholds warns")]
+    #[test_case("1.0.8", Status::Fail ; "above fail threshold fails")]
+    fn same_level_gap_at_patch_level(latest: &str, expected: Status) {
         let definition = patch_level_with_thresholds(2, 5);
 
-        let eval = evaluate_one(dep("a", "1.0.0", "1.0.1"), &definition);
+        let eval = evaluate_one(dep("a", "1.0.0", latest), &definition);
 
-        assert!(eval.is_pass());
+        assert_eq!(extract_status(&eval.outcome), expected);
     }
 
     #[test]
@@ -351,79 +333,25 @@ mod tests {
     }
 
     #[test]
-    fn same_level_gap_between_warn_and_fail_warns() {
-        let definition = patch_level_with_thresholds(2, 5);
-
-        let eval = evaluate_one(dep("a", "1.0.0", "1.0.4"), &definition);
-
-        assert!(eval.is_warn());
-    }
-
-    #[test]
-    fn same_level_gap_above_fail_threshold_fails() {
-        let definition = patch_level_with_thresholds(2, 5);
-
-        let eval = evaluate_one(dep("a", "1.0.0", "1.0.8"), &definition);
-
-        assert!(eval.is_fail());
-    }
-
-    #[test]
-    fn non_passing_evidence_includes_rule_and_versions() {
-        let definition = patch_level_with_thresholds(2, 5);
-
-        let eval = evaluate_one(dep("a", "1.0.0", "1.0.4"), &definition);
-
-        assert_that!(
-            extract_evidence(&eval.outcome)[0].rule,
-            some(eq("outdated-patch"))
-        );
-    }
-
-    #[test]
-    fn evidence_found_shows_dep_name_and_current_version() {
+    fn non_passing_evidence_includes_rule_found_and_expected() {
         let definition = patch_level_with_thresholds(2, 5);
 
         let eval = evaluate_one(dep("serde", "1.0.0", "1.0.4"), &definition);
 
-        let evidence = extract_evidence(&eval.outcome);
-        assert_eq!(evidence[0].found, "serde 1.0.0");
+        let evidence = &extract_evidence(&eval.outcome)[0];
+        assert_that!(evidence.rule, some(eq("outdated-patch")));
+        assert_eq!(evidence.found, "serde 1.0.0");
+        assert_eq!(evidence.expected, Some(Expected::Text("1.0.4".into())));
     }
 
     #[test]
-    fn evidence_expected_shows_latest_version() {
-        let definition = patch_level_with_thresholds(2, 5);
-
-        let eval = evaluate_one(dep("a", "1.0.0", "1.0.4"), &definition);
-
-        let evidence = extract_evidence(&eval.outcome);
-        assert_eq!(evidence[0].expected, Some(Expected::Text("1.0.4".into())));
-    }
-
-    #[test]
-    fn superior_drift_fails_with_zero_tolerance() {
+    fn superior_drift_fails_with_gap_at_superior_level() {
         let definition = patch_level_with_thresholds(2, 5);
 
         let eval = evaluate_one(dep("a", "1.0.1", "1.1.0"), &definition);
 
         assert!(eval.is_fail());
-    }
-
-    #[test]
-    fn superior_drift_uses_gap_at_superior_level() {
-        let definition = patch_level_with_thresholds(2, 5);
-
-        let eval = evaluate_one(dep("a", "1.0.1", "1.1.0"), &definition);
-
         assert_that!(extract_observed(&eval.outcome), eq(1));
-    }
-
-    #[test]
-    fn superior_drift_evidence_uses_superior_kind() {
-        let definition = patch_level_with_thresholds(2, 5);
-
-        let eval = evaluate_one(dep("a", "1.0.1", "1.1.0"), &definition);
-
         assert_that!(
             extract_evidence(&eval.outcome)[0].rule,
             some(eq("outdated-minor"))
@@ -431,20 +359,12 @@ mod tests {
     }
 
     #[test]
-    fn kind_below_configured_level_passes() {
+    fn kind_below_configured_level_passes_with_zero_observed() {
         let definition = major_level_with_thresholds(1, 3);
 
         let eval = evaluate_one(dep("a", "1.0.0", "1.0.5"), &definition);
 
         assert!(eval.is_pass());
-    }
-
-    #[test]
-    fn kind_below_configured_level_has_zero_observed() {
-        let definition = major_level_with_thresholds(1, 3);
-
-        let eval = evaluate_one(dep("a", "1.0.0", "1.0.5"), &definition);
-
         assert_that!(extract_observed(&eval.outcome), eq(0));
     }
 
@@ -475,44 +395,12 @@ mod tests {
         assert_eq!(result.unwrap_err().code, "invalid_target");
     }
 
-    #[test]
-    fn command_not_found_classifies_as_missing_tool() {
-        let err = FetchError::NotFound(std::io::Error::new(
-            std::io::ErrorKind::NotFound,
-            "No such file or directory",
-        ));
-
+    #[test_case(FetchError::InvalidTarget("msg".into()), "invalid_target" ; "invalid target")]
+    #[test_case(FetchError::Failed("msg".into()), "tool_failed" ; "failed")]
+    fn classify_error_maps_to_correct_code(err: FetchError, expected_code: &str) {
         let result = classify_error(err);
 
-        assert_eq!(result.code, "missing_tool");
-    }
-
-    #[test]
-    fn cargo_toml_not_found_classifies_as_invalid_target() {
-        let err = FetchError::ToolFailed("could not find `Cargo.toml`".into());
-
-        let result = classify_error(err);
-
-        assert_eq!(result.code, "invalid_target");
-    }
-
-    #[test]
-    fn unknown_tool_failure_classifies_as_tool_failed() {
-        let err = FetchError::ToolFailed("segfault or something".into());
-
-        let result = classify_error(err);
-
-        assert_eq!(result.code, "tool_failed");
-    }
-
-    #[test]
-    fn parses_empty_output_as_no_deps() {
-        assert!(parse_cargo_outdated("").is_empty());
-    }
-
-    #[test]
-    fn parses_empty_dependencies_array_as_no_deps() {
-        assert!(parse_cargo_outdated(r#"{"dependencies":[]}"#).is_empty());
+        assert_eq!(result.code, expected_code);
     }
 
     #[test]
@@ -543,37 +431,21 @@ mod tests {
     }
 
     #[test]
-    fn skips_non_json_lines() {
-        let output = "some garbage\n{\"dependencies\":[]}\nmore garbage";
+    fn evidence_carries_manifest_location() {
+        let definition = patch_level_with_thresholds(2, 5);
+        let d = OutdatedDependency {
+            name: "serde".into(),
+            current: "1.0.0".parse().unwrap(),
+            latest: "1.0.4".parse().unwrap(),
+            location: Some("crates/scute-mcp/Cargo.toml".into()),
+        };
 
-        assert!(parse_cargo_outdated(output).is_empty());
-    }
+        let eval = evaluate_one(d, &definition);
 
-    #[test]
-    fn skips_entries_with_unparseable_versions() {
-        let output = r#"{"dependencies":[{"name":"a","project":"not-semver","latest":"1.0.0"}]}"#;
-
-        assert!(parse_cargo_outdated(output).is_empty());
-    }
-
-    #[test]
-    fn skips_entries_with_removed_latest() {
-        let output = r#"{"dependencies":[{"name":"a","project":"1.0.0","latest":"Removed"}]}"#;
-
-        assert!(parse_cargo_outdated(output).is_empty());
-    }
-
-    #[test]
-    fn skips_entries_with_dashes_latest() {
-        let output = r#"{"dependencies":[{"name":"a","project":"1.0.0","latest":"---"}]}"#;
-
-        assert!(parse_cargo_outdated(output).is_empty());
-    }
-
-    #[test]
-    fn skips_entries_where_current_equals_latest() {
-        let output = r#"{"dependencies":[{"name":"a","project":"1.0.0","latest":"1.0.0"}]}"#;
-
-        assert!(parse_cargo_outdated(output).is_empty());
+        let evidence = extract_evidence(&eval.outcome);
+        assert_eq!(
+            evidence[0].location.as_deref(),
+            Some("crates/scute-mcp/Cargo.toml")
+        );
     }
 }
