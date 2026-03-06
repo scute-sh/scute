@@ -111,6 +111,17 @@ class AppComponent {
 }
 
 #[test]
+fn strips_rust_doc_comments() {
+    let source = "\
+/// This is a doc comment.
+///
+/// With multiple lines.
+fn documented() {}";
+
+    insta::assert_snapshot!(token_labels(source, &language::rust()));
+}
+
+#[test]
 fn preserves_macro_invocations() {
     let source = "\
 fn example() {
