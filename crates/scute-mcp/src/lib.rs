@@ -109,10 +109,7 @@ impl ScuteMcp {
         Parameters(input): Parameters<CheckCodeSimilarityInput>,
     ) -> Result<CallToolResult, ErrorData> {
         let project_root = resolve_project_root(&peer).await?;
-        let source_dir = input
-            .source_dir
-            .map(PathBuf::from)
-            .unwrap_or(project_root.clone());
+        let source_dir = path_or_root(input.source_dir, &project_root);
         let focus_files: Vec<PathBuf> = input
             .files
             .unwrap_or_default()
@@ -147,10 +144,7 @@ impl ScuteMcp {
         Parameters(input): Parameters<CheckDependencyFreshnessInput>,
     ) -> Result<CallToolResult, ErrorData> {
         let project_root = resolve_project_root(&peer).await?;
-        let target = input
-            .path
-            .map(PathBuf::from)
-            .unwrap_or(project_root.clone());
+        let target = path_or_root(input.path, &project_root);
         run_check(
             &project_root,
             dependency_freshness::CHECK_NAME,
@@ -166,6 +160,12 @@ impl ServerHandler for ScuteMcp {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
             .with_instructions(INSTRUCTIONS)
     }
+}
+
+fn path_or_root(input: Option<String>, project_root: &Path) -> PathBuf {
+    input
+        .map(PathBuf::from)
+        .unwrap_or(project_root.to_path_buf())
 }
 
 async fn resolve_project_root(peer: &Peer<RoleServer>) -> Result<PathBuf, ErrorData> {
