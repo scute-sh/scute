@@ -59,8 +59,9 @@ value.
 
 ## Code Quality
 
-- **Clean code violations.** General readability and maintainability rules
-  broken: long functions, deep nesting, unclear control flow.
+- **Clean code violations.** (×2) General readability and maintainability rules
+  broken: long functions, deep nesting, unclear control flow. Applies equally
+  to test code: bloated test bodies with repetitive setup ceremony.
 - **Complex conditions.** Compound boolean expressions, especially negated
   ones, that obscure intent. An intermediate variable that names what the
   condition means is worth the extra line.
@@ -73,7 +74,7 @@ value.
 - **Overparameterization.** (×1) Extracting a helper but keeping the
   hardcoded value as a parameter instead of encapsulating it. If every
   call site passes the same value, the helper should own that value.
-- **Solution-space anchoring.** (×2) Fixating on how existing code works
+- **Solution-space anchoring.** (×3) Fixating on how existing code works
   (helpers, models, constructors) instead of stepping back to the problem
   space. Leads to contorted designs that serve the implementation rather than
   the user. The question should always be "what does the consumer need?" not
@@ -137,10 +138,14 @@ value.
 
 ## Process
 
-- **Superficial application of agreed conventions.** (×1) Convention is understood
+- **Superficial application of agreed conventions.** (×2) Convention is understood
   in principle but applied inconsistently. Fixes address only the examples
   explicitly called out, missing the same issue elsewhere. The pattern is
   understood, but the rigor to apply it exhaustively is missing.
+- **Production code modified before a test demands it.** (×1) Jumping to
+  change signatures or restructure code before writing a failing test that
+  requires the change. The test should drive the design, not the other way
+  around.
 - **Checklists skipped under momentum.** (×14) Established workflows and
   checklists exist but get bypassed when focus is on "just get the thing done."
   The process is known, the trigger is clear, but urgency wins over discipline.
@@ -154,7 +159,7 @@ value.
   and official examples show the idiomatic pattern, but the agent invents a
   manual approach instead of reading the docs first. Wastes time and produces
   non-idiomatic code that needs to be redone.
-- **Available tools not used contextually.** (×1) A tool exists, is described,
+- **Available tools not used contextually.** (×2) A tool exists, is described,
   and is clearly relevant to the current action, but the agent doesn't reach
   for it because it's not on a written checklist. The tool descriptions are in
   context but treated as reference material instead of active capabilities.

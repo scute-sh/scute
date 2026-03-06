@@ -1,4 +1,4 @@
-use std::io::{IsTerminal, Read};
+use std::io::{BufRead, IsTerminal, Read};
 use std::path::PathBuf;
 
 use anyhow::Result;
@@ -42,8 +42,11 @@ enum Checks {
     },
     /// Find code duplication
     CodeSimilarity {
-        /// Path to the project directory (defaults to working directory)
-        path: Option<String>,
+        /// Directory to scan for source files (defaults to working directory)
+        #[arg(long)]
+        source_dir: Option<PathBuf>,
+        /// Files to focus on (only report clones involving these). Reads from stdin if piped.
+        files: Vec<PathBuf>,
     },
     /// Find outdated dependencies
     DependencyFreshness {
@@ -88,11 +91,12 @@ fn run(cli: Cli) -> Result<()> {
                     println!("{}", serde_json::to_string(&checks)?);
                     Ok(())
                 }
-                Checks::CodeSimilarity { path } => {
-                    let target = resolve_target_path(path);
+                Checks::CodeSimilarity { source_dir, files } => {
+                    let source_dir = source_dir.unwrap_or_else(|| project_root.clone());
+                    let focus_files = resolve_focus_files(files);
                     let definition = scute_config::load_code_similarity_definition(&project_root)
                         .unwrap_or_else(|e| invalid_config(&e));
-                    let result = code_similarity::check(&target, &definition);
+                    let result = code_similarity::check(&source_dir, &focus_files, &definition);
                     output(&CheckReport::new(code_similarity::CHECK_NAME, result))
                 }
                 Checks::CommitMessage { message } => {
@@ -186,6 +190,23 @@ fn project_root() -> PathBuf {
 
 fn resolve_target_path(path: Option<String>) -> PathBuf {
     path.map_or_else(project_root, PathBuf::from)
+}
+
+fn resolve_focus_files(files: Vec<PathBuf>) -> Vec<PathBuf> {
+    if !files.is_empty() {
+        return files;
+    }
+    let stdin = std::io::stdin();
+    if stdin.is_terminal() {
+        return Vec::new();
+    }
+    stdin
+        .lock()
+        .lines()
+        .map_while(Result::ok)
+        .filter(|line| !line.is_empty())
+        .map(PathBuf::from)
+        .collect()
 }
 
 fn resolve_message(arg: Option<String>) -> Result<String> {

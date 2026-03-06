@@ -10,7 +10,7 @@ checks:
       level: minor
   code-similarity:
     thresholds:
-      warn: 150
-      fail: 200
+      warn: 50
+      fail: 90
     config:
       min-tokens: 25

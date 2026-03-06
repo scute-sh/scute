@@ -184,9 +184,9 @@ checks:
             .expect_fail();
     }
     #[test_case(Cli)]
-    fn nonexistent_path_produces_error(interface: Interface) {
+    fn nonexistent_source_dir_produces_error(interface: Interface) {
         Scute::new(interface)
-            .check(&["code-similarity", "/nonexistent/path"])
+            .check(&["code-similarity", "--source-dir", "/nonexistent/path"])
             .expect_error("invalid_target");
     }
 }
