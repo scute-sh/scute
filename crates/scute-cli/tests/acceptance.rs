@@ -19,6 +19,14 @@ mod discovery {
             .list_checks()
             .expect_contains("dependency-freshness");
     }
+
+    #[test_case(Cli)]
+    #[test_case(Mcp)]
+    fn lists_code_similarity_check(interface: Interface) {
+        Scute::new(interface)
+            .list_checks()
+            .expect_contains("code-similarity");
+    }
 }
 
 mod commit_message {
@@ -163,9 +171,10 @@ mod code_similarity {
     use scute_test_utils::{Interface, Scute};
     use test_case::test_case;
 
-    use Interface::Cli;
+    use Interface::{Cli, Mcp};
 
     #[test_case(Cli)]
+    #[test_case(Mcp)]
     fn duplicated_code_reports_failure(interface: Interface) {
         Scute::new(interface)
             .source_file("a.rs", "fn foo(x: i32) -> i32 { x + 1 }")
@@ -184,10 +193,35 @@ checks:
             .expect_fail();
     }
     #[test_case(Cli)]
+    #[test_case(Mcp)]
     fn nonexistent_source_dir_produces_error(interface: Interface) {
         Scute::new(interface)
             .check(&["code-similarity", "--source-dir", "/nonexistent/path"])
             .expect_error("invalid_target");
+    }
+
+    #[test_case(Cli)]
+    #[test_case(Mcp)]
+    fn focus_file_filters_reported_clones(interface: Interface) {
+        Scute::new(interface)
+            .source_file("a.rs", "fn foo(x: i32) -> i32 { x + 1 }")
+            .source_file("b.rs", "fn bar(y: i32) -> i32 { y + 1 }")
+            .source_file("c.rs", "const A: [i32; 5] = [10, 20, 30, 40, 50];")
+            .source_file("d.rs", "const B: [u32; 5] = [60, 70, 80, 90, 100];")
+            .scute_config(
+                r"
+checks:
+  code-similarity:
+    thresholds:
+      fail: 0
+    config:
+      min_tokens: 5
+",
+            )
+            .check(&["code-similarity", "a.rs"])
+            .expect_fail()
+            .expect_finding_count(1)
+            .expect_target_contains("a.rs");
     }
 }
 

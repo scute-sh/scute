@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use super::language::{self, LanguageConfig};
 use super::{CloneGroup, SourceEntry, find_clones};
-use crate::{Evaluation, Evidence, ExecutionError, Outcome, Thresholds};
+use crate::{Evaluation, Evidence, ExecutionError, Thresholds};
 
 pub const CHECK_NAME: &str = "code-similarity";
 
@@ -72,42 +72,26 @@ pub fn check(
         fail: Some(DEFAULT_FAIL),
     });
 
-    let focus_errors = validate_focus_files(focus_files);
-    if !focus_errors.is_empty() {
-        return Ok(focus_errors);
+    let canonical_dir = validate_source_dir(source_dir)?;
+    let focus_files = match validate_focus_files(focus_files) {
+        Ok(files) => files,
+        Err(errors) => return Ok(errors),
+    };
+
+    let sources = read_sources(&canonical_dir)?;
+    let clone_groups = detect_clones(&sources, min_tokens)?;
+    let relevant = filter_by_focus(&clone_groups, &focus_files);
+
+    if relevant.is_empty() {
+        return Ok(vec![Evaluation::completed(
+            source_dir.display().to_string(),
+            0,
+            thresholds,
+            vec![],
+        )]);
     }
 
-    let sources = read_sources(source_dir)?;
-
-    let entries: Vec<SourceEntry<'_>> = sources
-        .iter()
-        .map(|(path, content, lang)| SourceEntry::new(content, path, lang))
-        .collect();
-
-    let clone_groups = find_clones(&entries, min_tokens).map_err(|e| ExecutionError {
-        code: "detection_failed".into(),
-        message: e.to_string(),
-        recovery: "check that source files are valid".into(),
-    })?;
-
-    let relevant_groups = filter_by_focus(&clone_groups, focus_files);
-
-    if relevant_groups.is_empty() {
-        return Ok(vec![Evaluation {
-            target: source_dir.display().to_string(),
-            outcome: Outcome::completed(0, thresholds, vec![]),
-        }]);
-    }
-
-    let content_by_path: HashMap<&str, &str> = sources
-        .iter()
-        .map(|(path, content, _)| (path.as_str(), content.as_str()))
-        .collect();
-
-    Ok(relevant_groups
-        .iter()
-        .map(|group| to_evaluation(group, &thresholds, &content_by_path))
-        .collect())
+    Ok(build_evaluations(&relevant, &sources, &thresholds))
 }
 
 fn filter_by_focus<'a>(
@@ -144,30 +128,81 @@ fn read_sources(
         .collect())
 }
 
-fn validate_focus_files(focus_files: &[PathBuf]) -> Vec<Evaluation> {
+fn validate_source_dir(source_dir: &Path) -> Result<PathBuf, ExecutionError> {
+    source_dir.canonicalize().map_err(|e| ExecutionError {
+        code: "invalid_target".into(),
+        message: format!("cannot read directory {}: {e}", source_dir.display()),
+        recovery: "check that the path exists and is a directory".into(),
+    })
+}
+
+fn validate_focus_files(files: &[PathBuf]) -> Result<Vec<PathBuf>, Vec<Evaluation>> {
+    let mut canonical = Vec::new();
     let mut errors = Vec::new();
-    for path in focus_files {
-        if language_for_path(path).is_none() {
-            errors.push(Evaluation {
-                target: path.display().to_string(),
-                outcome: Outcome::Errored(ExecutionError {
-                    code: "unsupported_language".into(),
-                    message: format!("unsupported file type: {}", path.display()),
-                    recovery: "only .rs, .ts, and .tsx files are supported".into(),
-                }),
-            });
-        } else if !path.exists() {
-            errors.push(Evaluation {
-                target: path.display().to_string(),
-                outcome: Outcome::Errored(ExecutionError {
-                    code: "unreadable_file".into(),
-                    message: format!("cannot read file: {}", path.display()),
-                    recovery: "check that the file exists and is readable".into(),
-                }),
-            });
+    for path in files {
+        match validate_focus_file(path) {
+            Ok(p) => canonical.push(p),
+            Err(e) => errors.push(e),
         }
     }
-    errors
+    if errors.is_empty() {
+        Ok(canonical)
+    } else {
+        Err(errors)
+    }
+}
+
+fn validate_focus_file(path: &Path) -> Result<PathBuf, Evaluation> {
+    if language_for_path(path).is_none() {
+        return Err(Evaluation::errored(
+            path.display().to_string(),
+            ExecutionError {
+                code: "unsupported_language".into(),
+                message: format!("unsupported file type: {}", path.display()),
+                recovery: "only .rs, .ts, and .tsx files are supported".into(),
+            },
+        ));
+    }
+    path.canonicalize().map_err(|_| {
+        Evaluation::errored(
+            path.display().to_string(),
+            ExecutionError {
+                code: "unreadable_file".into(),
+                message: format!("cannot read file: {}", path.display()),
+                recovery: "check that the file exists and is readable".into(),
+            },
+        )
+    })
+}
+
+fn detect_clones(
+    sources: &[(String, String, &'static LanguageConfig)],
+    min_tokens: usize,
+) -> Result<Vec<CloneGroup>, ExecutionError> {
+    let entries: Vec<SourceEntry<'_>> = sources
+        .iter()
+        .map(|(path, content, lang)| SourceEntry::new(content, path, lang))
+        .collect();
+    find_clones(&entries, min_tokens).map_err(|e| ExecutionError {
+        code: "detection_failed".into(),
+        message: e.to_string(),
+        recovery: "check that source files are valid".into(),
+    })
+}
+
+fn build_evaluations(
+    groups: &[&CloneGroup],
+    sources: &[(String, String, &'static LanguageConfig)],
+    thresholds: &Thresholds,
+) -> Vec<Evaluation> {
+    let content_by_path: HashMap<&str, &str> = sources
+        .iter()
+        .map(|(path, content, _)| (path.as_str(), content.as_str()))
+        .collect();
+    groups
+        .iter()
+        .map(|group| to_evaluation(group, thresholds, &content_by_path))
+        .collect()
 }
 
 fn discover_files(dir: &Path) -> Result<Vec<(PathBuf, &'static LanguageConfig)>, ExecutionError> {
@@ -245,19 +280,22 @@ fn to_evaluation(
 
     let observed = u64::try_from(group.token_count).unwrap_or(u64::MAX);
 
-    Evaluation {
-        target: group
+    Evaluation::completed(
+        group
             .occurrences
             .first()
             .map(|occ| format!("{}:{}", occ.source_id, occ.start_line))
             .unwrap_or_default(),
-        outcome: Outcome::completed(observed, thresholds.clone(), evidence),
-    }
+        observed,
+        thresholds.clone(),
+        evidence,
+    )
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::Outcome;
     use googletest::prelude::*;
     use tempfile::TempDir;
 
@@ -278,6 +316,21 @@ mod tests {
         let dir = TempDir::new().unwrap();
         write_file(dir.path(), "a.rs", "fn foo(x: i32) -> i32 { x + 1 }");
         write_file(dir.path(), "b.rs", "fn bar(y: i32) -> i32 { y + 1 }");
+        dir
+    }
+
+    fn two_clone_pairs_dir() -> TempDir {
+        let dir = clone_pair_dir();
+        write_file(
+            dir.path(),
+            "c.rs",
+            "const A: [i32; 5] = [10, 20, 30, 40, 50];",
+        );
+        write_file(
+            dir.path(),
+            "d.rs",
+            "const B: [u32; 5] = [60, 70, 80, 90, 100];",
+        );
         dir
     }
 
@@ -455,19 +508,7 @@ mod tests {
 
     #[test]
     fn focus_file_only_reports_clone_groups_involving_that_file() {
-        let dir = TempDir::new().unwrap();
-        write_file(dir.path(), "a.rs", "fn foo(x: i32) -> i32 { x + 1 }");
-        write_file(dir.path(), "b.rs", "fn bar(y: i32) -> i32 { y + 1 }");
-        write_file(
-            dir.path(),
-            "c.rs",
-            "const A: [i32; 5] = [10, 20, 30, 40, 50];",
-        );
-        write_file(
-            dir.path(),
-            "d.rs",
-            "const B: [u32; 5] = [60, 70, 80, 90, 100];",
-        );
+        let dir = two_clone_pairs_dir();
 
         let evals = check_focused(dir.path(), &[dir.path().join("a.rs")]);
 
@@ -515,19 +556,7 @@ mod tests {
 
     #[test]
     fn multiple_focus_files_report_clones_involving_any_of_them() {
-        let dir = TempDir::new().unwrap();
-        write_file(dir.path(), "a.rs", "fn foo(x: i32) -> i32 { x + 1 }");
-        write_file(dir.path(), "b.rs", "fn bar(y: i32) -> i32 { y + 1 }");
-        write_file(
-            dir.path(),
-            "c.rs",
-            "const A: [i32; 5] = [10, 20, 30, 40, 50];",
-        );
-        write_file(
-            dir.path(),
-            "d.rs",
-            "const B: [u32; 5] = [60, 70, 80, 90, 100];",
-        );
+        let dir = two_clone_pairs_dir();
 
         let evals = check_focused(
             dir.path(),

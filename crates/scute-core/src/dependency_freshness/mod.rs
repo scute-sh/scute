@@ -206,10 +206,12 @@ fn evaluate(
     let configured_thresholds = definition.thresholds.clone().unwrap_or(DEFAULT_THRESHOLDS);
 
     if outdated.is_empty() {
-        return vec![Evaluation {
-            target: target.display().to_string(),
-            outcome: Outcome::completed(0, configured_thresholds, vec![]),
-        }];
+        return vec![Evaluation::completed(
+            target.display().to_string(),
+            0,
+            configured_thresholds,
+            vec![],
+        )];
     }
 
     outdated

@@ -122,6 +122,17 @@ impl CheckResult for CliCheckResult {
         self
     }
 
+    fn expect_target_contains(&self, substring: &str) -> &dyn CheckResult {
+        let target = self.first_finding()["target"]
+            .as_str()
+            .expect("target should be a string");
+        assert!(
+            target.contains(substring),
+            "expected target to contain '{substring}', got '{target}'"
+        );
+        self
+    }
+
     fn expect_target_matches_dir(&self) -> &dyn CheckResult {
         let target = self.first_finding()["target"]
             .as_str()
@@ -157,6 +168,16 @@ impl CheckResult for CliCheckResult {
                 .get("expected")
                 .is_none(),
             "expected evidence[{index}].expected to be absent"
+        );
+        self
+    }
+
+    fn expect_finding_count(&self, expected: usize) -> &dyn CheckResult {
+        assert_eq!(
+            self.findings().len(),
+            expected,
+            "expected {expected} findings, got {}",
+            self.findings().len()
         );
         self
     }

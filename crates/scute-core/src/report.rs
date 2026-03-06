@@ -7,12 +7,14 @@ use crate::{Evaluation, ExecutionError, Outcome, Status};
 ///
 /// ```
 /// use scute_core::report::CheckReport;
-/// use scute_core::{Evaluation, Outcome, Thresholds};
+/// use scute_core::{Evaluation, Thresholds};
 ///
-/// let evals = vec![Evaluation {
-///     target: "feat: add login".into(),
-///     outcome: Outcome::completed(0, Thresholds { warn: None, fail: Some(0) }, vec![]),
-/// }];
+/// let evals = vec![Evaluation::completed(
+///     "feat: add login",
+///     0,
+///     Thresholds { warn: None, fail: Some(0) },
+///     vec![],
+/// )];
 /// let report = CheckReport::new("commit-message", Ok(evals));
 /// assert!(!report.has_failures());
 /// ```
@@ -185,14 +187,14 @@ mod tests {
 
     #[test]
     fn has_errors_true_for_errored_evaluation() {
-        let evals = vec![Evaluation {
-            target: "x".into(),
-            outcome: Outcome::Errored(ExecutionError {
+        let evals = vec![Evaluation::errored(
+            "x",
+            ExecutionError {
                 code: "eval_err".into(),
                 message: "bad".into(),
                 recovery: "retry".into(),
-            }),
-        }];
+            },
+        )];
 
         let report = CheckReport::new("test-check", Ok(evals));
 
@@ -245,55 +247,49 @@ mod tests {
     }
 
     fn passing_eval(target: &str) -> Evaluation {
-        Evaluation {
-            target: target.into(),
-            outcome: Outcome::completed(
-                0,
-                Thresholds {
-                    warn: None,
-                    fail: Some(0),
-                },
-                vec![],
-            ),
-        }
+        Evaluation::completed(
+            target,
+            0,
+            Thresholds {
+                warn: None,
+                fail: Some(0),
+            },
+            vec![],
+        )
     }
 
     fn warned_eval(target: &str) -> Evaluation {
-        Evaluation {
-            target: target.into(),
-            outcome: Outcome::completed(
-                3,
-                Thresholds {
-                    warn: Some(2),
-                    fail: Some(5),
-                },
-                vec![],
-            ),
-        }
+        Evaluation::completed(
+            target,
+            3,
+            Thresholds {
+                warn: Some(2),
+                fail: Some(5),
+            },
+            vec![],
+        )
     }
 
     fn failing_eval(target: &str) -> Evaluation {
-        Evaluation {
-            target: target.into(),
-            outcome: Outcome::completed(
-                1,
-                Thresholds {
-                    warn: None,
-                    fail: Some(0),
-                },
-                vec![Evidence::new("violation", "found")],
-            ),
-        }
+        Evaluation::completed(
+            target,
+            1,
+            Thresholds {
+                warn: None,
+                fail: Some(0),
+            },
+            vec![Evidence::new("violation", "found")],
+        )
     }
 
     fn errored_eval(target: &str) -> Evaluation {
-        Evaluation {
-            target: target.into(),
-            outcome: Outcome::Errored(ExecutionError {
+        Evaluation::errored(
+            target,
+            ExecutionError {
                 code: "boom".into(),
                 message: "broke".into(),
                 recovery: "fix".into(),
-            }),
-        }
+            },
+        )
     }
 }

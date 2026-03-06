@@ -112,11 +112,13 @@ pub trait CheckResult {
     fn expect_warn(&self) -> &dyn CheckResult;
     fn expect_fail(&self) -> &dyn CheckResult;
     fn expect_target(&self, expected: &str) -> &dyn CheckResult;
+    fn expect_target_contains(&self, substring: &str) -> &dyn CheckResult;
     fn expect_target_matches_dir(&self) -> &dyn CheckResult;
     fn expect_observed(&self, expected: u64) -> &dyn CheckResult;
     fn expect_evidence_rule(&self, index: usize, rule: &str) -> &dyn CheckResult;
     fn expect_evidence_has_expected(&self, index: usize) -> &dyn CheckResult;
     fn expect_evidence_no_expected(&self, index: usize) -> &dyn CheckResult;
+    fn expect_finding_count(&self, expected: usize) -> &dyn CheckResult;
     fn expect_no_findings(&self) -> &dyn CheckResult;
     fn expect_error(&self, code: &str) -> &dyn CheckResult;
     fn debug(&self) -> &dyn CheckResult;

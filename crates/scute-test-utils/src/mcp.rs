@@ -75,7 +75,7 @@ impl McpTestClient {
                 let transport = TokioChildProcess::new({
                     let mut cmd = Command::new(target_bin("scute"));
                     cmd.arg("mcp");
-                    cmd.current_dir(std::env::temp_dir());
+                    cmd.current_dir(project_root);
                     cmd
                 })
                 .expect("failed to spawn scute mcp");
@@ -131,6 +131,26 @@ fn build_tool_args(check_name: &str, args: &[&str]) -> serde_json::Value {
         "commit-message" => {
             let message = args.first().copied().unwrap_or("");
             serde_json::json!({ "message": message })
+        }
+        "code-similarity" => {
+            let mut json = serde_json::Map::new();
+            let mut files = Vec::new();
+            let mut i = 0;
+            while i < args.len() {
+                if args[i] == "--source-dir"
+                    && let Some(val) = args.get(i + 1)
+                {
+                    json.insert("source_dir".into(), serde_json::json!(val));
+                    i += 2;
+                    continue;
+                }
+                files.push(args[i]);
+                i += 1;
+            }
+            if !files.is_empty() {
+                json.insert("files".into(), serde_json::json!(files));
+            }
+            serde_json::Value::Object(json)
         }
         "dependency-freshness" => match args.first() {
             Some(path) => serde_json::json!({ "path": path }),
@@ -228,6 +248,17 @@ impl CheckResult for McpCheckResult {
         self
     }
 
+    fn expect_target_contains(&self, substring: &str) -> &dyn CheckResult {
+        let target = self.first_finding()["target"]
+            .as_str()
+            .expect("target should be a string");
+        assert!(
+            target.contains(substring),
+            "expected target to contain '{substring}', got '{target}'"
+        );
+        self
+    }
+
     fn expect_target_matches_dir(&self) -> &dyn CheckResult {
         let target = self.first_finding()["target"]
             .as_str()
@@ -263,6 +294,16 @@ impl CheckResult for McpCheckResult {
                 .get("expected")
                 .is_none(),
             "expected evidence[{index}].expected to be absent"
+        );
+        self
+    }
+
+    fn expect_finding_count(&self, expected: usize) -> &dyn CheckResult {
+        assert_eq!(
+            self.findings().len(),
+            expected,
+            "expected {expected} findings, got {}",
+            self.findings().len()
         );
         self
     }

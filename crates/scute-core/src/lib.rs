@@ -78,6 +78,25 @@ pub struct Evaluation {
 }
 
 impl Evaluation {
+    pub fn completed(
+        target: impl Into<String>,
+        observed: u64,
+        thresholds: Thresholds,
+        evidence: Vec<Evidence>,
+    ) -> Self {
+        Self {
+            target: target.into(),
+            outcome: Outcome::completed(observed, thresholds, evidence),
+        }
+    }
+
+    pub fn errored(target: impl Into<String>, error: ExecutionError) -> Self {
+        Self {
+            target: target.into(),
+            outcome: Outcome::Errored(error),
+        }
+    }
+
     #[must_use]
     pub fn is_pass(&self) -> bool {
         matches!(&self.outcome, Outcome::Completed { status, .. } if *status == Status::Pass)
@@ -342,17 +361,15 @@ mod tests {
 
     #[test]
     fn evaluation_is_pass_for_completed_pass() {
-        let eval = Evaluation {
-            target: "test".into(),
-            outcome: Outcome::completed(
-                0,
-                Thresholds {
-                    warn: None,
-                    fail: Some(0),
-                },
-                vec![],
-            ),
-        };
+        let eval = Evaluation::completed(
+            "test",
+            0,
+            Thresholds {
+                warn: None,
+                fail: Some(0),
+            },
+            vec![],
+        );
 
         assert!(eval.is_pass());
         assert!(!eval.is_fail());
@@ -362,17 +379,15 @@ mod tests {
 
     #[test]
     fn evaluation_is_fail_for_completed_fail() {
-        let eval = Evaluation {
-            target: "test".into(),
-            outcome: Outcome::completed(
-                1,
-                Thresholds {
-                    warn: None,
-                    fail: Some(0),
-                },
-                vec![],
-            ),
-        };
+        let eval = Evaluation::completed(
+            "test",
+            1,
+            Thresholds {
+                warn: None,
+                fail: Some(0),
+            },
+            vec![],
+        );
 
         assert!(eval.is_fail());
         assert!(!eval.is_pass());
@@ -380,14 +395,14 @@ mod tests {
 
     #[test]
     fn evaluation_is_error_for_errored_outcome() {
-        let eval = Evaluation {
-            target: "test".into(),
-            outcome: Outcome::Errored(ExecutionError {
+        let eval = Evaluation::errored(
+            "test",
+            ExecutionError {
                 code: "boom".into(),
                 message: "broken".into(),
                 recovery: "fix".into(),
-            }),
-        };
+            },
+        );
 
         assert!(eval.is_error());
         assert!(!eval.is_pass());

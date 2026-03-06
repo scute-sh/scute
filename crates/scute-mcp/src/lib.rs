@@ -1,6 +1,6 @@
 mod schema;
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use rmcp::{
     ErrorData, RoleServer, ServerHandler, ServiceExt,
@@ -15,7 +15,7 @@ use rmcp::{
 };
 use schema::CheckReportSchema;
 use scute_core::report::CheckReport;
-use scute_core::{ExecutionError, commit_message, dependency_freshness};
+use scute_core::{ExecutionError, code_similarity, commit_message, dependency_freshness};
 
 const INSTRUCTIONS: &str = "\
 Scute gives you a feedback loop to catch problems as you work, not after. \
@@ -35,6 +35,15 @@ struct CheckCommitMessageInput {
 struct CheckDependencyFreshnessInput {
     /// Path to the project directory. Defaults to the current working directory.
     path: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+struct CheckCodeSimilarityInput {
+    /// Directory to scan for source files. Defaults to the project root.
+    source_dir: Option<String>,
+    /// Files to focus on. Only report clones involving these files.
+    /// When empty, all discovered files are checked (full-project scan).
+    files: Option<Vec<String>>,
 }
 
 #[derive(Debug, Clone)]
@@ -72,12 +81,50 @@ impl ScuteMcp {
         Parameters(input): Parameters<CheckCommitMessageInput>,
     ) -> Result<CallToolResult, ErrorData> {
         let project_root = resolve_project_root(&peer).await?;
-        let definition = match scute_config::load_commit_message_definition(&project_root) {
-            Ok(def) => def,
-            Err(e) => return config_error(commit_message::CHECK_NAME, &e),
-        };
-        let result = commit_message::check(&input.message, &definition);
-        report_to_result(&CheckReport::new(commit_message::CHECK_NAME, result))
+        run_check(
+            &project_root,
+            commit_message::CHECK_NAME,
+            scute_config::load_commit_message_definition,
+            |def| commit_message::check(&input.message, def),
+        )
+    }
+
+    /// Find code duplication in your project.
+    ///
+    /// Scans source files for duplicated token sequences. Optionally focus on
+    /// specific files to only report clones involving them.
+    #[tool(
+        name = "check_code_similarity",
+        output_schema = schema_for_output::<CheckReportSchema>().unwrap(),
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
+    )]
+    async fn check_code_similarity(
+        &self,
+        peer: Peer<RoleServer>,
+        Parameters(input): Parameters<CheckCodeSimilarityInput>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let project_root = resolve_project_root(&peer).await?;
+        let source_dir = input
+            .source_dir
+            .map(PathBuf::from)
+            .unwrap_or(project_root.clone());
+        let focus_files: Vec<PathBuf> = input
+            .files
+            .unwrap_or_default()
+            .into_iter()
+            .map(PathBuf::from)
+            .collect();
+        run_check(
+            &project_root,
+            code_similarity::CHECK_NAME,
+            scute_config::load_code_similarity_definition,
+            |def| code_similarity::check(&source_dir, &focus_files, def),
+        )
     }
 
     /// Find outdated dependencies in your project.
@@ -104,12 +151,12 @@ impl ScuteMcp {
             .path
             .map(PathBuf::from)
             .unwrap_or(project_root.clone());
-        let definition = match scute_config::load_freshness_definition(&project_root) {
-            Ok(def) => def,
-            Err(e) => return config_error(dependency_freshness::CHECK_NAME, &e),
-        };
-        let result = dependency_freshness::check(&target, &definition);
-        report_to_result(&CheckReport::new(dependency_freshness::CHECK_NAME, result))
+        run_check(
+            &project_root,
+            dependency_freshness::CHECK_NAME,
+            scute_config::load_freshness_definition,
+            |def| dependency_freshness::check(&target, def),
+        )
     }
 }
 
@@ -137,19 +184,28 @@ async fn resolve_project_root(peer: &Peer<RoleServer>) -> Result<PathBuf, ErrorD
     }
 }
 
-fn config_error(
+fn run_check<D>(
+    project_root: &Path,
     check_name: &str,
-    err: &scute_config::ConfigError,
+    load_definition: fn(&Path) -> Result<D, scute_config::ConfigError>,
+    execute: impl FnOnce(&D) -> Result<Vec<scute_core::Evaluation>, ExecutionError>,
 ) -> Result<CallToolResult, ErrorData> {
-    let report = CheckReport::new(
-        check_name,
-        Err(ExecutionError {
-            code: "invalid_config".into(),
-            message: format!("{err}"),
-            recovery: "check your .scute.yml syntax".into(),
-        }),
-    );
-    report_to_result(&report)
+    let definition = match load_definition(project_root) {
+        Ok(def) => def,
+        Err(e) => {
+            let report = CheckReport::new(
+                check_name,
+                Err(ExecutionError {
+                    code: "invalid_config".into(),
+                    message: format!("{e}"),
+                    recovery: "check your .scute.yml syntax".into(),
+                }),
+            );
+            return report_to_result(&report);
+        }
+    };
+    let result = execute(&definition);
+    report_to_result(&CheckReport::new(check_name, result))
 }
 
 fn report_to_result(report: &CheckReport) -> Result<CallToolResult, ErrorData> {
