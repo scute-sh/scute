@@ -3,8 +3,8 @@ use std::path::PathBuf;
 use rmcp::{
     ClientHandler, ErrorData, ServiceExt,
     model::{
-        CallToolRequestParams, CallToolResult, ClientCapabilities, ClientInfo, ListRootsResult,
-        Root, Tool,
+        CallToolRequestParams, CallToolResult, ClientCapabilities, ClientInfo, Implementation,
+        InitializeRequestParams, ListRootsResult, Root, Tool,
     },
     service::{RequestContext, RoleClient, RunningService},
     transport::TokioChildProcess,
@@ -66,10 +66,10 @@ impl McpTestClient {
             .build()
             .unwrap();
 
-        let root = Root {
-            uri: format!("file://{}", project_root.display()),
-            name: None,
-        };
+        let root: Root = serde_json::from_value(serde_json::json!({
+            "uri": format!("file://{}", project_root.display())
+        }))
+        .expect("valid root");
         let service = rt
             .block_on(async {
                 let transport = TokioChildProcess::new({
@@ -89,12 +89,12 @@ impl McpTestClient {
 
     pub fn call_tool(&self, name: &str, args: &serde_json::Value) -> CallToolResult {
         self.rt
-            .block_on(self.service.call_tool(CallToolRequestParams {
-                name: name.to_string().into(),
-                arguments: Some(args.as_object().unwrap().clone()),
-                meta: None,
-                task: None,
-            }))
+            .block_on(
+                self.service.call_tool(
+                    CallToolRequestParams::new(name.to_string())
+                        .with_arguments(args.as_object().unwrap().clone()),
+                ),
+            )
             .expect("call_tool failed")
     }
 
@@ -110,19 +110,19 @@ struct RootsProvider(Vec<Root>);
 
 impl ClientHandler for RootsProvider {
     fn get_info(&self) -> ClientInfo {
-        ClientInfo {
-            capabilities: ClientCapabilities::builder().enable_roots().build(),
-            ..Default::default()
-        }
+        InitializeRequestParams::new(
+            ClientCapabilities::builder().enable_roots().build(),
+            Implementation::new("scute-test", env!("CARGO_PKG_VERSION")),
+        )
     }
 
     fn list_roots(
         &self,
         _: RequestContext<RoleClient>,
     ) -> impl Future<Output = Result<ListRootsResult, ErrorData>> + Send + '_ {
-        std::future::ready(Ok(ListRootsResult {
-            roots: self.0.clone(),
-        }))
+        let result: ListRootsResult =
+            serde_json::from_value(serde_json::json!({ "roots": self.0 })).expect("valid roots");
+        std::future::ready(Ok(result))
     }
 }
 
