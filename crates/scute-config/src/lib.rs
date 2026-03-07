@@ -85,24 +85,24 @@ fn code_similarity_definition_from(
     let Some(entry) = entry else {
         return Ok(code_similarity::Definition::default());
     };
-    let min_tokens = match entry.config {
-        Some(c) => {
-            serde_json::from_value::<CodeSimilarityConfig>(c)
-                .map_err(|e| ConfigError::InvalidCheckConfig(e.to_string()))?
-                .min_tokens
-        }
-        None => None,
+    let config = match entry.config {
+        Some(c) => serde_json::from_value::<CodeSimilarityConfig>(c)
+            .map_err(|e| ConfigError::InvalidCheckConfig(e.to_string()))?,
+        None => CodeSimilarityConfig::default(),
     };
     Ok(code_similarity::Definition {
-        min_tokens,
+        min_tokens: config.min_tokens,
         thresholds: entry.thresholds,
+        skip_ignored_files: config.skip_ignored_files,
     })
 }
 
-#[derive(Deserialize)]
+#[derive(Default, Deserialize)]
 struct CodeSimilarityConfig {
     #[serde(alias = "min-tokens")]
     min_tokens: Option<usize>,
+    #[serde(alias = "skip-ignored-files")]
+    skip_ignored_files: Option<bool>,
 }
 
 #[derive(Deserialize)]

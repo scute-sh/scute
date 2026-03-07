@@ -25,6 +25,7 @@ const DEFAULT_FAIL: u64 = 80;
 /// let strict = Definition {
 ///     min_tokens: Some(10),
 ///     thresholds: Some(scute_core::Thresholds { warn: Some(15), fail: Some(30) }),
+///     skip_ignored_files: Some(false),
 /// };
 /// ```
 #[derive(Debug, Default)]
@@ -33,6 +34,9 @@ pub struct Definition {
     /// Defaults to 25.
     pub min_tokens: Option<usize>,
     pub thresholds: Option<Thresholds>,
+    /// Skip files matching `.gitignore`, `.ignore`, and hidden paths.
+    /// Defaults to `true`.
+    pub skip_ignored_files: Option<bool>,
 }
 
 /// Check a directory for code duplication.
@@ -78,7 +82,8 @@ pub fn check(
         Err(errors) => return Ok(errors),
     };
 
-    let sources = read_sources(&canonical_dir);
+    let skip_ignored = definition.skip_ignored_files.unwrap_or(true);
+    let sources = read_sources(&canonical_dir, skip_ignored);
     let clone_groups = detect_clones(&sources, min_tokens)?;
     let relevant = filter_by_focus(&clone_groups, &focus_files);
 
@@ -115,8 +120,8 @@ fn filter_by_focus<'a>(
         .collect()
 }
 
-fn read_sources(dir: &Path) -> Vec<(String, String, &'static LanguageConfig)> {
-    discover_files(dir)
+fn read_sources(dir: &Path, skip_ignored: bool) -> Vec<(String, String, &'static LanguageConfig)> {
+    discover_files(dir, skip_ignored)
         .into_iter()
         .filter_map(|(path, lang)| {
             let content = std::fs::read_to_string(&path).ok()?;
@@ -202,14 +207,15 @@ fn build_evaluations(
         .collect()
 }
 
-fn discover_files(dir: &Path) -> Vec<(PathBuf, &'static LanguageConfig)> {
-    let mut files = visit_dir(dir);
+fn discover_files(dir: &Path, skip_ignored: bool) -> Vec<(PathBuf, &'static LanguageConfig)> {
+    let mut files = visit_dir(dir, skip_ignored);
     files.sort_by(|(a, _), (b, _)| a.cmp(b));
     files
 }
 
-fn visit_dir(dir: &Path) -> Vec<(PathBuf, &'static LanguageConfig)> {
+fn visit_dir(dir: &Path, skip_ignored: bool) -> Vec<(PathBuf, &'static LanguageConfig)> {
     ignore::WalkBuilder::new(dir)
+        .standard_filters(skip_ignored)
         .build()
         .filter_map(Result::ok)
         .filter(|e| e.file_type().is_some_and(|ft| ft.is_file()))
@@ -293,6 +299,7 @@ mod tests {
             warn: Some(5),
             fail: Some(10),
         }),
+        skip_ignored_files: None,
     };
 
     fn check_dir(dir: &Path) -> Vec<Evaluation> {
@@ -372,6 +379,7 @@ mod tests {
                     warn: Some(10),
                     fail: Some(12),
                 }),
+                skip_ignored_files: None,
             },
         )
         .unwrap();
@@ -392,6 +400,7 @@ mod tests {
                     warn: Some(20),
                     fail: Some(30),
                 }),
+                skip_ignored_files: None,
             },
         )
         .unwrap();
@@ -455,6 +464,35 @@ mod tests {
         assert!(
             evals.iter().all(Evaluation::is_pass),
             "vendor/ should be excluded, got: {evals:?}"
+        );
+    }
+
+    #[test]
+    fn skip_ignored_files_false_scans_gitignored_directories() {
+        let dir = TempDir::new().unwrap();
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        write_file(dir.path(), ".gitignore", "vendor/\n");
+        write_file(dir.path(), "src/a.rs", "fn foo(x: i32) -> i32 { x + 1 }");
+        write_file(
+            dir.path(),
+            "vendor/lib/b.rs",
+            "fn bar(y: i32) -> i32 { y + 1 }",
+        );
+
+        let evals = check(
+            dir.path(),
+            &[],
+            &Definition {
+                skip_ignored_files: Some(false),
+                ..LOW_THRESHOLD
+            },
+        )
+        .unwrap();
+
+        // With skip_ignored_files disabled, vendor/ is scanned → clone pair found
+        assert!(
+            evals.iter().any(|e| !e.is_pass()),
+            "vendor/ should be scanned when skip_ignored_files is false, got: {evals:?}"
         );
     }
 
