@@ -1,21 +1,19 @@
 # Roadmap
 
-## Phase 1: The Engine
+## Phase 1: Foundation ✅
 
-- Check definition parser (YAML)
-- Check execution and result collection
-- Structured JSON output
-- CLI (`scute check <check>`)
-- 3-5 first-party checks: cyclomatic complexity, circular dependencies,
-  layer dependency, dependency freshness, test coverage
-- MCP server as a first-class interface from day one
+- Check engine, CLI, structured JSON output
+- MCP server as a first-class interface
+- Agent workflow integration (fail → evidence → self-correct → pass)
+- 3 checks: commit-message, code-similarity, dependency-freshness
 
-## Phase 2: The Feedback Loop
+## Phase 2: Expand
 
-- Agent workflow integration: agent generates code, scute checks, failures
-  fed back as structured context, agent self-corrects
-- Adapter protocol for wrapping external tools as Scute checks
-- Scope resolution (changed-files, staged files, PR diff, all files)
+- More checks: cognitive complexity, circular dependencies, layer dependency
+- Broader ecosystem: deno/pnpm support for existing checks, npm
+  dependency-freshness
+- Scope resolution (standardized approach for changed-files, staged, PR diff,
+  all)
 
 ## Phase 3: Trends
 

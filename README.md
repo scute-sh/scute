@@ -32,102 +32,236 @@ a developer's terminal or a coding agent's tool call.
 
 ## See It Work
 
-Your team has an architecture rule: the UI layer must not import from
-persistence directly. You define the boundary:
-
-```yaml
-check: layer-dependency
-config:
-  layers:
-    ui: ["src/ui/**"]
-    persistence: ["src/db/**"]
-  deny:
-    no-persistence-import:
-      description: "UI layer must not import from persistence"
-      from: ui
-      to: persistence
-thresholds:
-  fail: 0
-```
-
-A coding agent refactors a dashboard component and adds
-`import { query } from '../../db/client'`. Scute catches it:
+A coding agent adds a utility function to `src/utils/format.rs`. Scute checks
+for structural duplication across the project, focusing on the new file:
 
 ```sh
-scute check layer-dependency src/ui/dashboard.ts
+scute check code-similarity src/utils/format.rs
 ```
 
 ```json
 {
-  "check": "layer-dependency",
-  "target": "src/ui/dashboard.ts",
-  "status": "fail",
-  "observed": 1,
-  "expected": { "fail": 0 },
-  "evidence": [
+  "check": "code-similarity",
+  "summary": {
+    "evaluated": 12,
+    "passed": 11,
+    "warned": 0,
+    "failed": 1,
+    "errored": 0
+  },
+  "findings": [
     {
-      "location": "src/ui/dashboard.ts:3",
-      "rule": "no-persistence-import",
-      "found": "import { query } from '../../db/client'"
+      "target": "src/utils/format.rs:14",
+      "status": "fail",
+      "measurement": {
+        "observed": 128,
+        "thresholds": { "warn": 70, "fail": 100 }
+      },
+      "evidence": [
+        {
+          "location": "src/utils/format.rs:14-38",
+          "found": "128 duplicated tokens, e.g. `fn format_timestamp(ts: i64) -> String {`"
+        },
+        {
+          "location": "src/helpers/time.rs:7-31",
+          "found": "128 duplicated tokens, e.g. `fn format_time(ts: i64) -> String {`"
+        }
+      ]
     }
   ]
 }
 ```
 
-The agent reads this. It knows exactly which file, which line, which rule, and
-what was found. It routes the import through the domain layer and runs the
-check again:
+The agent reads this. 128 tokens of structural duplication between
+`src/utils/format.rs:14-38` and `src/helpers/time.rs:7-31`. Same function,
+different location. It consolidates: removes the duplicate, reuses the existing
+one, and reruns the check.
 
 ```sh
-scute check layer-dependency src/ui/dashboard.ts
+scute check code-similarity src/utils/format.rs
 ```
 
 ```json
 {
-  "check": "layer-dependency",
-  "target": "src/ui/dashboard.ts",
-  "status": "pass",
-  "observed": 0,
-  "expected": { "fail": 0 }
+  "check": "code-similarity",
+  "summary": {
+    "evaluated": 12,
+    "passed": 12,
+    "warned": 0,
+    "failed": 0,
+    "errored": 0
+  },
+  "findings": []
 }
 ```
 
-No human in the loop. The architecture boundary held.
+Pass. No human in the loop. The duplication was caught before it reached a PR.
 
-### Trends, Not Snapshots
+Every check produces the same structured JSON: what was checked, what was
+observed, what the thresholds are, and exactly what evidence triggered the
+result. Agents and CI consume it the same way.
 
-Now zoom out. Last sprint, the codebase had 3 layer violations. This sprint:
+## Available Checks
 
-```json
-{
-  "check": "layer-dependency-delta",
-  "target": "src/ui/",
-  "status": "fail",
-  "observed": 5,
-  "expected": { "warn": 1, "fail": 2 },
-  "baseline": { "observed": 3, "commit": "a1b2c3d" },
-  "delta": 2
-}
+| Check                  | What it catches                 | Scope            |
+| ---------------------- | ------------------------------- | ---------------- |
+| `commit-message`       | Conventional Commits violations | Any project      |
+| `code-similarity`      | Structural code duplication     | Rust, TypeScript |
+| `dependency-freshness` | Outdated dependencies           | Cargo (Rust)     |
+
+## Quickstart
+
+```sh
+git clone https://github.com/scute/scute.git
+cd scute
+cargo install --path crates/scute-cli
 ```
 
-A snapshot says "5 violations." The trend says something changed and it's
-accelerating. That's the signal that matters.
-
-### Across the Lifecycle
-
-The same contract works at every stage. Different checks, different thresholds,
-same format:
+Create a `.scute.yml` in your project root:
 
 ```yaml
-# During development — keep functions simple
-check: cyclomatic-complexity
+checks:
+  commit-message:
+    thresholds:
+      fail: 0
+  code-similarity:
+    thresholds:
+      warn: 70
+      fail: 100
+    config:
+      min-tokens: 25
+  dependency-freshness:
+    thresholds:
+      warn: 5
+      fail: 8
+    config:
+      level: minor
+```
+
+Run a check:
+
+```sh
+scute check commit-message "feat: add login"
+```
+
+```json
+{
+  "check": "commit-message",
+  "summary": {
+    "evaluated": 1,
+    "passed": 1,
+    "warned": 0,
+    "failed": 0,
+    "errored": 0
+  },
+  "findings": []
+}
+```
+
+See a failure:
+
+```sh
+scute check commit-message "added stuff"
+```
+
+```json
+{
+  "check": "commit-message",
+  "summary": {
+    "evaluated": 1,
+    "passed": 0,
+    "warned": 0,
+    "failed": 1,
+    "errored": 0
+  },
+  "findings": [
+    {
+      "target": "added stuff",
+      "status": "fail",
+      "measurement": { "observed": 1, "thresholds": { "fail": 0 } },
+      "evidence": [
+        {
+          "rule": "subject-format",
+          "found": "added stuff",
+          "expected": "type(scope): description"
+        }
+      ]
+    }
+  ]
+}
+```
+
+The `evidence` array tells you (or your agent) exactly what went wrong and what
+was expected. No guessing.
+
+## Agent Integration
+
+Scute ships an MCP server so coding agents can run checks as tool calls.
+
+### 1. Register the MCP server
+
+Add this to your project's `.mcp.json`:
+
+```json
+{
+  "mcpServers": {
+    "scute": {
+      "type": "stdio",
+      "command": "scute",
+      "args": ["mcp"]
+    }
+  }
+}
+```
+
+### 2. Tell your agent to use it
+
+Add instructions to your project's agent config (e.g. `CLAUDE.md`, cursor
+rules, etc.) telling the agent to use Scute checks proactively. Here's what
+Scute's own config looks like:
+
+```markdown
+## MCP Tools Are Part of the Workflow
+
+Before any action, think about which MCP tools are relevant to what you're
+about to do.
+
+Scute's MCP server has check tools to help you work more efficiently:
+
+- `check_commit_message`
+- `check_dependency_freshness`
+- `check_code_similarity`
+
+Use them.
+```
+
+### 3. The agent self-corrects
+
+The MCP server's built-in instructions already tell agents to use evidence
+for self-correction. When a check fails, the agent gets structured evidence
+(files, locations, what was found, what was expected) and can fix the issue
+before asking for review.
+
+## The Bigger Picture
+
+The contract is the product. Every check, whether it runs in your editor, in
+CI, or in production, speaks the same language: structured input, structured
+output, deterministic results. One format from pre-commit hook to production
+monitor.
+
+That's where we're headed. The checks available today are just the beginning.
+The same contract will support checks like:
+
+```yaml
+# Keep functions simple
+check: cognitive-complexity
 thresholds:
   warn: 10
   fail: 20
 ```
 
 ```yaml
-# At PR time — don't let coverage erode
+# Don't let coverage erode
 check: test-coverage-delta
 thresholds:
   warn: -5
@@ -135,25 +269,18 @@ thresholds:
 ```
 
 ```yaml
-# In production — respect the error budget
+# Respect the error budget
 check: error-budget
 thresholds:
   warn: 20
   fail: 0
 ```
 
-One definition format. One result schema. From pre-commit hook to production
-monitor.
-
-See the full [check evaluation schema](handbook/decisions/0001-check-evaluation-schema.md)
-and [check definition format](handbook/decisions/0002-check-definition-format.md).
+Think of it like OpenTelemetry for fitness checks. OTel standardized
+observability signals; Scute standardizes fitness signals. The check contract
+is the protocol layer. Everything else composes on top.
 
 ## Design Principles
-
-Scute aspires to be a **protocol layer for fitness checks** — like OpenTelemetry
-standardized observability signals, Scute standardizes fitness signals. The
-check contract (structured input, structured output) is the product. Everything
-else composes on top.
 
 **Deterministic.** Checks produce facts, not suggestions. Same input, same
 result, every time, on any machine.
@@ -217,8 +344,20 @@ vision, principles, roadmap, and architecture decisions.
 
 ## Status
 
-🚧 Early development. The foundation is set — contracts, schemas, and design
-principles are validated. Implementation is beginning.
+**What's done:**
+
+- 3 checks: `commit-message`, `code-similarity`, `dependency-freshness`
+- CLI with structured JSON output
+- MCP server for coding agent integration
+- Agent self-correction workflow (fail → read evidence → fix → pass)
+
+**What's next:**
+
+- More checks (cognitive complexity, circular dependencies, layer dependency)
+- Broader ecosystem support (deno, node, java, etc.)
+- Trend tracking (delta-from-baseline, direction over time)
+
+**Current scope:** Requires a Rust toolchain to install (from source).
 
 We're building in the open from day one. If this resonates with how you think
 about software, watch the repo, open issues, start conversations.
