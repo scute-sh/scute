@@ -237,7 +237,7 @@ These are not suggestions. If you detect any of these, stop immediately and corr
 **All four** checks must pass before moving to next slice:
 
 1. All tests pass
-2. Code read-back: comfortable explaining this in a code review?
+2. Invoke `/code-review` on the slice's changes. All violations must be resolved before proceeding.
 3. Update tracking:
    - **Preparatory**: Mark item complete in `playground/{feature-name}-scout.md`
    - **Feature**: Mark satisfied criteria in `playground/{feature-name}-criteria.md`

@@ -70,12 +70,15 @@ Anti-pattern: RED → GREEN → RED → GREEN → ... → REFACTOR at the end.
     - Run tests after each simplification
     - Repeat until every line is justified by a test
 12. Refactor. Zoom out — evaluate the effect of your changes on the surrounding code, not just the diff.
-    - "What did this change do to the code around it?" Is the receiving function/class/module still cohesive? Growing too many parameters, responsibilities, or cases?
-    - Missing domain concept? Duplication? Abstraction waiting to emerge?
+    - Read back the function/class/module that received the change. Not just the lines you added — the whole unit.
+    - Answer each explicitly:
+      - Cohesion: is this unit still doing one thing, or growing responsibilities?
+      - Duplication: any repeated patterns across this code and the rest of the codebase?
+      - Naming: do all names still accurately describe what they hold/do after this change?
+      - Abstraction: is a domain concept hiding behind a conditional or a parameter?
     - New abstractions are allowed. New behavior is not.
-    - If improving: `🌀 Refactoring: [list improvements]`
-    - If clean: `🌀 Clean`
-    - One change at a time, run tests after each
+    - `🌀 Refactoring: [concrete action]` then do it, one change at a time, tests after each
+    - Only after answering all four checks with no actions identified: `🌀 Clean — [one sentence: what you read back and why nothing needs changing]`
 13. Go to step 1 for the next [TEST] comment. Repeat until all planned tests are passing.
 
 ## Final Evaluation
