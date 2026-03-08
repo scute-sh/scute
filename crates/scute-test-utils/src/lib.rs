@@ -8,6 +8,8 @@ mod cli;
 pub mod mcp;
 mod project;
 
+use std::path::Path;
+
 use cli::CliBackend;
 use mcp::McpBackend;
 pub use project::TestProject;
@@ -31,13 +33,14 @@ impl std::fmt::Display for Interface {
 }
 
 trait Backend {
-    fn check(&self, dir: TempDir, args: &[&str]) -> Box<dyn CheckResult>;
+    fn check(&self, dir: TempDir, working_dir: &Path, args: &[&str]) -> Box<dyn CheckResult>;
     fn list_checks(&self, dir: TempDir) -> Box<dyn ListChecksResult>;
 }
 
 pub struct Scute {
     backend: Box<dyn Backend>,
     project: TestProject,
+    cwd: Option<String>,
 }
 
 impl Scute {
@@ -53,6 +56,7 @@ impl Scute {
         Self {
             backend: Box::new(CliBackend { stdin: false }),
             project: TestProject::cargo(),
+            cwd: None,
         }
     }
 
@@ -60,6 +64,7 @@ impl Scute {
         Self {
             backend: Box::new(CliBackend { stdin: true }),
             project: TestProject::cargo(),
+            cwd: None,
         }
     }
 
@@ -67,6 +72,7 @@ impl Scute {
         Self {
             backend: Box::new(McpBackend),
             project: TestProject::cargo(),
+            cwd: None,
         }
     }
 
@@ -90,6 +96,12 @@ impl Scute {
         self
     }
 
+    /// Run the check from a subdirectory instead of the project root.
+    pub fn cwd(mut self, subdir: &str) -> Self {
+        self.cwd = Some(subdir.into());
+        self
+    }
+
     pub fn list_checks(self) -> Box<dyn ListChecksResult> {
         let dir = self.project.build();
         self.backend.list_checks(dir)
@@ -99,7 +111,15 @@ impl Scute {
         let mut full_args = vec!["check"];
         full_args.extend_from_slice(args);
         let dir = self.project.build();
-        self.backend.check(dir, &full_args)
+        let working_dir = match &self.cwd {
+            Some(subdir) => {
+                let path = dir.path().join(subdir);
+                std::fs::create_dir_all(&path).expect("failed to create cwd subdir");
+                path
+            }
+            None => dir.path().to_path_buf(),
+        };
+        self.backend.check(dir, &working_dir, &full_args)
     }
 }
 

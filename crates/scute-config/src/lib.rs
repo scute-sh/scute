@@ -1,10 +1,12 @@
 #![allow(clippy::missing_errors_doc)]
 
 use std::collections::HashMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use scute_core::{Thresholds, code_similarity, commit_message, dependency_freshness};
 use serde::Deserialize;
+
+const CONFIG_FILE: &str = ".scute.yml";
 
 #[derive(Deserialize)]
 struct ScuteConfig {
@@ -38,11 +40,27 @@ impl std::fmt::Display for ConfigError {
 
 impl std::error::Error for ConfigError {}
 
-fn load_check_entry(dir: &Path, check_name: &str) -> Result<Option<CheckEntry>, ConfigError> {
-    let path = dir.join(".scute.yml");
-    if !path.exists() {
-        return Ok(None);
+fn find_config_file(start: &Path) -> Option<PathBuf> {
+    let home = dirs::home_dir();
+    for dir in start.ancestors() {
+        let candidate = dir.join(CONFIG_FILE);
+        if candidate.exists() {
+            return Some(candidate);
+        }
+        if dir.join(".git").exists() {
+            return None;
+        }
+        if home.as_deref() == Some(dir) {
+            return None;
+        }
     }
+    None
+}
+
+fn load_check_entry(dir: &Path, check_name: &str) -> Result<Option<CheckEntry>, ConfigError> {
+    let Some(path) = find_config_file(dir) else {
+        return Ok(None);
+    };
     let contents = std::fs::read_to_string(&path).map_err(ConfigError::Io)?;
     let mut config: ScuteConfig =
         serde_yml::from_str(&contents).map_err(|e| ConfigError::Parse(format_config_error(&e)))?;
@@ -293,5 +311,52 @@ mod tests {
 
     fn check_entry_from_yaml(yaml: &str) -> CheckEntry {
         serde_yml::from_str(yaml).unwrap()
+    }
+
+    mod find_config_file {
+        use super::super::*;
+
+        #[test]
+        fn finds_config_in_start_directory() {
+            let dir = tempfile::tempdir().unwrap();
+            std::fs::write(dir.path().join(CONFIG_FILE), "").unwrap();
+
+            assert_eq!(
+                find_config_file(dir.path()),
+                Some(dir.path().join(CONFIG_FILE))
+            );
+        }
+
+        #[test]
+        fn finds_config_in_parent_directory() {
+            let dir = tempfile::tempdir().unwrap();
+            std::fs::write(dir.path().join(CONFIG_FILE), "").unwrap();
+            let child = dir.path().join("sub");
+            std::fs::create_dir(&child).unwrap();
+
+            assert_eq!(find_config_file(&child), Some(dir.path().join(CONFIG_FILE)));
+        }
+
+        #[test]
+        fn stops_at_git_boundary() {
+            let dir = tempfile::tempdir().unwrap();
+            std::fs::write(dir.path().join(CONFIG_FILE), "").unwrap();
+            let project = dir.path().join("project");
+            std::fs::create_dir(&project).unwrap();
+            std::fs::create_dir(project.join(".git")).unwrap();
+            let child = project.join("sub");
+            std::fs::create_dir(&child).unwrap();
+
+            assert_eq!(find_config_file(&child), None);
+        }
+
+        #[test]
+        fn returns_none_when_no_config_found() {
+            let dir = tempfile::tempdir().unwrap();
+            let child = dir.path().join("a/b/c");
+            std::fs::create_dir_all(&child).unwrap();
+
+            assert_eq!(find_config_file(&child), None);
+        }
     }
 }

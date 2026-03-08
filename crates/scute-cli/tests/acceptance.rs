@@ -248,4 +248,21 @@ mod config {
             .check(&["commit-message", "feat: add login"])
             .expect_pass();
     }
+
+    #[test_case(Cli)]
+    #[test_case(Mcp)]
+    fn picks_up_config_from_parent_directory(interface: Interface) {
+        Scute::new(interface)
+            .scute_config(
+                r"
+checks:
+  commit-message:
+    config:
+      types: [hotfix]
+",
+            )
+            .cwd("nested")
+            .check(&["commit-message", "hotfix: urgent patch"])
+            .expect_pass();
+    }
 }

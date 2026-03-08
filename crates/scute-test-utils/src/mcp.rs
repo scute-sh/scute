@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use rmcp::{
     ClientHandler, ErrorData, ServiceExt,
@@ -17,11 +17,11 @@ use crate::{Backend, CheckResult, ListChecksResult, target_bin};
 pub(crate) struct McpBackend;
 
 impl Backend for McpBackend {
-    fn check(&self, dir: TempDir, args: &[&str]) -> Box<dyn CheckResult> {
+    fn check(&self, dir: TempDir, working_dir: &Path, args: &[&str]) -> Box<dyn CheckResult> {
         let check_name = args.get(1).expect("check name required");
         let tool_name = format!("check_{}", check_name.replace('-', "_"));
         let tool_args = build_tool_args(check_name, &args[2..]);
-        let project_dir = dir.path().canonicalize().unwrap();
+        let project_dir = working_dir.canonicalize().unwrap();
 
         let client = McpTestClient::connect(&project_dir);
         let result = client.call_tool(&tool_name, &tool_args);

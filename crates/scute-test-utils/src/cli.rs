@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use tempfile::TempDir;
 
 use crate::{Backend, CheckResult, ListChecksResult, target_bin};
@@ -7,8 +9,8 @@ pub(crate) struct CliBackend {
 }
 
 impl Backend for CliBackend {
-    fn check(&self, dir: TempDir, args: &[&str]) -> Box<dyn CheckResult> {
-        Box::new(CliCheckResult::run(dir, args, self.stdin))
+    fn check(&self, dir: TempDir, working_dir: &Path, args: &[&str]) -> Box<dyn CheckResult> {
+        Box::new(CliCheckResult::run(dir, working_dir, args, self.stdin))
     }
 
     fn list_checks(&self, dir: TempDir) -> Box<dyn ListChecksResult> {
@@ -33,9 +35,9 @@ struct CliCheckResult {
 }
 
 impl CliCheckResult {
-    fn run(dir: TempDir, args: &[&str], stdin: bool) -> Self {
+    fn run(dir: TempDir, working_dir: &Path, args: &[&str], stdin: bool) -> Self {
         let mut cmd = assert_cmd::Command::new(target_bin("scute"));
-        cmd.current_dir(dir.path());
+        cmd.current_dir(working_dir);
         if stdin {
             let message = args.last().expect("CliStdin requires message in args");
             cmd.args(&args[..args.len() - 1])
