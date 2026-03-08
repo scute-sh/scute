@@ -80,6 +80,15 @@ mod tests {
         SourceTokens::new(source_id.to_string(), tokens)
     }
 
+    /// Two single-line functions with identical structure but different names/types.
+    /// Produces 14 normalized tokens each: fn $ID ( $ID : $ID ) -> $ID { $ID + $LIT }
+    fn rust_clone_pair() -> [SourceTokens; 2] {
+        [
+            tokenize_rust("fn f(x: i32) -> i32 { x + 1 }", "a.rs"),
+            tokenize_rust("fn g(y: u32) -> u32 { y + 1 }", "b.rs"),
+        ]
+    }
+
     #[test]
     fn detects_within_file_duplication() {
         let source = "fn foo(x: i32) -> i32 { x + 1 }\nfn bar(y: i32) -> i32 { y + 1 }";
@@ -107,8 +116,7 @@ mod tests {
 
     #[test]
     fn groups_three_identical_regions_into_one_group() {
-        let a = tokenize_rust("fn f(x: i32) -> i32 { x + 1 }", "a.rs");
-        let b = tokenize_rust("fn g(y: u32) -> u32 { y + 1 }", "b.rs");
+        let [a, b] = rust_clone_pair();
         let c = tokenize_rust("fn h(z: f64) -> f64 { z + 1 }", "c.rs");
 
         let groups = detect_clones(&[a, b, c], LOW_TOKEN_THRESHOLD);
@@ -129,8 +137,7 @@ mod tests {
 
     #[test]
     fn filters_matches_below_min_tokens() {
-        let a = tokenize_rust("fn f(x: i32) -> i32 { x + 1 }", "a.rs");
-        let b = tokenize_rust("fn g(y: u32) -> u32 { y + 1 }", "b.rs");
+        let [a, b] = rust_clone_pair();
 
         let groups = detect_clones(&[a, b], IMPOSSIBLY_HIGH_THRESHOLD);
 
@@ -139,8 +146,7 @@ mod tests {
 
     #[test]
     fn reports_token_count_at_least_min_tokens() {
-        let a = tokenize_rust("fn f(x: i32) -> i32 { x + 1 }", "a.rs");
-        let b = tokenize_rust("fn g(y: u32) -> u32 { y + 1 }", "b.rs");
+        let [a, b] = rust_clone_pair();
 
         let groups = detect_clones(&[a, b], LOW_TOKEN_THRESHOLD);
 
@@ -150,8 +156,7 @@ mod tests {
 
     #[test]
     fn occurrence_lines_are_coherent() {
-        let a = tokenize_rust("fn f(x: i32) -> i32 { x + 1 }", "a.rs");
-        let b = tokenize_rust("fn g(y: u32) -> u32 { y + 1 }", "b.rs");
+        let [a, b] = rust_clone_pair();
 
         let groups = detect_clones(&[a, b], LOW_TOKEN_THRESHOLD);
 
@@ -164,8 +169,7 @@ mod tests {
     #[test]
     fn same_input_produces_identical_output() {
         let run = || {
-            let a = tokenize_rust("fn f(x: i32) -> i32 { x + 1 }", "a.rs");
-            let b = tokenize_rust("fn g(y: u32) -> u32 { y + 1 }", "b.rs");
+            let [a, b] = rust_clone_pair();
             detect_clones(&[a, b], LOW_TOKEN_THRESHOLD)
         };
 
@@ -184,8 +188,7 @@ mod tests {
 
     #[test]
     fn min_tokens_zero_returns_empty() {
-        let a = tokenize_rust("fn f(x: i32) -> i32 { x + 1 }", "a.rs");
-        let b = tokenize_rust("fn g(y: u32) -> u32 { y + 1 }", "b.rs");
+        let [a, b] = rust_clone_pair();
 
         let groups = detect_clones(&[a, b], 0);
 
@@ -207,6 +210,57 @@ mod tests {
         let groups = detect_clones(&[a], LOW_TOKEN_THRESHOLD);
 
         assert!(groups.is_empty());
+    }
+
+    #[test]
+    fn comment_only_source_produces_no_clones() {
+        let a = tokenize_rust("// just a comment\n/* block comment */", "a.rs");
+        let b = tokenize_rust("// another comment\n/* block */", "b.rs");
+
+        let groups = detect_clones(&[a, b], LOW_TOKEN_THRESHOLD);
+
+        assert!(groups.is_empty());
+    }
+
+    #[test]
+    fn clone_at_exact_min_tokens_is_detected() {
+        let [a, b] = rust_clone_pair();
+
+        let groups = detect_clones(&[a, b], 14);
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].token_count, 14);
+    }
+
+    #[test]
+    fn clone_one_below_min_tokens_is_not_detected() {
+        let [a, b] = rust_clone_pair();
+
+        let groups = detect_clones(&[a, b], 15);
+
+        assert!(groups.is_empty());
+    }
+
+    #[test]
+    fn multi_line_clone_tracks_correct_line_range() {
+        let source_a = "\
+fn f(x: i32) -> i32 {
+    let result = x + 1;
+    result * 2
+}";
+        let source_b = "\
+fn g(y: u32) -> u32 {
+    let result = y + 1;
+    result * 2
+}";
+        let a = tokenize_rust(source_a, "a.rs");
+        let b = tokenize_rust(source_b, "b.rs");
+
+        let groups = detect_clones(&[a, b], LOW_TOKEN_THRESHOLD);
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].occurrences[0].start_line, 1);
+        assert_eq!(groups[0].occurrences[0].end_line, 4);
     }
 
     #[test]

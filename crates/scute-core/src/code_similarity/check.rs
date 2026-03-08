@@ -8,7 +8,7 @@ use crate::{Evaluation, Evidence, ExecutionError, Thresholds};
 
 pub const CHECK_NAME: &str = "code-similarity";
 
-const DEFAULT_MIN_TOKENS: usize = 25;
+const DEFAULT_MIN_TOKENS: usize = 50;
 const DEFAULT_WARN: u64 = 70;
 const DEFAULT_FAIL: u64 = 100;
 const DEFAULT_TEST_WARN: u64 = 100;
@@ -21,7 +21,7 @@ const DEFAULT_TEST_FAIL: u64 = 130;
 /// ```
 /// use scute_core::code_similarity::Definition;
 ///
-/// // Zero-config: uses default min_tokens (25) and thresholds (warn: 70, fail: 100)
+/// // Zero-config: uses default min_tokens (50) and thresholds (warn: 70, fail: 100)
 /// let default = Definition::default();
 ///
 /// // Custom: catch smaller clones, tighter thresholds
@@ -34,7 +34,7 @@ const DEFAULT_TEST_FAIL: u64 = 130;
 #[derive(Debug, Default)]
 pub struct Definition {
     /// Minimum token count for a sequence to be considered a clone.
-    /// Defaults to 25.
+    /// Defaults to 50.
     pub min_tokens: Option<usize>,
     pub thresholds: Option<Thresholds>,
     /// Skip files matching `.gitignore`, `.ignore`, and hidden paths.
@@ -252,13 +252,7 @@ fn is_test_only_group(
 }
 
 fn discover_files(dir: &Path, skip_ignored: bool) -> Vec<(PathBuf, &'static LanguageConfig)> {
-    let mut files = visit_dir(dir, skip_ignored);
-    files.sort_by(|(a, _), (b, _)| a.cmp(b));
-    files
-}
-
-fn visit_dir(dir: &Path, skip_ignored: bool) -> Vec<(PathBuf, &'static LanguageConfig)> {
-    ignore::WalkBuilder::new(dir)
+    let mut files: Vec<_> = ignore::WalkBuilder::new(dir)
         .standard_filters(skip_ignored)
         .build()
         .filter_map(Result::ok)
@@ -267,7 +261,9 @@ fn visit_dir(dir: &Path, skip_ignored: bool) -> Vec<(PathBuf, &'static LanguageC
             let lang = language_for_path(e.path())?;
             Some((e.into_path(), lang))
         })
-        .collect()
+        .collect();
+    files.sort_by(|(a, _), (b, _)| a.cmp(b));
+    files
 }
 
 fn language_for_path(path: &Path) -> Option<&'static LanguageConfig> {
@@ -360,6 +356,28 @@ mod tests {
         check(dir, focus_files, &low_threshold()).unwrap()
     }
 
+    fn check_clone_pair() -> Vec<Evaluation> {
+        let dir = clone_pair_dir();
+        check_dir(dir.path())
+    }
+
+    fn check_clone_pair_with_thresholds(warn: u64, fail: u64) -> Vec<Evaluation> {
+        let dir = clone_pair_dir();
+        check(
+            dir.path(),
+            &[],
+            &Definition {
+                min_tokens: Some(5),
+                thresholds: Some(Thresholds {
+                    warn: Some(warn),
+                    fail: Some(fail),
+                }),
+                ..Definition::default()
+            },
+        )
+        .unwrap()
+    }
+
     fn clone_pair_dir() -> TempDir {
         let dir = TempDir::new().unwrap();
         write_file(dir.path(), "a.rs", "fn foo(x: i32) -> i32 { x + 1 }");
@@ -418,51 +436,21 @@ mod tests {
 
     #[test]
     fn clone_exceeding_fail_threshold_produces_fail_status() {
-        let dir = clone_pair_dir();
-
-        let evals = check(
-            dir.path(),
-            &[],
-            &Definition {
-                min_tokens: Some(5),
-                thresholds: Some(Thresholds {
-                    warn: Some(10),
-                    fail: Some(12),
-                }),
-                ..Definition::default()
-            },
-        )
-        .unwrap();
+        let evals = check_clone_pair_with_thresholds(10, 12);
 
         assert!(evals[0].is_fail()); // 14 tokens > fail threshold of 12
     }
 
     #[test]
     fn clone_below_thresholds_produces_pass_status() {
-        let dir = clone_pair_dir();
-
-        let evals = check(
-            dir.path(),
-            &[],
-            &Definition {
-                min_tokens: Some(5),
-                thresholds: Some(Thresholds {
-                    warn: Some(20),
-                    fail: Some(30),
-                }),
-                ..Definition::default()
-            },
-        )
-        .unwrap();
+        let evals = check_clone_pair_with_thresholds(20, 30);
 
         assert!(evals[0].is_pass()); // 14 tokens < warn threshold of 20
     }
 
     #[test]
     fn observed_value_is_token_count_of_the_clone() {
-        let dir = clone_pair_dir();
-
-        let evals = check_dir(dir.path());
+        let evals = check_clone_pair();
 
         let Outcome::Completed { observed, .. } = &evals[0].outcome else {
             panic!("expected completed evaluation")
@@ -548,9 +536,7 @@ mod tests {
 
     #[test]
     fn evidence_contains_all_occurrence_locations() {
-        let dir = clone_pair_dir();
-
-        let evals = check_dir(dir.path());
+        let evals = check_clone_pair();
 
         let evidence = unwrap_evidence(&evals[0]);
         assert_that!(evidence, len(eq(2)));
@@ -560,9 +546,7 @@ mod tests {
 
     #[test]
     fn duplicated_code_returns_one_evaluation_per_clone_group() {
-        let dir = clone_pair_dir();
-
-        let evals = check_dir(dir.path());
+        let evals = check_clone_pair();
 
         assert_that!(evals, len(eq(1)));
     }
@@ -782,6 +766,20 @@ mod tests {
 
         let evals = check_dir(dir.path());
 
+        assert_that!(evals, len(eq(1)));
+        assert!(evals[0].is_pass());
+    }
+
+    #[test]
+    fn default_definition_uses_sensible_defaults() {
+        let dir = TempDir::new().unwrap();
+        // These functions produce ~14 tokens each, well under default min_tokens (50)
+        write_file(dir.path(), "a.rs", "fn foo(x: i32) -> i32 { x + 1 }");
+        write_file(dir.path(), "b.rs", "fn bar(y: i32) -> i32 { y + 1 }");
+
+        let evals = check(dir.path(), &[], &Definition::default()).unwrap();
+
+        // 14 tokens < default min_tokens of 50 → no clones detected → pass
         assert_that!(evals, len(eq(1)));
         assert!(evals[0].is_pass());
     }

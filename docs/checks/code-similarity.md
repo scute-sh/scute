@@ -61,7 +61,7 @@ checks:
       warn: 70
       fail: 100
     config:
-      min-tokens: 25
+      min-tokens: 50
       skip-ignored-files: true
       test-thresholds:
         warn: 100
@@ -83,11 +83,11 @@ With defaults: 70 tokens passes, 71 warns, 100 warns, 101 fails.
 
 | Option               | Type       | Default              | Description                                                    |
 | -------------------- | ---------- | -------------------- | -------------------------------------------------------------- |
-| `min-tokens`         | integer    | `25`                 | Minimum token sequence length to consider as duplication        |
+| `min-tokens`         | integer    | `50`                 | Minimum token sequence length to consider as duplication        |
 | `skip-ignored-files` | boolean    | `true`               | Skip files matched by `.gitignore` during file discovery        |
 | `test-thresholds`    | thresholds | warn: 100, fail: 130 | Separate thresholds for clone groups where every occurrence lives in test code |
 
-`min-tokens` controls sensitivity. Lower values catch smaller clones but produce more noise. 25 works well for most projects.
+`min-tokens` controls sensitivity. Lower values catch smaller clones but produce more noise. 50 works well for most projects.
 
 Test code tends to have more acceptable duplication (similar setups, assertion patterns). `test-thresholds` sets a more lenient bar for clone groups that live entirely in test code. This includes `tests/` directories, `*.test.*`/`*.spec.*` files, `#[cfg(test)]` modules, and `#[test]` functions. If any occurrence in a clone group is production code, the regular thresholds apply.
 

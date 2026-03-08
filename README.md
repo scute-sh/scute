@@ -129,7 +129,7 @@ checks:
       warn: 70
       fail: 100
     config:
-      min-tokens: 25
+      min-tokens: 50
   dependency-freshness:
     thresholds:
       warn: 5
