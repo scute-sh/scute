@@ -14,8 +14,10 @@ use rmcp::{
     transport::stdio,
 };
 use schema::CheckReportSchema;
+use scute_config::ScuteConfig;
 use scute_core::report::CheckReport;
 use scute_core::{ExecutionError, code_similarity, commit_message, dependency_freshness};
+use serde::de::DeserializeOwned;
 
 const INSTRUCTIONS: &str = "\
 Scute gives you a feedback loop to catch problems as you work, not after. \
@@ -84,8 +86,7 @@ impl ScuteMcp {
         run_check(
             &project_root,
             commit_message::CHECK_NAME,
-            scute_config::load_commit_message_definition,
-            |def| commit_message::check(&input.message, def),
+            |def: &commit_message::Definition| commit_message::check(&input.message, def),
         )
     }
 
@@ -119,8 +120,9 @@ impl ScuteMcp {
         run_check(
             &project_root,
             code_similarity::CHECK_NAME,
-            scute_config::load_code_similarity_definition,
-            |def| code_similarity::check(&source_dir, &focus_files, def),
+            |def: &code_similarity::Definition| {
+                code_similarity::check(&source_dir, &focus_files, def)
+            },
         )
     }
 
@@ -148,8 +150,7 @@ impl ScuteMcp {
         run_check(
             &project_root,
             dependency_freshness::CHECK_NAME,
-            scute_config::load_freshness_definition,
-            |def| dependency_freshness::check(&target, def),
+            |def: &dependency_freshness::Definition| dependency_freshness::check(&target, def),
         )
     }
 }
@@ -184,26 +185,26 @@ async fn resolve_project_root(peer: &Peer<RoleServer>) -> Result<PathBuf, ErrorD
     }
 }
 
-fn run_check<D>(
+fn run_check<D: Default + DeserializeOwned>(
     project_root: &Path,
     check_name: &str,
-    load_definition: fn(&Path) -> Result<D, scute_config::ConfigError>,
     execute: impl FnOnce(&D) -> Result<Vec<scute_core::Evaluation>, ExecutionError>,
 ) -> Result<CallToolResult, ErrorData> {
-    let definition = match load_definition(project_root) {
-        Ok(def) => def,
-        Err(e) => {
-            let report = CheckReport::new(
-                check_name,
-                Err(ExecutionError {
-                    code: "invalid_config".into(),
-                    message: format!("{e}"),
-                    recovery: "check your .scute.yml syntax".into(),
-                }),
-            );
-            return report_to_result(&report);
-        }
-    };
+    let definition =
+        match ScuteConfig::load(project_root).and_then(|c: ScuteConfig| c.definition(check_name)) {
+            Ok(def) => def,
+            Err(e) => {
+                let report = CheckReport::new(
+                    check_name,
+                    Err(ExecutionError {
+                        code: "invalid_config".into(),
+                        message: format!("{e}"),
+                        recovery: "check your .scute.yml syntax".into(),
+                    }),
+                );
+                return report_to_result(&report);
+            }
+        };
     let result = execute(&definition);
     report_to_result(&CheckReport::new(check_name, result))
 }

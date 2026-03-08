@@ -3,24 +3,10 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use scute_core::{Thresholds, code_similarity, commit_message, dependency_freshness};
 use serde::Deserialize;
+use serde::de::DeserializeOwned;
 
 const CONFIG_FILE: &str = ".scute.yml";
-
-#[derive(Deserialize)]
-struct ScuteConfig {
-    #[serde(default)]
-    checks: HashMap<String, CheckEntry>,
-}
-
-#[derive(Deserialize)]
-struct CheckEntry {
-    #[serde(default)]
-    thresholds: Option<Thresholds>,
-    #[serde(default)]
-    config: Option<serde_json::Value>,
-}
 
 #[derive(Debug)]
 pub enum ConfigError {
@@ -40,6 +26,38 @@ impl std::fmt::Display for ConfigError {
 
 impl std::error::Error for ConfigError {}
 
+#[derive(Default, Deserialize)]
+struct RawConfig {
+    #[serde(default)]
+    checks: HashMap<String, serde_yml::Value>,
+}
+
+pub struct ScuteConfig {
+    checks: HashMap<String, serde_yml::Value>,
+}
+
+impl ScuteConfig {
+    pub fn load(dir: &Path) -> Result<Self, ConfigError> {
+        let Some(path) = find_config_file(dir) else {
+            return Ok(Self {
+                checks: HashMap::new(),
+            });
+        };
+        let contents = std::fs::read_to_string(&path).map_err(ConfigError::Io)?;
+        let raw: RawConfig = serde_yml::from_str(&contents)
+            .map_err(|e| ConfigError::Parse(format_config_error(&e)))?;
+        Ok(Self { checks: raw.checks })
+    }
+
+    pub fn definition<D: Default + DeserializeOwned>(&self, name: &str) -> Result<D, ConfigError> {
+        match self.checks.get(name) {
+            Some(value) => serde_yml::from_value(value.clone())
+                .map_err(|e| ConfigError::InvalidCheckConfig(format_config_error(&e))),
+            None => Ok(D::default()),
+        }
+    }
+}
+
 fn find_config_file(start: &Path) -> Option<PathBuf> {
     let home = dirs::home_dir();
     for dir in start.ancestors() {
@@ -55,16 +73,6 @@ fn find_config_file(start: &Path) -> Option<PathBuf> {
         }
     }
     None
-}
-
-fn load_check_entry(dir: &Path, check_name: &str) -> Result<Option<CheckEntry>, ConfigError> {
-    let Some(path) = find_config_file(dir) else {
-        return Ok(None);
-    };
-    let contents = std::fs::read_to_string(&path).map_err(ConfigError::Io)?;
-    let mut config: ScuteConfig =
-        serde_yml::from_str(&contents).map_err(|e| ConfigError::Parse(format_config_error(&e)))?;
-    Ok(config.checks.remove(check_name))
 }
 
 fn format_config_error(err: &serde_yml::Error) -> String {
@@ -90,141 +98,55 @@ fn strip_internal_types(msg: &str) -> String {
     msg.to_string()
 }
 
-pub fn load_code_similarity_definition(
-    dir: &Path,
-) -> Result<code_similarity::Definition, ConfigError> {
-    let entry = load_check_entry(dir, code_similarity::CHECK_NAME)?;
-    code_similarity_definition_from(entry)
-}
-
-fn code_similarity_definition_from(
-    entry: Option<CheckEntry>,
-) -> Result<code_similarity::Definition, ConfigError> {
-    let Some(entry) = entry else {
-        return Ok(code_similarity::Definition::default());
-    };
-    let config = match entry.config {
-        Some(c) => serde_json::from_value::<CodeSimilarityConfig>(c)
-            .map_err(|e| ConfigError::InvalidCheckConfig(e.to_string()))?,
-        None => CodeSimilarityConfig::default(),
-    };
-    Ok(code_similarity::Definition {
-        min_tokens: config.min_tokens,
-        thresholds: entry.thresholds,
-        skip_ignored_files: config.skip_ignored_files,
-        test_thresholds: config.test_thresholds,
-    })
-}
-
-#[derive(Default, Deserialize)]
-struct CodeSimilarityConfig {
-    #[serde(alias = "min-tokens")]
-    min_tokens: Option<usize>,
-    #[serde(alias = "skip-ignored-files")]
-    skip_ignored_files: Option<bool>,
-    #[serde(alias = "test-thresholds")]
-    test_thresholds: Option<Thresholds>,
-}
-
-#[derive(Deserialize)]
-struct DependencyFreshnessConfig {
-    level: Option<dependency_freshness::Level>,
-}
-
-pub fn load_freshness_definition(
-    dir: &Path,
-) -> Result<dependency_freshness::Definition, ConfigError> {
-    let entry = load_check_entry(dir, dependency_freshness::CHECK_NAME)?;
-    freshness_definition_from(entry)
-}
-
-fn freshness_definition_from(
-    entry: Option<CheckEntry>,
-) -> Result<dependency_freshness::Definition, ConfigError> {
-    let Some(entry) = entry else {
-        return Ok(dependency_freshness::Definition::default());
-    };
-    let level = match entry.config {
-        Some(c) => {
-            serde_json::from_value::<DependencyFreshnessConfig>(c)
-                .map_err(|e| ConfigError::InvalidCheckConfig(e.to_string()))?
-                .level
-        }
-        None => None,
-    };
-    Ok(dependency_freshness::Definition {
-        level: Some(level.unwrap_or_default()),
-        thresholds: entry.thresholds,
-    })
-}
-
-#[derive(Deserialize)]
-struct CommitMessageConfig {
-    types: Option<Vec<String>>,
-}
-
-pub fn load_commit_message_definition(
-    dir: &Path,
-) -> Result<commit_message::Definition, ConfigError> {
-    let entry = load_check_entry(dir, commit_message::CHECK_NAME)?;
-    let Some(entry) = entry else {
-        return Ok(commit_message::Definition::default());
-    };
-    let types = match entry.config {
-        Some(c) => {
-            serde_json::from_value::<CommitMessageConfig>(c)
-                .map_err(|e| ConfigError::InvalidCheckConfig(e.to_string()))?
-                .types
-        }
-        None => None,
-    };
-    Ok(commit_message::Definition {
-        types,
-        thresholds: entry.thresholds,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dependency_freshness::Level;
+    use scute_core::{Thresholds, code_similarity, commit_message, dependency_freshness};
 
-    #[test]
-    fn freshness_config_reads_level_from_entry() {
-        let entry = check_entry_from_yaml(
-            r"
-            config:
-              level: minor
-            ",
-        );
+    fn config_from_yaml(yaml: &str) -> ScuteConfig {
+        let checks: HashMap<String, serde_yml::Value> = serde_yml::from_str(yaml).unwrap();
+        ScuteConfig { checks }
+    }
 
-        let definition = freshness_definition_from(Some(entry)).unwrap();
-
-        assert_eq!(definition.level, Some(Level::Minor));
+    fn definition<D: Default + DeserializeOwned>(yaml: &str, check: &str) -> D {
+        config_from_yaml(yaml).definition(check).unwrap()
     }
 
     #[test]
     fn no_entry_returns_default_freshness_definition() {
-        let definition = freshness_definition_from(None).unwrap();
+        let def: dependency_freshness::Definition =
+            definition("{}", dependency_freshness::CHECK_NAME);
 
-        assert_eq!(definition.level, None);
-        assert_eq!(definition.thresholds, None);
+        assert_eq!(def.level, None);
+        assert_eq!(def.thresholds, None);
     }
 
     #[test]
-    fn freshness_config_without_level_defaults_to_major() {
-        let entry = check_entry_from_yaml(
+    fn freshness_reads_level() {
+        let def: dependency_freshness::Definition = definition(
             r"
-            thresholds:
-              fail: 5
+            dependency-freshness:
+              level: minor
             ",
+            dependency_freshness::CHECK_NAME,
         );
 
-        let definition = freshness_definition_from(Some(entry)).unwrap();
+        assert_eq!(def.level, Some(dependency_freshness::Level::Minor));
+    }
 
-        assert_eq!(definition.level, Some(Level::Major));
+    #[test]
+    fn freshness_reads_thresholds() {
+        let def: dependency_freshness::Definition = definition(
+            r"
+            dependency-freshness:
+              thresholds:
+                fail: 5
+            ",
+            dependency_freshness::CHECK_NAME,
+        );
+
         assert_eq!(
-            definition.thresholds,
+            def.thresholds,
             Some(Thresholds {
                 warn: None,
                 fail: Some(5),
@@ -233,53 +155,69 @@ mod tests {
     }
 
     #[test]
-    fn freshness_config_rejects_invalid_level() {
-        let entry = check_entry_from_yaml(
+    fn freshness_rejects_invalid_level() {
+        let config = config_from_yaml(
             r"
-            config:
+            dependency-freshness:
               level: bananas
             ",
         );
 
-        assert!(freshness_definition_from(Some(entry)).is_err());
+        assert!(
+            config
+                .definition::<dependency_freshness::Definition>(dependency_freshness::CHECK_NAME)
+                .is_err()
+        );
     }
 
     #[test]
     fn no_entry_returns_default_code_similarity_definition() {
-        let definition = code_similarity_definition_from(None).unwrap();
+        let def: code_similarity::Definition = definition("{}", code_similarity::CHECK_NAME);
 
-        assert_eq!(definition.min_tokens, None);
-        assert_eq!(definition.thresholds, None);
+        assert_eq!(def.min_tokens, None);
+        assert_eq!(def.thresholds, None);
     }
 
     #[test]
-    fn code_similarity_config_reads_min_tokens_from_entry() {
-        let entry = check_entry_from_yaml(
+    fn code_similarity_reads_min_tokens_with_kebab_case() {
+        let def: code_similarity::Definition = definition(
             r"
-            config:
+            code-similarity:
               min-tokens: 10
             ",
+            code_similarity::CHECK_NAME,
         );
 
-        let definition = code_similarity_definition_from(Some(entry)).unwrap();
-
-        assert_eq!(definition.min_tokens, Some(10));
+        assert_eq!(def.min_tokens, Some(10));
     }
 
     #[test]
-    fn code_similarity_config_reads_thresholds_from_entry() {
-        let entry = check_entry_from_yaml(
+    fn code_similarity_reads_min_tokens_with_snake_case() {
+        let def: code_similarity::Definition = definition(
             r"
-            thresholds:
-              warn: 20
-              fail: 50
+            code-similarity:
+              min_tokens: 10
             ",
+            code_similarity::CHECK_NAME,
         );
 
-        let definition = code_similarity_definition_from(Some(entry)).unwrap();
+        assert_eq!(def.min_tokens, Some(10));
+    }
+
+    #[test]
+    fn code_similarity_reads_thresholds() {
+        let def: code_similarity::Definition = definition(
+            r"
+            code-similarity:
+              thresholds:
+                warn: 20
+                fail: 50
+            ",
+            code_similarity::CHECK_NAME,
+        );
 
         assert_eq!(
-            definition.thresholds,
+            def.thresholds,
             Some(Thresholds {
                 warn: Some(20),
                 fail: Some(50),
@@ -288,20 +226,19 @@ mod tests {
     }
 
     #[test]
-    fn code_similarity_config_reads_test_thresholds_from_entry() {
-        let entry = check_entry_from_yaml(
+    fn code_similarity_reads_test_thresholds_with_kebab_case() {
+        let def: code_similarity::Definition = definition(
             r"
-            config:
+            code-similarity:
               test-thresholds:
                 warn: 100
                 fail: 200
             ",
+            code_similarity::CHECK_NAME,
         );
 
-        let definition = code_similarity_definition_from(Some(entry)).unwrap();
-
         assert_eq!(
-            definition.test_thresholds,
+            def.test_thresholds,
             Some(Thresholds {
                 warn: Some(100),
                 fail: Some(200),
@@ -309,8 +246,34 @@ mod tests {
         );
     }
 
-    fn check_entry_from_yaml(yaml: &str) -> CheckEntry {
-        serde_yml::from_str(yaml).unwrap()
+    #[test]
+    fn rejects_unknown_fields_in_check_definition() {
+        let config = config_from_yaml(
+            r"
+            code-similarity:
+              config:
+                min-tokens: 25
+            ",
+        );
+
+        assert!(
+            config
+                .definition::<code_similarity::Definition>(code_similarity::CHECK_NAME)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn commit_message_reads_types() {
+        let def: commit_message::Definition = definition(
+            r"
+            commit-message:
+              types: [hotfix, deploy]
+            ",
+            commit_message::CHECK_NAME,
+        );
+
+        assert_eq!(def.types, Some(vec!["hotfix".into(), "deploy".into()]));
     }
 
     mod find_config_file {

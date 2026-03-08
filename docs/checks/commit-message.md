@@ -41,8 +41,7 @@ checks:
   commit-message:
     thresholds:
       fail: 0
-    config:
-      types: [feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert]
+    types: [feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert]
 ```
 
 ### Thresholds
@@ -65,7 +64,7 @@ checks:
 
 Multiple rules can fire on the same message (e.g. `unknown-type` and `empty-description`), but `observed` stays 1. The individual violations show up in the `evidence` array.
 
-### Config options
+### Options
 
 | Option  | Type            | Default                                                                     | Description                        |
 | ------- | --------------- | --------------------------------------------------------------------------- | ---------------------------------- |
@@ -76,8 +75,7 @@ Override `types` to add project-specific types or restrict the list:
 ```yaml
 checks:
   commit-message:
-    config:
-      types: [feat, fix, hotfix, chore]
+    types: [feat, fix, hotfix, chore]
 ```
 
 ### Rules

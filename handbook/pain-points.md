@@ -146,6 +146,10 @@ value.
   change signatures or restructure code before writing a failing test that
   requires the change. The test should drive the design, not the other way
   around.
+- **Dismissing tool feedback without verifying.** (×1) Tool reports a warning,
+  agent rationalizes why it's acceptable without actually trying to fix it.
+  The rationalization sounds reasonable but turns out to be wrong when
+  challenged. "It's fine" is not analysis.
 - **Checklists skipped under momentum.** (×14) Established workflows and
   checklists exist but get bypassed when focus is on "just get the thing done."
   The process is known, the trigger is clear, but urgency wins over discipline.

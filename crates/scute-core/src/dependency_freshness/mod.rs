@@ -3,11 +3,13 @@ mod crates_io;
 
 use std::path::Path;
 
+use serde::Deserialize;
+
 use crate::{Evaluation, Evidence, ExecutionError, Expected, Outcome, Status, Thresholds};
 
 pub const CHECK_NAME: &str = "dependency-freshness";
 
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, serde::Deserialize)]
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Level {
     Patch,
@@ -36,7 +38,8 @@ const ZERO_TOLERANCE: Thresholds = Thresholds {
     fail: Some(0),
 };
 
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Definition {
     pub level: Option<Level>,
     pub thresholds: Option<Thresholds>,

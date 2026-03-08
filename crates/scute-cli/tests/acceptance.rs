@@ -71,8 +71,7 @@ mod commit_message {
                 r"
 checks:
   commit-message:
-    config:
-      types: [hotfix]
+    types: [hotfix]
 ",
             )
             .check(&["commit-message", "hotfix: urgent patch"])
@@ -185,8 +184,7 @@ checks:
   code-similarity:
     thresholds:
       fail: 0
-    config:
-      min_tokens: 5
+    min-tokens: 5
 ",
             )
             .check(&["code-similarity"])
@@ -214,8 +212,7 @@ checks:
   code-similarity:
     thresholds:
       fail: 0
-    config:
-      min_tokens: 5
+    min-tokens: 5
 ",
             )
             .check(&["code-similarity", "a.rs"])
@@ -251,7 +248,7 @@ mod config {
 
     #[test_case(Cli)]
     #[test_case(Mcp)]
-    fn picks_up_config_from_parent_directory(interface: Interface) {
+    fn invalid_check_config_produces_error(interface: Interface) {
         Scute::new(interface)
             .scute_config(
                 r"
@@ -259,6 +256,21 @@ checks:
   commit-message:
     config:
       types: [hotfix]
+",
+            )
+            .check(&["commit-message", "hotfix: urgent patch"])
+            .expect_error("invalid_config");
+    }
+
+    #[test_case(Cli)]
+    #[test_case(Mcp)]
+    fn picks_up_config_from_parent_directory(interface: Interface) {
+        Scute::new(interface)
+            .scute_config(
+                r"
+checks:
+  commit-message:
+    types: [hotfix]
 ",
             )
             .cwd("nested")

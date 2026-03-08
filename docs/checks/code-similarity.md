@@ -60,12 +60,11 @@ checks:
     thresholds:
       warn: 70
       fail: 100
-    config:
-      min-tokens: 50
-      skip-ignored-files: true
-      test-thresholds:
-        warn: 100
-        fail: 130
+    min-tokens: 50
+    skip-ignored-files: true
+    test-thresholds:
+      warn: 100
+      fail: 130
 ```
 
 ### Thresholds
@@ -79,7 +78,7 @@ The `observed` value is the number of duplicated tokens in a clone group. The ch
 
 With defaults: 70 tokens passes, 71 warns, 100 warns, 101 fails.
 
-### Config options
+### Options
 
 | Option               | Type       | Default              | Description                                                    |
 | -------------------- | ---------- | -------------------- | -------------------------------------------------------------- |

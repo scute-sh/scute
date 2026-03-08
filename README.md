@@ -128,14 +128,12 @@ checks:
     thresholds:
       warn: 70
       fail: 100
-    config:
-      min-tokens: 50
+    min-tokens: 50
   dependency-freshness:
     thresholds:
       warn: 5
       fail: 8
-    config:
-      level: minor
+    level: minor
 ```
 
 Run a check:

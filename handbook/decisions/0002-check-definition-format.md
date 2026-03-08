@@ -25,16 +25,15 @@ thresholds:
 
 ```yaml
 check: layer-dependency
-config:
-  layers:
-    ui: ["src/ui/**"]
-    domain: ["src/domain/**"]
-    persistence: ["src/db/**"]
-  deny:
-    no-persistence-import:
-      description: "UI layer must not import from persistence"
-      from: ui
-      to: persistence
+layers:
+  ui: ["src/ui/**"]
+  domain: ["src/domain/**"]
+  persistence: ["src/db/**"]
+deny:
+  no-persistence-import:
+    description: "UI layer must not import from persistence"
+    from: ui
+    to: persistence
 thresholds:
   fail: 0
 ```
@@ -45,7 +44,9 @@ thresholds:
 |---|---|---|
 | `check` | yes | Unique identifier. Maps to `CheckReport.check`. For built-in checks, also identifies the measurement implementation. |
 | `thresholds` | yes | `{ warn?, fail? }` — at least one must be present. |
-| `config` | no | Check-specific configuration. Free-form, validated by the check implementation. |
+
+`thresholds` is a reserved key. Everything else at the same level is check-specific
+configuration, validated by the check implementation.
 
 ## Design Decisions
 
@@ -78,13 +79,15 @@ arises for multiple instances of the same check type with different configs (e.g
 strict-complexity for core code, relaxed-complexity for legacy), an explicit `type`
 field can be added that defaults to `check` when absent.
 
-### `config` is free-form, validated by the check implementation
+### Check-specific options live alongside `thresholds`
 
-The definition schema does not interpret `config`. It is passed through to the
-check implementation, which validates its own configuration.
+There is no separate `config` wrapper. Check-specific options are siblings of
+`thresholds` at the same YAML level. The definition schema does not interpret
+these options; they are passed through to the check implementation, which
+validates its own configuration. `thresholds` is the only reserved key.
 
 Rule IDs (referenced in `Evidence.rule` in the check evaluation schema) appear as keys
-within `config`. The convention is that `description` is a reserved key within any
+in the definition. The convention is that `description` is a reserved key within any
 rule definition, carrying prose for human-readable reporters.
 
 ### Absolute and delta checks are separate fitness functions
@@ -132,11 +135,11 @@ production monitoring, and invoked manually during exploratory testing.
 
 ## Consequences
 
-- Check implementations must validate their own `config`. The definition schema
+- Check implementations must validate their own options. The definition schema
   provides no type safety for check-specific configuration.
 - Teams that want both absolute and delta checks for the same metric must define
   two checks. This is intentional. Explicit over implicit.
-- The `description` convention within `config` is a soft contract. Nothing enforces
-  that rule definitions include descriptions.
+- The `description` convention within rule definitions is a soft contract. Nothing
+  enforces that rule definitions include descriptions.
 - Without `scope` in the definition, scope must be provided at invocation time
   (CLI flags, MCP parameters, hook context, etc.).

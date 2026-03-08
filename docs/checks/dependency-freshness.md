@@ -43,8 +43,7 @@ checks:
     thresholds:
       warn: 3
       fail: 6
-    config:
-      level: minor
+    level: minor
 ```
 
 ### How `level` and thresholds interact
@@ -76,7 +75,7 @@ The `observed` value is the version gap for each dependency. Each dependency is 
 | `warn`    | none    | Warn when version gap > this value                |
 | `fail`    | `0`     | Fail when version gap > this value. Default 0 means any drift at the configured level fails. |
 
-### Config options
+### Options
 
 | Option  | Type   | Default | Values                    | Description                              |
 | ------- | ------ | ------- | ------------------------- | ---------------------------------------- |

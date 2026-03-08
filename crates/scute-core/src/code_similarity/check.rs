@@ -4,6 +4,8 @@ use std::path::{Path, PathBuf};
 use super::language::{self, LanguageConfig};
 use super::parser::AstParser;
 use super::{CloneGroup, SourceEntry, TreeSitterParser, find_clones};
+use serde::Deserialize;
+
 use crate::{Evaluation, Evidence, ExecutionError, Thresholds};
 
 pub const CHECK_NAME: &str = "code-similarity";
@@ -31,17 +33,21 @@ const DEFAULT_TEST_FAIL: u64 = 130;
 ///     ..Definition::default()
 /// };
 /// ```
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Definition {
     /// Minimum token count for a sequence to be considered a clone.
     /// Defaults to 50.
+    #[serde(alias = "min-tokens")]
     pub min_tokens: Option<usize>,
     pub thresholds: Option<Thresholds>,
     /// Skip files matching `.gitignore`, `.ignore`, and hidden paths.
     /// Defaults to `true`.
+    #[serde(alias = "skip-ignored-files")]
     pub skip_ignored_files: Option<bool>,
     /// Separate thresholds for clone groups where every occurrence lives
     /// in test code. Defaults to warn: 100, fail: 130.
+    #[serde(alias = "test-thresholds")]
     pub test_thresholds: Option<Thresholds>,
 }
 

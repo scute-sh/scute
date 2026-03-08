@@ -1,3 +1,5 @@
+use serde::Deserialize;
+
 use crate::{Evaluation, Evidence, ExecutionError, Expected, Outcome, Thresholds};
 
 pub const CHECK_NAME: &str = "commit-message";
@@ -32,7 +34,8 @@ const DEFAULT_TYPES: &[&str] = &[
 /// let evals = commit_message::check("feat: add login", &def).unwrap();
 /// assert!(evals[0].is_fail());
 /// ```
-#[derive(Debug, Default)]
+#[derive(Debug, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct Definition {
     pub types: Option<Vec<String>>,
     pub thresholds: Option<Thresholds>,

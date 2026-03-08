@@ -6,6 +6,7 @@ use clap::{Parser, Subcommand};
 mod output;
 
 use output::CheckReportJson;
+use scute_config::ScuteConfig;
 use scute_core::report::CheckReport;
 use scute_core::{ExecutionError, code_similarity, commit_message, dependency_freshness};
 use serde::Serialize;
@@ -81,6 +82,7 @@ fn run(cli: Cli) -> Result<()> {
         Commands::Mcp => scute_mcp::run().map_err(|e| anyhow::anyhow!(e)),
         Commands::Check { check } => {
             let project_root = project_root();
+            let config = ScuteConfig::load(&project_root).unwrap_or_else(|e| invalid_config(&e));
             match check {
                 Checks::List => {
                     let checks = [
@@ -94,21 +96,24 @@ fn run(cli: Cli) -> Result<()> {
                 Checks::CodeSimilarity { source_dir, files } => {
                     let source_dir = source_dir.unwrap_or_else(|| project_root.clone());
                     let focus_files = resolve_focus_files(files);
-                    let definition = scute_config::load_code_similarity_definition(&project_root)
+                    let definition: code_similarity::Definition = config
+                        .definition(code_similarity::CHECK_NAME)
                         .unwrap_or_else(|e| invalid_config(&e));
                     let result = code_similarity::check(&source_dir, &focus_files, &definition);
                     output(&CheckReport::new(code_similarity::CHECK_NAME, result))
                 }
                 Checks::CommitMessage { message } => {
                     let message = resolve_message(message)?;
-                    let definition = scute_config::load_commit_message_definition(&project_root)
+                    let definition: commit_message::Definition = config
+                        .definition(commit_message::CHECK_NAME)
                         .unwrap_or_else(|e| invalid_config(&e));
                     let result = commit_message::check(&message, &definition);
                     output(&CheckReport::new(commit_message::CHECK_NAME, result))
                 }
                 Checks::DependencyFreshness { path } => {
                     let target = resolve_target_path(path);
-                    let definition = scute_config::load_freshness_definition(&project_root)
+                    let definition: dependency_freshness::Definition = config
+                        .definition(dependency_freshness::CHECK_NAME)
                         .unwrap_or_else(|e| invalid_config(&e));
                     let result = dependency_freshness::check(&target, &definition);
                     output(&CheckReport::new(dependency_freshness::CHECK_NAME, result))
