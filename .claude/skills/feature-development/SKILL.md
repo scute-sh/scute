@@ -290,15 +290,22 @@ Invoke `/refactoring` on all files touched. This is a required step, not optiona
 
 ### 5.4 Writing Style Review
 
-If the feature includes user-facing text, invoke `/writing-style` on all text added or modified. Mark N/A if purely backend.
+Two parts: coverage check, then style review.
+
+**Coverage** — check that these exist where they should. Missing text is worse than imperfect text:
+- Public API docs (rustdoc/jsdoc/javadoc) for every exported function/type
+- UI text: labels, tooltips, empty states, confirmation dialogs, onboarding hints
+- Error messages for every new failure path — user-facing and developer-facing
+- README or handbook updates if the feature changes user-visible behavior
+- Doc examples that compile/run
+- Changelog entry if the project keeps one
+
+**Style** — invoke `/writing-style` on all text added or modified. Mark N/A if purely backend.
 
 User-facing text includes:
-
-- API docs (markdown files, rustdoc, jsdoc, etc.)
-- Documentation (Readme, changelog, handbook, and other readme files)
-- UI text, CLI output, MCP messages, etc.
-- Test names, error messages, etc.
-- Logging messages, alerting, observability, etc.
+- API docs, README, handbook, changelog
+- UI text, CLI output, MCP messages
+- Test names, error messages, log messages
 
 ### Gate: Hardening Complete
 

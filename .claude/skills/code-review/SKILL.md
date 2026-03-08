@@ -36,7 +36,7 @@ Determine a short name for the review scope — use the current feature name if 
 Severity definitions (include in all 3 prompts):
 - **CRITICAL** — will cause wrong results, data loss, or security vulnerability at runtime
 - **MAJOR** — significant design flaw, missing test coverage for changed behavior, or bug likely to surface soon
-- **MINOR** — readability, naming, style, or low-probability edge cases
+- **MINOR** — naming, readability, edge cases with low probability but clear mechanism
 
 #### Agent 1: Correctness & Security
 
@@ -57,7 +57,7 @@ Checklist:
 - Data exposure: secrets in logs, sensitive data in error messages
 - For every function in the changed code: "what could go wrong here?"
 
-Write findings to `playground/{name}-review-correctness.md`. Structure each finding with: severity (CRITICAL/MAJOR/MINOR) and title, file path and line number, the relevant code quoted, explanation of the issue, and a suggested fix. End with a "Checked & Passed" section — for each clean area, state the risk and why this code avoids it. Do not leave the file empty.
+Write findings to `playground/{name}-review-correctness.md`. Structure each finding with: severity (CRITICAL/MAJOR/MINOR) and title, file path and line number, the relevant code quoted, explanation of the issue. End with a "Checked & Passed" section — for each clean area, state the risk and why this code avoids it. Do not leave the file empty.
 
 #### Agent 2: Design & Code Quality
 
@@ -84,7 +84,7 @@ Checklist:
 - Code duplication: same logic in multiple places?
 - Knowledge duplication: same rule encoded differently in multiple places?
 
-Write findings to `playground/{name}-review-quality.md`. Structure each finding with: severity (CRITICAL/MAJOR/MINOR) and title, file path and line number, the relevant code quoted, explanation of the issue, and a suggested fix. End with a "Checked & Passed" section — for each clean area, state the risk and why this code avoids it. Do not leave the file empty.
+Write findings to `playground/{name}-review-quality.md`. Structure each finding with: severity (CRITICAL/MAJOR/MINOR) and title, file path and line number, the relevant code quoted, explanation of the issue. End with a "Checked & Passed" section — for each clean area, state the risk and why this code avoids it. Do not leave the file empty.
 
 #### Agent 3: Testing & Documentation
 
@@ -109,15 +109,19 @@ Checklist:
 - Error messages clear and actionable?
 - Developer experience: API intuitive and discoverable?
 
-Write findings to `playground/{name}-review-testing.md`. Structure each finding with: severity (CRITICAL/MAJOR/MINOR) and title, file path and line number, the relevant code quoted, explanation of the issue, and a suggested fix. End with a "Checked & Passed" section — for each clean area, state the risk and why this code avoids it. Do not leave the file empty.
+Write findings to `playground/{name}-review-testing.md`. Structure each finding with: severity (CRITICAL/MAJOR/MINOR) and title, file path and line number, the relevant code quoted, explanation of the issue. End with a "Checked & Passed" section — for each clean area, state the risk and why this code avoids it. Do not leave the file empty.
 
 ### 3. Present
 
 Read all 3 finding files. Deduplicate where multiple agents flagged the same issue — note the convergence, keep the strongest write-up. Present every finding to the user grouped by severity (Critical → Major → Minor).
 
-Do not omit, soften, or editorialize findings. The files speak for themselves.
+Do not omit, soften, or editorialize findings. Do not decide which findings to fix or skip — that's the user's call, not yours. The files speak for themselves.
 
 If a file is missing or empty, note it — a subagent may have failed.
+
+### Cleanup
+
+Once all findings are resolved, remove the review files from disk (`{name}-review-correctness.md`, `{name}-review-quality.md`, `{name}-review-testing.md`).
 
 ## Anti-patterns
 

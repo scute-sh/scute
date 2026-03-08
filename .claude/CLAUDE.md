@@ -7,7 +7,15 @@
 
 ## MCP Tools Are Part of the Workflow
 
-Don't treat CLAUDE.md checklists as exhaustive. Before any action, think about which MCP tools are relevant to what you're about to do. Scute's own MCP server has check tools (e.g., `check_commit_message`, `check_dependency_freshness`). Use them. If you're writing a commit message, validate it with the tool you literally helped build.
+Don't treat CLAUDE.md checklists as exhaustive. Before any action, think about which MCP tools are relevant to what you're about to do.
+
+Scute's own MCP server has check tools:
+
+- `check_commit_message`,
+- `check_dependency_freshness`
+- `check_code_similarity`
+
+Use them.
 
 ## 🛑 When course-corrected
 
