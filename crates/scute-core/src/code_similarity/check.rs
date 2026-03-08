@@ -8,8 +8,10 @@ use crate::{Evaluation, Evidence, ExecutionError, Thresholds};
 pub const CHECK_NAME: &str = "code-similarity";
 
 const DEFAULT_MIN_TOKENS: usize = 25;
-const DEFAULT_WARN: u64 = 40;
-const DEFAULT_FAIL: u64 = 80;
+const DEFAULT_WARN: u64 = 70;
+const DEFAULT_FAIL: u64 = 100;
+const DEFAULT_TEST_WARN: u64 = 100;
+const DEFAULT_TEST_FAIL: u64 = 130;
 
 /// Configuration for the code similarity check.
 ///
@@ -18,14 +20,14 @@ const DEFAULT_FAIL: u64 = 80;
 /// ```
 /// use scute_core::code_similarity::Definition;
 ///
-/// // Zero-config: uses default min_tokens (25) and thresholds (warn: 40, fail: 80)
+/// // Zero-config: uses default min_tokens (25) and thresholds (warn: 70, fail: 100)
 /// let default = Definition::default();
 ///
 /// // Custom: catch smaller clones, tighter thresholds
 /// let strict = Definition {
 ///     min_tokens: Some(10),
 ///     thresholds: Some(scute_core::Thresholds { warn: Some(15), fail: Some(30) }),
-///     skip_ignored_files: Some(false),
+///     ..Definition::default()
 /// };
 /// ```
 #[derive(Debug, Default)]
@@ -37,6 +39,9 @@ pub struct Definition {
     /// Skip files matching `.gitignore`, `.ignore`, and hidden paths.
     /// Defaults to `true`.
     pub skip_ignored_files: Option<bool>,
+    /// Separate thresholds for clone groups where every occurrence lives
+    /// in test code. Defaults to warn: 100, fail: 130.
+    pub test_thresholds: Option<Thresholds>,
 }
 
 /// Check a directory for code duplication.
@@ -96,7 +101,16 @@ pub fn check(
         )]);
     }
 
-    Ok(build_evaluations(&relevant, &sources, &thresholds))
+    let test_thresholds = definition.test_thresholds.clone().unwrap_or(Thresholds {
+        warn: Some(DEFAULT_TEST_WARN),
+        fail: Some(DEFAULT_TEST_FAIL),
+    });
+    Ok(build_evaluations(
+        &relevant,
+        &sources,
+        &thresholds,
+        &test_thresholds,
+    ))
 }
 
 fn filter_by_focus<'a>(
@@ -196,15 +210,41 @@ fn build_evaluations(
     groups: &[&CloneGroup],
     sources: &[(String, String, &'static LanguageConfig)],
     thresholds: &Thresholds,
+    test_thresholds: &Thresholds,
 ) -> Vec<Evaluation> {
-    let content_by_path: HashMap<&str, &str> = sources
+    let source_by_path: HashMap<&str, (&str, &'static LanguageConfig)> = sources
         .iter()
-        .map(|(path, content, _)| (path.as_str(), content.as_str()))
+        .map(|(path, content, lang)| (path.as_str(), (content.as_str(), *lang)))
         .collect();
     groups
         .iter()
-        .map(|group| to_evaluation(group, thresholds, &content_by_path))
+        .map(|group| {
+            let effective = if is_test_only_group(group, &source_by_path) {
+                test_thresholds
+            } else {
+                thresholds
+            };
+            to_evaluation(group, effective, &source_by_path)
+        })
         .collect()
+}
+
+fn is_test_only_group(
+    group: &CloneGroup,
+    sources: &HashMap<&str, (&str, &'static LanguageConfig)>,
+) -> bool {
+    group.occurrences.iter().all(|occ| {
+        sources
+            .get(occ.source_id.as_str())
+            .is_some_and(|(content, lang)| {
+                lang.is_test_context(
+                    Path::new(&occ.source_id),
+                    content,
+                    occ.start_line,
+                    occ.end_line,
+                )
+            })
+    })
 }
 
 fn discover_files(dir: &Path, skip_ignored: bool) -> Vec<(PathBuf, &'static LanguageConfig)> {
@@ -241,10 +281,10 @@ fn language_for_path(path: &Path) -> Option<&'static LanguageConfig> {
 fn to_evaluation(
     group: &CloneGroup,
     thresholds: &Thresholds,
-    content_by_path: &HashMap<&str, &str>,
+    sources: &HashMap<&str, (&str, &'static LanguageConfig)>,
 ) -> Evaluation {
     let snippet = group.occurrences.first().and_then(|occ| {
-        let content = content_by_path.get(occ.source_id.as_str())?;
+        let (content, _) = sources.get(occ.source_id.as_str())?;
         content
             .lines()
             .skip(occ.start_line - 1)
@@ -293,21 +333,27 @@ mod tests {
     use googletest::prelude::*;
     use tempfile::TempDir;
 
-    const LOW_THRESHOLD: Definition = Definition {
-        min_tokens: Some(5),
-        thresholds: Some(Thresholds {
-            warn: Some(5),
-            fail: Some(10),
-        }),
-        skip_ignored_files: None,
-    };
+    fn low_threshold() -> Definition {
+        Definition {
+            min_tokens: Some(5),
+            thresholds: Some(Thresholds {
+                warn: Some(5),
+                fail: Some(10),
+            }),
+            test_thresholds: Some(Thresholds {
+                warn: Some(10),
+                fail: Some(20),
+            }),
+            ..Definition::default()
+        }
+    }
 
     fn check_dir(dir: &Path) -> Vec<Evaluation> {
-        check(dir, &[], &LOW_THRESHOLD).unwrap()
+        check(dir, &[], &low_threshold()).unwrap()
     }
 
     fn check_focused(dir: &Path, focus_files: &[PathBuf]) -> Vec<Evaluation> {
-        check(dir, focus_files, &LOW_THRESHOLD).unwrap()
+        check(dir, focus_files, &low_threshold()).unwrap()
     }
 
     fn clone_pair_dir() -> TempDir {
@@ -379,7 +425,7 @@ mod tests {
                     warn: Some(10),
                     fail: Some(12),
                 }),
-                skip_ignored_files: None,
+                ..Definition::default()
             },
         )
         .unwrap();
@@ -400,7 +446,7 @@ mod tests {
                     warn: Some(20),
                     fail: Some(30),
                 }),
-                skip_ignored_files: None,
+                ..Definition::default()
             },
         )
         .unwrap();
@@ -484,7 +530,7 @@ mod tests {
             &[],
             &Definition {
                 skip_ignored_files: Some(false),
-                ..LOW_THRESHOLD
+                ..low_threshold()
             },
         )
         .unwrap();
@@ -614,6 +660,115 @@ mod tests {
         );
 
         assert_that!(evals, len(eq(2)));
+    }
+
+    #[test]
+    fn test_thresholds_applied_to_test_directory_clones() {
+        let dir = TempDir::new().unwrap();
+        write_file(dir.path(), "tests/a.rs", "fn foo(x: i32) -> i32 { x + 1 }");
+        write_file(dir.path(), "tests/b.rs", "fn bar(y: i32) -> i32 { y + 1 }");
+
+        let evals = check_dir(dir.path());
+
+        // 14 tokens: would fail production thresholds (>10),
+        // but only warns against test thresholds (>10 warn, <20 fail)
+        assert!(
+            evals[0].is_warn(),
+            "test code should use test thresholds, got: {evals:?}"
+        );
+    }
+
+    #[test]
+    fn test_thresholds_not_applied_to_mixed_test_and_production_clones() {
+        let dir = TempDir::new().unwrap();
+        write_file(dir.path(), "src/a.rs", "fn foo(x: i32) -> i32 { x + 1 }");
+        write_file(dir.path(), "tests/b.rs", "fn bar(y: i32) -> i32 { y + 1 }");
+
+        let evals = check_dir(dir.path());
+
+        // Mixed group: one in src/, one in tests/ → production thresholds → fail
+        assert!(
+            evals[0].is_fail(),
+            "mixed groups should use production thresholds, got: {evals:?}"
+        );
+    }
+
+    #[test]
+    fn test_thresholds_applied_to_typescript_test_files() {
+        let dir = TempDir::new().unwrap();
+        write_file(
+            dir.path(),
+            "a.test.ts",
+            "function foo(x: number): number { return x + 1; }",
+        );
+        write_file(
+            dir.path(),
+            "b.test.ts",
+            "function bar(y: number): number { return y + 1; }",
+        );
+
+        let evals = check_dir(dir.path());
+
+        assert!(
+            evals[0].is_warn(),
+            "TS test files should use test thresholds, got: {evals:?}"
+        );
+    }
+
+    #[test]
+    fn test_thresholds_applied_to_inline_rust_test_modules() {
+        let dir = TempDir::new().unwrap();
+        let file_a = "\
+fn serve() -> String { String::from(\"hello\") }
+fn route() -> bool { true }
+
+#[cfg(test)]
+mod tests {
+    fn helper_a(x: i32) -> i32 { x + 1 }
+}
+";
+        let file_b = "\
+use std::collections::HashMap;
+
+#[cfg(test)]
+mod tests {
+    fn helper_b(y: i32) -> i32 { y + 1 }
+}
+";
+        write_file(dir.path(), "src/a.rs", file_a);
+        write_file(dir.path(), "src/b.rs", file_b);
+
+        let evals = check_dir(dir.path());
+
+        // Clone is inside #[cfg(test)] modules → test thresholds apply
+        assert!(
+            evals[0].is_warn(),
+            "clones inside #[cfg(test)] should use test thresholds, got: {evals:?}"
+        );
+    }
+
+    #[test]
+    fn test_thresholds_applied_to_naked_test_fns() {
+        let dir = TempDir::new().unwrap();
+        write_file(
+            dir.path(),
+            "src/a.rs",
+            "#[test]\nfn test_a(x: i32) -> i32 { x + 1 }",
+        );
+        write_file(
+            dir.path(),
+            "src/b.rs",
+            "#[test]\nfn test_b(y: i32) -> i32 { y + 1 }",
+        );
+
+        let evals = check_dir(dir.path());
+
+        // 14 tokens: would fail production thresholds (>10),
+        // but only warns against test thresholds (>10 warn, <20 fail)
+        assert!(
+            evals[0].is_warn(),
+            "clones inside #[test] fns should use test thresholds, got: {evals:?}"
+        );
     }
 
     #[test]

@@ -94,6 +94,7 @@ fn code_similarity_definition_from(
         min_tokens: config.min_tokens,
         thresholds: entry.thresholds,
         skip_ignored_files: config.skip_ignored_files,
+        test_thresholds: config.test_thresholds,
     })
 }
 
@@ -103,6 +104,8 @@ struct CodeSimilarityConfig {
     min_tokens: Option<usize>,
     #[serde(alias = "skip-ignored-files")]
     skip_ignored_files: Option<bool>,
+    #[serde(alias = "test-thresholds")]
+    test_thresholds: Option<Thresholds>,
 }
 
 #[derive(Deserialize)]
@@ -262,6 +265,28 @@ mod tests {
             Some(Thresholds {
                 warn: Some(20),
                 fail: Some(50),
+            })
+        );
+    }
+
+    #[test]
+    fn code_similarity_config_reads_test_thresholds_from_entry() {
+        let entry = check_entry_from_yaml(
+            r"
+            config:
+              test-thresholds:
+                warn: 100
+                fail: 200
+            ",
+        );
+
+        let definition = code_similarity_definition_from(Some(entry)).unwrap();
+
+        assert_eq!(
+            definition.test_thresholds,
+            Some(Thresholds {
+                warn: Some(100),
+                fail: Some(200),
             })
         );
     }
