@@ -2,7 +2,9 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
 
-type TestDetector = fn(&Path, &str, usize, usize) -> bool;
+use super::parser::AstParser;
+
+type TestDetector = fn(&mut dyn AstParser, &Path, &str, usize, usize) -> bool;
 
 pub struct LanguageConfig {
     language: tree_sitter::Language,
@@ -47,15 +49,20 @@ impl LanguageConfig {
         self.roles.get(kind).copied().unwrap_or(NodeRole::Other)
     }
 
+    /// Returns `true` if the given line range is inside test code.
+    ///
+    /// Detection is language-specific: some languages need to parse
+    /// the source, others rely on file path conventions alone.
     #[must_use]
     pub fn is_test_context(
         &self,
+        parser: &mut dyn AstParser,
         path: &Path,
         content: &str,
         start_line: usize,
         end_line: usize,
     ) -> bool {
-        (self.test_detector)(path, content, start_line, end_line)
+        (self.test_detector)(parser, path, content, start_line, end_line)
     }
 }
 
@@ -68,23 +75,25 @@ pub enum NodeRole {
     Other,
 }
 
-fn rust_is_test(path: &Path, content: &str, start_line: usize, end_line: usize) -> bool {
+fn rust_is_test(
+    parser: &mut dyn AstParser,
+    path: &Path,
+    content: &str,
+    start_line: usize,
+    end_line: usize,
+) -> bool {
     if path.components().any(|c| c.as_os_str() == "tests") {
         return true;
     }
-    let ranges = rust_test_ranges(content);
+    let ranges = rust_test_ranges(parser, content);
     ranges
         .iter()
         .any(|&(range_start, range_end)| start_line >= range_start && end_line <= range_end)
 }
 
 /// Finds line ranges of Rust test code: `#[cfg(test)] mod` blocks and `#[test]` functions.
-fn rust_test_ranges(content: &str) -> Vec<(usize, usize)> {
-    let mut parser = tree_sitter::Parser::new();
-    parser
-        .set_language(&tree_sitter_rust::LANGUAGE.into())
-        .expect("rust grammar");
-    let Some(tree) = parser.parse(content, None) else {
+fn rust_test_ranges(parser: &mut dyn AstParser, content: &str) -> Vec<(usize, usize)> {
+    let Ok(tree) = parser.parse(content, &tree_sitter_rust::LANGUAGE.into()) else {
         return vec![];
     };
 
@@ -98,7 +107,7 @@ fn collect_test_ranges(parent: tree_sitter::Node, src: &[u8], ranges: &mut Vec<(
     let mut cursor = parent.walk();
     for node in parent.children(&mut cursor) {
         match node.kind() {
-            "mod_item" if has_preceding_attr(&node, src, |t| t.contains("cfg(test)")) => {
+            "mod_item" if has_preceding_attr(&node, src, is_cfg_test_attr) => {
                 let start = first_preceding_attr_row(&node).unwrap_or(node.start_position().row);
                 ranges.push((start + 1, node.end_position().row + 1));
             }
@@ -117,6 +126,18 @@ fn collect_test_ranges(parent: tree_sitter::Node, src: &[u8], ranges: &mut Vec<(
             _ => {}
         }
     }
+}
+
+/// Matches `#[cfg(test)]` and compound forms like `#[cfg(all(test, ...))]`,
+/// but not `#[cfg(not(test))]`.
+fn is_cfg_test_attr(attr_text: &str) -> bool {
+    attr_text.starts_with("#[cfg(")
+        && !attr_text.contains("not(test)")
+        && (attr_text == "#[cfg(test)]"
+            || attr_text.contains("(test,")
+            || attr_text.contains("(test)")
+            || attr_text.contains(", test)")
+            || attr_text.contains(", test,"))
 }
 
 fn has_preceding_attr(node: &tree_sitter::Node, src: &[u8], pred: impl Fn(&str) -> bool) -> bool {
@@ -146,7 +167,13 @@ fn first_preceding_attr_row(node: &tree_sitter::Node) -> Option<usize> {
     first_row
 }
 
-fn ts_is_test(path: &Path, _content: &str, _start_line: usize, _end_line: usize) -> bool {
+fn ts_is_test(
+    _parser: &mut dyn AstParser,
+    path: &Path,
+    _content: &str,
+    _start_line: usize,
+    _end_line: usize,
+) -> bool {
     let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
     Path::new(stem)
         .extension()
@@ -234,6 +261,12 @@ pub fn typescript() -> LanguageConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::code_similarity::TreeSitterParser;
+
+    fn parse_rust_test_ranges(src: &str) -> Vec<(usize, usize)> {
+        let mut parser = TreeSitterParser::new();
+        rust_test_ranges(&mut parser, src)
+    }
 
     #[test]
     fn rust_test_ranges_finds_cfg_test_module() {
@@ -245,9 +278,7 @@ mod tests {
     fn helper(x: i32) -> i32 { x + 1 }
 }
 ";
-        let ranges = rust_test_ranges(src);
-
-        assert_eq!(ranges, vec![(3, 6)]);
+        assert_eq!(parse_rust_test_ranges(src), vec![(3, 6)]);
     }
 
     #[test]
@@ -261,9 +292,7 @@ fn test_something() {
     assert_eq!(x, 42);
 }
 ";
-        let ranges = rust_test_ranges(src);
-
-        assert_eq!(ranges, vec![(3, 7)]);
+        assert_eq!(parse_rust_test_ranges(src), vec![(3, 7)]);
     }
 
     #[test]
@@ -275,9 +304,7 @@ fn test_something() {
     panic!(\"expected\");
 }
 ";
-        let ranges = rust_test_ranges(src);
-
-        assert_eq!(ranges, vec![(1, 5)]);
+        assert_eq!(parse_rust_test_ranges(src), vec![(1, 5)]);
     }
 
     #[test]
@@ -288,9 +315,18 @@ mod prod_only {
     fn helper() -> i32 { 42 }
 }
 ";
-        let ranges = rust_test_ranges(src);
+        assert!(parse_rust_test_ranges(src).is_empty());
+    }
 
-        assert!(ranges.is_empty());
+    #[test]
+    fn detects_compound_cfg_test_as_test_context() {
+        let src = "\
+#[cfg(all(test, feature = \"integration\"))]
+mod integration_tests {
+    fn helper(x: i32) -> i32 { x + 1 }
+}
+";
+        assert_eq!(parse_rust_test_ranges(src), vec![(1, 4)]);
     }
 
     #[test]
@@ -303,8 +339,6 @@ mod integration {
     }
 }
 ";
-        let ranges = rust_test_ranges(src);
-
-        assert_eq!(ranges, vec![(2, 5)]);
+        assert_eq!(parse_rust_test_ranges(src), vec![(2, 5)]);
     }
 }

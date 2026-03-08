@@ -1,4 +1,4 @@
-use scute_core::code_similarity::{language, tokenize};
+use scute_core::code_similarity::{TreeSitterParser, language, tokenize};
 
 #[test]
 fn line_numbers_are_one_indexed() {
@@ -7,19 +7,55 @@ fn foo() {
     let x = 1;
 }";
 
-    let tokens = tokenize(source, &language::rust()).unwrap();
+    let mut parser = TreeSitterParser::new();
+    let tokens = tokenize(&mut parser, source, &language::rust()).unwrap();
 
     assert_eq!(tokens.first().unwrap().start_line, 1);
     assert_eq!(tokens.last().unwrap().end_line, 3);
 }
 
 fn token_labels(source: &str, lang: &scute_core::code_similarity::LanguageConfig) -> String {
-    let tokens = tokenize(source, lang).unwrap();
+    let mut parser = TreeSitterParser::new();
+    tokenize_to_labels(&mut parser, source, lang)
+}
+
+fn tokenize_to_labels(
+    parser: &mut dyn scute_core::code_similarity::AstParser,
+    source: &str,
+    lang: &scute_core::code_similarity::LanguageConfig,
+) -> String {
+    let tokens = tokenize(parser, source, lang).unwrap();
     tokens
         .iter()
         .map(|t| t.text.as_str())
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+#[test]
+fn reuses_parser_across_languages() {
+    let mut parser = TreeSitterParser::new();
+
+    let rust_tokens = tokenize_to_labels(
+        &mut parser,
+        "fn add(a: i32) -> i32 { a + 1 }",
+        &language::rust(),
+    );
+    let ts_tokens = tokenize_to_labels(
+        &mut parser,
+        "function add(a: number): number { return a + 1; }",
+        &language::typescript(),
+    );
+    let rust_after_ts = tokenize_to_labels(
+        &mut parser,
+        "fn add(b: u32) -> u32 { b + 1 }",
+        &language::rust(),
+    );
+
+    // Same structure, different names/types → same normalized tokens
+    assert_eq!(rust_tokens, rust_after_ts);
+    // TS has different syntax (return keyword, semicolons)
+    assert_ne!(rust_tokens, ts_tokens);
 }
 
 #[test]

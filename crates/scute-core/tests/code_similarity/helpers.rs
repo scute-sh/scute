@@ -1,7 +1,8 @@
-use scute_core::code_similarity::{CloneGroup, SourceTokens, language, tokenize};
+use scute_core::code_similarity::{CloneGroup, SourceTokens, TreeSitterParser, language, tokenize};
 
 pub fn tokenize_rust(source: &str, source_id: &str) -> SourceTokens {
-    let tokens = tokenize(source, &language::rust()).unwrap();
+    let mut parser = TreeSitterParser::new();
+    let tokens = tokenize(&mut parser, source, &language::rust()).unwrap();
     SourceTokens::new(source_id.to_string(), tokens)
 }
 

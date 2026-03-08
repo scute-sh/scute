@@ -1,11 +1,13 @@
 mod check;
 mod detect;
 pub mod language;
+mod parser;
 mod tokenize;
 
 pub use check::{CHECK_NAME, Definition, check};
 pub use detect::{CloneGroup, Occurrence, detect_clones};
 pub use language::{LanguageConfig, NodeRole};
+pub use parser::{AstParser, ParseError, TreeSitterParser};
 pub use tokenize::{Token, TokenizeError, tokenize};
 
 /// A source entry for clone detection: raw source code + metadata.
@@ -53,10 +55,11 @@ pub fn find_clones(
     entries: &[SourceEntry<'_>],
     min_tokens: usize,
 ) -> Result<Vec<CloneGroup>, TokenizeError> {
+    let mut parser = TreeSitterParser::new();
     let sources: Vec<SourceTokens> = entries
         .iter()
         .map(|entry| {
-            let tokens = tokenize(entry.source, entry.language)?;
+            let tokens = tokenize(&mut parser, entry.source, entry.language)?;
             Ok(SourceTokens::new(entry.source_id.to_string(), tokens))
         })
         .collect::<Result<_, TokenizeError>>()?;
@@ -72,7 +75,8 @@ mod tests {
     const IMPOSSIBLY_HIGH_THRESHOLD: usize = 1000;
 
     fn tokenize_rust(source: &str, source_id: &str) -> SourceTokens {
-        let tokens = tokenize(source, &language::rust()).unwrap();
+        let mut parser = TreeSitterParser::new();
+        let tokens = tokenize(&mut parser, source, &language::rust()).unwrap();
         SourceTokens::new(source_id.to_string(), tokens)
     }
 
@@ -190,7 +194,8 @@ mod tests {
 
     #[test]
     fn syntax_errors_do_not_panic() {
-        let broken = tokenize("fn f(x: i32 -> { x + }", &language::rust());
+        let mut parser = TreeSitterParser::new();
+        let broken = tokenize(&mut parser, "fn f(x: i32 -> { x + }", &language::rust());
 
         assert!(broken.is_ok()); // tree-sitter recovers, never errors
     }

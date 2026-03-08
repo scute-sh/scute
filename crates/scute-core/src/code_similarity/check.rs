@@ -2,7 +2,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use super::language::{self, LanguageConfig};
-use super::{CloneGroup, SourceEntry, find_clones};
+use super::parser::AstParser;
+use super::{CloneGroup, SourceEntry, TreeSitterParser, find_clones};
 use crate::{Evaluation, Evidence, ExecutionError, Thresholds};
 
 pub const CHECK_NAME: &str = "code-similarity";
@@ -212,6 +213,7 @@ fn build_evaluations(
     thresholds: &Thresholds,
     test_thresholds: &Thresholds,
 ) -> Vec<Evaluation> {
+    let mut parser = TreeSitterParser::new();
     let source_by_path: HashMap<&str, (&str, &'static LanguageConfig)> = sources
         .iter()
         .map(|(path, content, lang)| (path.as_str(), (content.as_str(), *lang)))
@@ -219,7 +221,7 @@ fn build_evaluations(
     groups
         .iter()
         .map(|group| {
-            let effective = if is_test_only_group(group, &source_by_path) {
+            let effective = if is_test_only_group(&mut parser, group, &source_by_path) {
                 test_thresholds
             } else {
                 thresholds
@@ -230,6 +232,7 @@ fn build_evaluations(
 }
 
 fn is_test_only_group(
+    parser: &mut dyn AstParser,
     group: &CloneGroup,
     sources: &HashMap<&str, (&str, &'static LanguageConfig)>,
 ) -> bool {
@@ -238,6 +241,7 @@ fn is_test_only_group(
             .get(occ.source_id.as_str())
             .is_some_and(|(content, lang)| {
                 lang.is_test_context(
+                    parser,
                     Path::new(&occ.source_id),
                     content,
                     occ.start_line,
@@ -287,7 +291,7 @@ fn to_evaluation(
         let (content, _) = sources.get(occ.source_id.as_str())?;
         content
             .lines()
-            .skip(occ.start_line - 1)
+            .skip(occ.start_line.saturating_sub(1))
             .take(occ.end_line - occ.start_line + 1)
             .map(str::trim)
             .find(|line| line.len() > 15)

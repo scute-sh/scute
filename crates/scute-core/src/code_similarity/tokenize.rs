@@ -1,4 +1,5 @@
 use super::language::{LanguageConfig, NodeRole};
+use super::parser::AstParser;
 
 /// A normalized token from source code.
 #[derive(Debug, Clone, PartialEq)]
@@ -19,35 +20,33 @@ impl Token {
 }
 
 #[derive(Debug)]
-pub enum TokenizeError {
-    LanguageSetup(String),
-    ParseFailed,
-}
+pub struct TokenizeError;
 
 impl std::fmt::Display for TokenizeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::LanguageSetup(msg) => write!(f, "failed to set tree-sitter language: {msg}"),
-            Self::ParseFailed => write!(f, "tree-sitter failed to produce a parse tree"),
-        }
+        write!(f, "failed to produce a parse tree")
     }
 }
 
 impl std::error::Error for TokenizeError {}
 
+/// Tokenize source code into a normalized token stream.
+///
+/// The parser is borrowed mutably and its language is reconfigured on
+/// each call. Callers should reuse the same parser across calls to
+/// benefit from buffer recycling.
+///
 /// # Errors
 ///
-/// Returns `TokenizeError::LanguageSetup` if the tree-sitter language can't be loaded,
-/// or `TokenizeError::ParseFailed` if tree-sitter fails to produce a parse tree.
-pub fn tokenize(source: &str, config: &LanguageConfig) -> Result<Vec<Token>, TokenizeError> {
-    let mut parser = tree_sitter::Parser::new();
-    parser
-        .set_language(config.language())
-        .map_err(|e| TokenizeError::LanguageSetup(e.to_string()))?;
-
+/// Returns `TokenizeError` if the parser fails to produce a parse tree.
+pub fn tokenize(
+    parser: &mut dyn AstParser,
+    source: &str,
+    config: &LanguageConfig,
+) -> Result<Vec<Token>, TokenizeError> {
     let tree = parser
-        .parse(source, None)
-        .ok_or(TokenizeError::ParseFailed)?;
+        .parse(source, config.language())
+        .map_err(|_| TokenizeError)?;
 
     let mut tokens = Vec::new();
     collect_tokens(tree.root_node(), source.as_bytes(), config, &mut tokens);
