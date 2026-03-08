@@ -111,29 +111,12 @@ result. Agents and CI consume it the same way.
 
 ## Quickstart
 
+Install:
+
 ```sh
 git clone https://github.com/scute/scute.git
 cd scute
 cargo install --path crates/scute-cli
-```
-
-Create a `.scute.yml` in your project root:
-
-```yaml
-checks:
-  commit-message:
-    thresholds:
-      fail: 0
-  code-similarity:
-    thresholds:
-      warn: 70
-      fail: 100
-    min-tokens: 50
-  dependency-freshness:
-    thresholds:
-      warn: 5
-      fail: 8
-    level: minor
 ```
 
 Run a check:
@@ -156,10 +139,12 @@ scute check commit-message "feat: add login"
 }
 ```
 
-See a failure:
+Pass. No config needed, sensible defaults out of the box.
+
+Now try your team's custom commit type:
 
 ```sh
-scute check commit-message "added stuff"
+scute check commit-message "scute: reporting for duty 🐢"
 ```
 
 ```json
@@ -174,14 +159,15 @@ scute check commit-message "added stuff"
   },
   "findings": [
     {
-      "target": "added stuff",
+      "target": "scute: reporting for duty 🐢",
       "status": "fail",
       "measurement": { "observed": 1, "thresholds": { "fail": 0 } },
       "evidence": [
         {
-          "rule": "subject-format",
-          "found": "added stuff",
-          "expected": "type(scope): description"
+          "rule": "unknown-type",
+          "found": "scute",
+          "expected": ["feat", "fix", "docs", "style", "refactor", "perf",
+                       "test", "build", "ci", "chore", "revert"]
         }
       ]
     }
@@ -189,8 +175,38 @@ scute check commit-message "added stuff"
 }
 ```
 
-The `evidence` array tells you (or your agent) exactly what went wrong and what
-was expected. No guessing.
+`scute` isn't a standard Conventional Commits type. The `evidence` tells you
+exactly what went wrong: the type was unknown, and here are the ones it accepts.
+
+Drop a `.scute.yml` in your project root to make it yours:
+
+```yaml
+checks:
+  commit-message:
+    types: [feat, fix, docs, refactor, test, chore, scute]
+```
+
+Run it again:
+
+```sh
+scute check commit-message "scute: reporting for duty 🐢"
+```
+
+```json
+{
+  "check": "commit-message",
+  "summary": {
+    "evaluated": 1,
+    "passed": 1,
+    "warned": 0,
+    "failed": 0,
+    "errored": 0
+  },
+  "findings": []
+}
+```
+
+Pass. The config is optional, but it's there when you need it.
 
 ## Agent Integration
 
@@ -251,27 +267,24 @@ That's where we're headed. The checks available today are just the beginning.
 The same contract will support checks like:
 
 ```yaml
-# Keep functions simple
-check: cognitive-complexity
-thresholds:
-  warn: 10
-  fail: 20
-```
+checks:
+  # Keep functions simple
+  cognitive-complexity:
+    thresholds:
+      warn: 10
+      fail: 20
 
-```yaml
-# Don't let coverage erode
-check: test-coverage-delta
-thresholds:
-  warn: -5
-  fail: -15
-```
+  # Don't let coverage erode
+  test-coverage-delta:
+    thresholds:
+      warn: -5
+      fail: -15
 
-```yaml
-# Respect the error budget
-check: error-budget
-thresholds:
-  warn: 20
-  fail: 0
+  # Respect the error budget
+  error-budget:
+    thresholds:
+      warn: 20
+      fail: 0
 ```
 
 Think of it like OpenTelemetry for fitness checks. OTel standardized
