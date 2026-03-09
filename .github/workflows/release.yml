@@ -43,7 +43,7 @@ on:
     paths:
       - "crates/**"
       - "dist-workspace.toml"
-      - ".github/workflows/release-scute.yml"
+      - ".github/workflows/release.yml"
   push:
     tags:
       - '**[0-9]+.[0-9]+.[0-9]+*'
@@ -83,7 +83,7 @@ jobs:
         env:
           DIST_CMD: ${{ (!github.event.pull_request && format('host --steps=create --tag={0}', github.ref_name)) || 'plan' }}
         run: |
-          dist ${DIST_CMD} --output-format=json > plan-dist-manifest.json
+          dist ${DIST_CMD} --allow-dirty --output-format=json > plan-dist-manifest.json
           echo "dist ran successfully"
           cat plan-dist-manifest.json
           echo "manifest=$(jq -c "." plan-dist-manifest.json)" >> "$GITHUB_OUTPUT"
@@ -151,7 +151,7 @@ jobs:
           DIST_ARGS: ${{ matrix.dist_args }}
         run: |
           # Actually do builds and make zips and whatnot
-          dist build ${TAG_FLAG} --print=linkage --output-format=json ${DIST_ARGS} > dist-manifest.json
+          dist build ${TAG_FLAG} --allow-dirty --print=linkage --output-format=json ${DIST_ARGS} > dist-manifest.json
           echo "dist ran successfully"
       - id: cargo-dist
         name: Post-build
@@ -206,7 +206,7 @@ jobs:
         env:
           TAG_FLAG: ${{ needs.plan.outputs.tag-flag }}
         run: |
-          dist build ${TAG_FLAG} --output-format=json "--artifacts=global" > dist-manifest.json
+          dist build ${TAG_FLAG} --allow-dirty --output-format=json "--artifacts=global" > dist-manifest.json
           echo "dist ran successfully"
 
           # Parse out what we just built and upload it to scratch storage
@@ -258,7 +258,7 @@ jobs:
         env:
           TAG_FLAG: ${{ needs.plan.outputs.tag-flag }}
         run: |
-          dist host ${TAG_FLAG} --steps=upload --steps=release --output-format=json > dist-manifest.json
+          dist host ${TAG_FLAG} --allow-dirty --steps=upload --steps=release --output-format=json > dist-manifest.json
           echo "artifacts uploaded and released successfully"
           cat dist-manifest.json
           echo "manifest=$(jq -c "." dist-manifest.json)" >> "$GITHUB_OUTPUT"

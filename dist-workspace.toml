@@ -3,7 +3,7 @@ members = ["cargo:crates"]
 
 [dist]
 cargo-dist-version = "0.31.0"
-ci = []
+ci = "github"
 installers = ["shell", "powershell", "homebrew"]
 targets = [
   "aarch64-apple-darwin",
