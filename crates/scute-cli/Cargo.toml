@@ -1,6 +1,6 @@
 [package]
 name = "scute"
-version = "0.0.0"
+version = "0.0.1"
 edition = "2024"
 description = "Deterministic fitness checks for your codebase"
 repository = "https://github.com/scute-sh/scute"
