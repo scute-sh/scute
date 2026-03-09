@@ -24,8 +24,10 @@ Scute gives you a feedback loop to catch problems as you work, not after. \
 Run checks proactively: if you're about to take an action and a relevant check \
 exists, use it first. Don't wait to be asked.
 
-When a check fails, use the `evidence` entries to understand exactly what went wrong \
-and self-correct before proceeding.";
+When a check returns warnings or failures, use the `evidence` entries to understand \
+exactly what went wrong and self-correct before proceeding. \
+Warnings are not noise. They flag real issues that should be addressed now, \
+not deferred. Do not skip over them.";
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 struct CheckCommitMessageInput {
