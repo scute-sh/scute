@@ -42,6 +42,7 @@ on:
   pull_request:
     paths:
       - "crates/**"
+      - "dist-workspace.toml"
       - ".github/workflows/release-scute.yml"
   push:
     tags:

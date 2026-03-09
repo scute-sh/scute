@@ -1,9 +1,9 @@
 [workspace]
-members = ["cargo:."]
+members = ["cargo:crates"]
 
 [dist]
 cargo-dist-version = "0.31.0"
-ci = "github"
+ci = []
 installers = ["shell", "powershell", "homebrew"]
 targets = [
   "aarch64-apple-darwin",
