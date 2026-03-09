@@ -99,17 +99,21 @@ impl Evaluation {
 
     #[must_use]
     pub fn is_pass(&self) -> bool {
-        matches!(&self.outcome, Outcome::Completed { status, .. } if *status == Status::Pass)
+        self.has_status(Status::Pass)
     }
 
     #[must_use]
     pub fn is_warn(&self) -> bool {
-        matches!(&self.outcome, Outcome::Completed { status, .. } if *status == Status::Warn)
+        self.has_status(Status::Warn)
     }
 
     #[must_use]
     pub fn is_fail(&self) -> bool {
-        matches!(&self.outcome, Outcome::Completed { status, .. } if *status == Status::Fail)
+        self.has_status(Status::Fail)
+    }
+
+    fn has_status(&self, expected: Status) -> bool {
+        matches!(&self.outcome, Outcome::Completed { status, .. } if *status == expected)
     }
 
     #[must_use]
@@ -250,113 +254,32 @@ pub(crate) fn derive_status(observed: u64, thresholds: &Thresholds) -> Status {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_case::test_case;
 
-    #[test]
-    fn lower_is_worse_below_fail_threshold_returns_fail() {
+    // higher-is-worse: warn < fail, or no warn
+    #[test_case(3, None, Some(5), Status::Pass ; "below fail without warn passes")]
+    #[test_case(5, None, Some(5), Status::Pass ; "at fail without warn passes")]
+    #[test_case(10, None, Some(5), Status::Fail ; "above fail without warn fails")]
+    #[test_case(5, Some(5), Some(10), Status::Pass ; "at warn threshold passes")]
+    #[test_case(10, Some(3), Some(10), Status::Warn ; "at fail with warn returns warn")]
+    fn higher_is_worse(observed: u64, warn: Option<u64>, fail: Option<u64>, expected: Status) {
+        assert_eq!(
+            derive_status(observed, &Thresholds { warn, fail }),
+            expected
+        );
+    }
+
+    // lower-is-worse: warn > fail (coverage-style), all share thresholds (70, 50)
+    #[test_case(40, Status::Fail ; "below fail threshold fails")]
+    #[test_case(50, Status::Warn ; "at fail threshold returns warn")]
+    #[test_case(70, Status::Pass ; "at warn threshold passes")]
+    #[test_case(80, Status::Pass ; "above warn threshold passes")]
+    fn lower_is_worse(observed: u64, expected: Status) {
         let thresholds = Thresholds {
             warn: Some(70),
             fail: Some(50),
         };
-
-        let status = derive_status(40, &thresholds);
-
-        assert_eq!(status, Status::Fail);
-    }
-
-    #[test]
-    fn lower_is_worse_at_fail_threshold_with_warn_returns_warn() {
-        let thresholds = Thresholds {
-            warn: Some(70),
-            fail: Some(50),
-        };
-
-        let status = derive_status(50, &thresholds);
-
-        assert_eq!(status, Status::Warn);
-    }
-
-    #[test]
-    fn lower_is_worse_at_warn_threshold_returns_pass() {
-        let thresholds = Thresholds {
-            warn: Some(70),
-            fail: Some(50),
-        };
-
-        let status = derive_status(70, &thresholds);
-
-        assert_eq!(status, Status::Pass);
-    }
-
-    #[test]
-    fn lower_is_worse_above_warn_threshold_returns_pass() {
-        let thresholds = Thresholds {
-            warn: Some(70),
-            fail: Some(50),
-        };
-
-        let status = derive_status(80, &thresholds);
-
-        assert_eq!(status, Status::Pass);
-    }
-
-    #[test]
-    fn below_fail_with_no_warn_returns_pass() {
-        let thresholds = Thresholds {
-            warn: None,
-            fail: Some(5),
-        };
-
-        let status = derive_status(3, &thresholds);
-
-        assert_eq!(status, Status::Pass);
-    }
-
-    #[test]
-    fn at_warn_threshold_returns_pass() {
-        let thresholds = Thresholds {
-            warn: Some(5),
-            fail: Some(10),
-        };
-
-        let status = derive_status(5, &thresholds);
-
-        assert_eq!(status, Status::Pass);
-    }
-
-    #[test]
-    fn at_fail_threshold_with_warn_returns_warn() {
-        let thresholds = Thresholds {
-            warn: Some(3),
-            fail: Some(10),
-        };
-
-        let status = derive_status(10, &thresholds);
-
-        assert_eq!(status, Status::Warn);
-    }
-
-    #[test]
-    fn above_fail_threshold_returns_fail() {
-        let thresholds = Thresholds {
-            warn: None,
-            fail: Some(5),
-        };
-
-        let status = derive_status(10, &thresholds);
-
-        assert_eq!(status, Status::Fail);
-    }
-
-    #[test]
-    fn at_fail_threshold_without_warn_returns_pass() {
-        let thresholds = Thresholds {
-            warn: None,
-            fail: Some(5),
-        };
-
-        let status = derive_status(5, &thresholds);
-
-        assert_eq!(status, Status::Pass);
+        assert_eq!(derive_status(observed, &thresholds), expected);
     }
 
     #[test]

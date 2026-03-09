@@ -1,4 +1,4 @@
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use rmcp::{
     ClientHandler, ErrorData, ServiceExt,
@@ -12,12 +12,12 @@ use rmcp::{
 use tempfile::TempDir;
 use tokio::process::Command;
 
-use crate::{Backend, CheckResult, ListChecksResult, target_bin};
+use crate::{Backend, CheckResult, ExitStatus, ListChecksResult, target_bin};
 
 pub(crate) struct McpBackend;
 
 impl Backend for McpBackend {
-    fn check(&self, dir: TempDir, working_dir: &Path, args: &[&str]) -> Box<dyn CheckResult> {
+    fn check(&self, dir: TempDir, working_dir: &Path, args: &[&str]) -> CheckResult {
         let check_name = args.get(1).expect("check name required");
         let tool_name = format!("check_{}", check_name.replace('-', "_"));
         let tool_args = build_tool_args(check_name, &args[2..]);
@@ -26,14 +26,30 @@ impl Backend for McpBackend {
         let client = McpTestClient::connect(&project_dir);
         let result = client.call_tool(&tool_name, &tool_args);
 
-        Box::new(McpCheckResult {
+        let json = result
+            .structured_content
+            .clone()
+            .expect("structuredContent must be present");
+        let is_error = result.is_error.unwrap_or(false);
+        let exit_status = if !is_error {
+            ExitStatus::Success
+        } else if json.get("error").is_some() {
+            ExitStatus::Error
+        } else {
+            ExitStatus::Failure
+        };
+        let debug_info = format!("{result:?}");
+
+        CheckResult {
             _dir: dir,
+            json,
             project_dir,
-            result,
-        })
+            exit_status,
+            debug_info,
+        }
     }
 
-    fn list_checks(&self, dir: TempDir) -> Box<dyn ListChecksResult> {
+    fn list_checks(&self, dir: TempDir) -> ListChecksResult {
         let project_dir = dir.path().canonicalize().unwrap_or(dir.path().into());
         let client = McpTestClient::connect(&project_dir);
         let checks = client
@@ -46,7 +62,7 @@ impl Backend for McpBackend {
                     .replace('_', "-")
             })
             .collect();
-        Box::new(McpListChecksResult { _dir: dir, checks })
+        ListChecksResult { _dir: dir, checks }
     }
 }
 
@@ -157,183 +173,5 @@ fn build_tool_args(check_name: &str, args: &[&str]) -> serde_json::Value {
             None => serde_json::json!({}),
         },
         _ => serde_json::json!({}),
-    }
-}
-
-struct McpListChecksResult {
-    _dir: TempDir,
-    checks: Vec<String>,
-}
-
-impl ListChecksResult for McpListChecksResult {
-    fn expect_contains(&self, name: &str) -> &dyn ListChecksResult {
-        assert!(
-            self.checks.iter().any(|c| c == name),
-            "expected check '{name}' in {:?}",
-            self.checks
-        );
-        self
-    }
-}
-
-struct McpCheckResult {
-    _dir: TempDir,
-    project_dir: PathBuf,
-    result: CallToolResult,
-}
-
-impl McpCheckResult {
-    fn structured(&self) -> &serde_json::Value {
-        self.result
-            .structured_content
-            .as_ref()
-            .expect("structuredContent must be present")
-    }
-
-    fn is_error(&self) -> bool {
-        self.result.is_error.unwrap_or(false)
-    }
-
-    fn findings(&self) -> &Vec<serde_json::Value> {
-        self.structured()["findings"]
-            .as_array()
-            .expect("findings should be an array")
-    }
-
-    fn first_finding(&self) -> &serde_json::Value {
-        self.findings()
-            .first()
-            .expect("expected at least one finding")
-    }
-}
-
-impl CheckResult for McpCheckResult {
-    fn expect_pass(&self) -> &dyn CheckResult {
-        let summary = &self.structured()["summary"];
-        assert!(
-            summary["failed"] == 0
-                && summary["errored"] == 0
-                && summary["passed"].as_u64() > Some(0),
-            "expected pass, got: {:?}",
-            self.structured()
-        );
-        assert!(!self.is_error(), "pass should not set isError");
-        self
-    }
-
-    fn expect_warn(&self) -> &dyn CheckResult {
-        let summary = &self.structured()["summary"];
-        assert!(
-            summary["warned"].as_u64() > Some(0),
-            "expected at least one warn, got: {:?}",
-            self.structured()
-        );
-        assert!(!self.is_error(), "warn should not set isError");
-        self
-    }
-
-    fn expect_fail(&self) -> &dyn CheckResult {
-        let summary = &self.structured()["summary"];
-        assert!(
-            summary["failed"].as_u64() > Some(0),
-            "expected at least one fail, got: {:?}",
-            self.structured()
-        );
-        assert!(self.is_error(), "fail should set isError");
-        self
-    }
-
-    fn expect_target(&self, expected: &str) -> &dyn CheckResult {
-        assert_eq!(self.first_finding()["target"], expected);
-        self
-    }
-
-    fn expect_target_contains(&self, substring: &str) -> &dyn CheckResult {
-        let target = self.first_finding()["target"]
-            .as_str()
-            .expect("target should be a string");
-        assert!(
-            target.contains(substring),
-            "expected target to contain '{substring}', got '{target}'"
-        );
-        self
-    }
-
-    fn expect_target_matches_dir(&self) -> &dyn CheckResult {
-        let target = self.first_finding()["target"]
-            .as_str()
-            .expect("target should be a string");
-        assert_eq!(
-            std::path::Path::new(target).canonicalize().unwrap(),
-            self.project_dir
-        );
-        self
-    }
-
-    fn expect_observed(&self, expected: u64) -> &dyn CheckResult {
-        assert_eq!(self.first_finding()["measurement"]["observed"], expected);
-        self
-    }
-
-    fn expect_evidence_rule(&self, index: usize, rule: &str) -> &dyn CheckResult {
-        assert_eq!(self.first_finding()["evidence"][index]["rule"], rule);
-        self
-    }
-
-    fn expect_evidence_has_expected(&self, index: usize) -> &dyn CheckResult {
-        assert!(
-            !self.first_finding()["evidence"][index]["expected"].is_null(),
-            "expected evidence[{index}].expected to be present"
-        );
-        self
-    }
-
-    fn expect_evidence_no_expected(&self, index: usize) -> &dyn CheckResult {
-        assert!(
-            self.first_finding()["evidence"][index]
-                .get("expected")
-                .is_none(),
-            "expected evidence[{index}].expected to be absent"
-        );
-        self
-    }
-
-    fn expect_finding_count(&self, expected: usize) -> &dyn CheckResult {
-        assert_eq!(
-            self.findings().len(),
-            expected,
-            "expected {expected} findings, got {}",
-            self.findings().len()
-        );
-        self
-    }
-
-    fn expect_no_findings(&self) -> &dyn CheckResult {
-        assert!(
-            self.findings().is_empty(),
-            "expected no findings, got: {:?}",
-            self.findings()
-        );
-        self
-    }
-
-    fn expect_error(&self, code: &str) -> &dyn CheckResult {
-        let error = &self.structured()["error"];
-        assert_eq!(error["code"], code, "got: {:?}", self.structured());
-        assert!(
-            error["message"].is_string(),
-            "error.message should be present"
-        );
-        assert!(
-            error["recovery"].is_string(),
-            "error.recovery should be present"
-        );
-        assert!(self.is_error(), "execution error should set isError");
-        self
-    }
-
-    fn debug(&self) -> &dyn CheckResult {
-        eprintln!("result: {:?}", self.result);
-        self
     }
 }

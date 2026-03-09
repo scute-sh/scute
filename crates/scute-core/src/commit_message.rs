@@ -210,6 +210,7 @@ mod tests {
     use super::*;
     use crate::Status;
     use googletest::prelude::*;
+    use test_case::test_case;
 
     struct Completed {
         status: Status,
@@ -261,60 +262,22 @@ mod tests {
         assert!(matches!(c.evidence[0].expected, Some(Expected::List(_))));
     }
 
-    #[test]
-    fn rejects_empty_description() {
-        let c = unwrap_completed(evaluate("feat: ", &Definition::default()));
+    #[test_case("feat: ",      "empty-description" ; "rejects empty description")]
+    #[test_case("feat:   \t  ", "empty-description" ; "rejects whitespace only description")]
+    #[test_case("feat(): add login", "empty-scope" ; "rejects empty scope")]
+    fn rejects_with_rule(message: &str, expected_rule: &str) {
+        let c = unwrap_completed(evaluate(message, &Definition::default()));
 
         assert_eq!(c.status, Status::Fail);
-        assert_that!(c.evidence[0].rule, some(eq("empty-description")));
+        assert_that!(c.evidence[0].rule, some(eq(expected_rule)));
     }
 
-    #[test]
-    fn rejects_whitespace_only_description() {
-        let c = unwrap_completed(evaluate("feat:   \t  ", &Definition::default()));
-
-        assert_eq!(c.status, Status::Fail);
-        assert_that!(c.evidence[0].rule, some(eq("empty-description")));
-    }
-
-    #[test]
-    fn accepts_type_regardless_of_case() {
-        let c = unwrap_completed(evaluate("Feat: add login", &Definition::default()));
-
-        assert_eq!(c.status, Status::Pass);
-        assert!(c.evidence.is_empty());
-    }
-
-    #[test]
-    fn accepts_scope_in_parentheses() {
-        let c = unwrap_completed(evaluate("feat(auth): add login", &Definition::default()));
-
-        assert_eq!(c.status, Status::Pass);
-        assert!(c.evidence.is_empty());
-    }
-
-    #[test]
-    fn rejects_empty_scope() {
-        let c = unwrap_completed(evaluate("feat(): add login", &Definition::default()));
-
-        assert_eq!(c.status, Status::Fail);
-        assert_that!(c.evidence[0].rule, some(eq("empty-scope")));
-    }
-
-    #[test]
-    fn accepts_breaking_change_indicator() {
-        let c = unwrap_completed(evaluate("feat!: breaking change", &Definition::default()));
-
-        assert_eq!(c.status, Status::Pass);
-        assert!(c.evidence.is_empty());
-    }
-
-    #[test]
-    fn accepts_scope_with_breaking_change() {
-        let c = unwrap_completed(evaluate(
-            "feat(api)!: remove endpoint",
-            &Definition::default(),
-        ));
+    #[test_case("Feat: add login"           ; "accepts type regardless of case")]
+    #[test_case("feat(auth): add login"     ; "accepts scope in parentheses")]
+    #[test_case("feat!: breaking change"    ; "accepts breaking change indicator")]
+    #[test_case("feat(api)!: remove endpoint" ; "accepts scope with breaking change")]
+    fn accepts_valid_subject(message: &str) {
+        let c = unwrap_completed(evaluate(message, &Definition::default()));
 
         assert_eq!(c.status, Status::Pass);
         assert!(c.evidence.is_empty());
@@ -344,23 +307,11 @@ mod tests {
         assert_eq!(c.evidence[0].expected, None);
     }
 
-    #[test]
-    fn valid_message_with_footer_passes() {
-        let c = unwrap_completed(evaluate(
-            "feat: add login\n\nSome body text.\n\nReviewed-by: Alice",
-            &Definition::default(),
-        ));
-
-        assert_eq!(c.status, Status::Pass);
-        assert!(c.evidence.is_empty());
-    }
-
-    #[test]
-    fn accepts_footer_with_hash_value_format() {
-        let c = unwrap_completed(evaluate(
-            "fix: resolve bug\n\nFixes #123",
-            &Definition::default(),
-        ));
+    #[test_case("feat: add login\n\nThis adds the login flow." ; "valid message with body passes")]
+    #[test_case("feat: add login\n\nSome body text.\n\nReviewed-by: Alice" ; "valid message with footer passes")]
+    #[test_case("fix: resolve bug\n\nFixes #123" ; "accepts footer with hash value format")]
+    fn accepts_valid_multiline(message: &str) {
+        let c = unwrap_completed(evaluate(message, &Definition::default()));
 
         assert_eq!(c.status, Status::Pass);
         assert!(c.evidence.is_empty());
@@ -414,17 +365,6 @@ mod tests {
         let c = unwrap_completed(evaluate("   \n  \n ", &Definition::default()));
 
         assert_eq!(c.status, Status::Fail);
-    }
-
-    #[test]
-    fn valid_message_with_body_passes() {
-        let c = unwrap_completed(evaluate(
-            "feat: add login\n\nThis adds the login flow.",
-            &Definition::default(),
-        ));
-
-        assert_eq!(c.status, Status::Pass);
-        assert!(c.evidence.is_empty());
     }
 
     #[test]

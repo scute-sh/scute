@@ -5,6 +5,11 @@ enum ProjectKind {
     Cargo,
 }
 
+/// A throwaway project directory for integration tests.
+///
+/// Use [`cargo()`](Self::cargo) or [`empty()`](Self::empty) to start, chain
+/// builder methods, then call [`build()`](Self::build) to materialize the
+/// directory. The returned [`TempDir`] is cleaned up on drop.
 pub struct TestProject {
     kind: ProjectKind,
     dependencies: Vec<(String, String)>,
@@ -14,6 +19,7 @@ pub struct TestProject {
     scute_config: Option<String>,
 }
 
+/// A workspace member inside a [`TestProject`]. Created via [`TestProject::member`].
 pub struct TestMember {
     dependencies: Vec<(String, String)>,
     dev_dependencies: Vec<(String, String)>,
@@ -32,6 +38,7 @@ impl TestMember {
 }
 
 impl TestProject {
+    /// A bare directory with no project scaffolding.
     pub fn empty() -> Self {
         Self {
             kind: ProjectKind::Empty,
@@ -43,6 +50,7 @@ impl TestProject {
         }
     }
 
+    /// A minimal Cargo project with `Cargo.toml` and empty `src/lib.rs`.
     pub fn cargo() -> Self {
         Self {
             kind: ProjectKind::Cargo,
@@ -64,6 +72,8 @@ impl TestProject {
         self
     }
 
+    /// Add a workspace member. The closure receives an empty [`TestMember`]
+    /// to configure with its own dependencies.
     pub fn member(mut self, name: &str, build: impl FnOnce(TestMember) -> TestMember) -> Self {
         let member = build(TestMember {
             dependencies: Vec::new(),
@@ -83,6 +93,7 @@ impl TestProject {
         self
     }
 
+    /// Materialize the project into a temporary directory.
     pub fn build(self) -> TempDir {
         let dir = TempDir::new().unwrap();
         if matches!(self.kind, ProjectKind::Cargo) {
@@ -113,8 +124,6 @@ fn setup_cargo_project(
     dev_dependencies: &[(String, String)],
     members: &[(String, TestMember)],
 ) {
-    use std::fmt::Write;
-
     let mut toml = if members.is_empty() {
         String::from(
             "[package]\nname = \"test-project\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
@@ -131,18 +140,7 @@ fn setup_cargo_project(
         )
     };
 
-    if !dependencies.is_empty() {
-        toml.push_str("\n[dependencies]\n");
-        for (name, version) in dependencies {
-            writeln!(toml, "{name} = \"{version}\"").unwrap();
-        }
-    }
-    if !dev_dependencies.is_empty() {
-        toml.push_str("\n[dev-dependencies]\n");
-        for (name, version) in dev_dependencies {
-            writeln!(toml, "{name} = \"{version}\"").unwrap();
-        }
-    }
+    append_cargo_deps(&mut toml, dependencies, dev_dependencies);
 
     std::fs::write(dir.path().join("Cargo.toml"), toml).unwrap();
 
@@ -163,25 +161,32 @@ fn setup_cargo_member(
     dependencies: &[(String, String)],
     dev_dependencies: &[(String, String)],
 ) {
-    use std::fmt::Write;
-
     let member_dir = dir.path().join(name);
     std::fs::create_dir_all(member_dir.join("src")).unwrap();
     std::fs::write(member_dir.join("src/lib.rs"), "").unwrap();
 
     let mut toml =
         format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n");
-    if !dependencies.is_empty() {
-        toml.push_str("\n[dependencies]\n");
-        for (dep_name, version) in dependencies {
-            writeln!(toml, "{dep_name} = \"{version}\"").unwrap();
-        }
-    }
-    if !dev_dependencies.is_empty() {
-        toml.push_str("\n[dev-dependencies]\n");
-        for (dep_name, version) in dev_dependencies {
-            writeln!(toml, "{dep_name} = \"{version}\"").unwrap();
-        }
-    }
+    append_cargo_deps(&mut toml, dependencies, dev_dependencies);
     std::fs::write(member_dir.join("Cargo.toml"), toml).unwrap();
+}
+
+fn append_cargo_deps(
+    toml: &mut String,
+    dependencies: &[(String, String)],
+    dev_dependencies: &[(String, String)],
+) {
+    use std::fmt::Write;
+
+    for (section, deps) in [
+        ("[dependencies]", dependencies),
+        ("[dev-dependencies]", dev_dependencies),
+    ] {
+        if !deps.is_empty() {
+            writeln!(toml, "\n{section}").unwrap();
+            for (name, version) in deps {
+                writeln!(toml, "{name} = \"{version}\"").unwrap();
+            }
+        }
+    }
 }
