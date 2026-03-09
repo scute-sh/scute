@@ -42,7 +42,6 @@ jobs:
     name: Code duplication
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v6
 
