@@ -1,5 +1,5 @@
 [workspace]
-changelog_update = false
+changelog_update = true
 semver_check = false
 git_release_enable = true
 git_release_draft = true
