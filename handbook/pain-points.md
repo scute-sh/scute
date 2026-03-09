@@ -174,6 +174,10 @@ value.
 
 - **Language-level docs ignored.** Doc comments (GoDoc, Rustdoc, JSDoc) left
   empty or missing on public interfaces.
+- **Implementation details in public descriptions.** (×1) Docstrings and
+  comments that describe internal mechanics instead of what the reader needs
+  to know. The consumer doesn't care how the data got there, they care what
+  they can do with it.
 - **CLI docs drift from implementation.** The documented CLI commands don't
   match what the tool actually does. The source of truth and the docs diverge.
 - **User-facing copy written without verifying behavior.** (×1) Help text,

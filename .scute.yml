@@ -11,4 +11,3 @@ checks:
     thresholds:
       warn: 70
       fail: 100
-    min-tokens: 25

@@ -8,12 +8,24 @@ mod cli;
 pub mod mcp;
 mod project;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use cli::CliBackend;
 use mcp::McpBackend;
 pub use project::TestProject;
 use tempfile::TempDir;
+
+/// How the check process terminated, from the interface's perspective.
+///
+/// CLI maps exit codes: 0 → Success, 1 → Failure, 2 → Error.
+/// MCP maps `isError` + JSON shape: no error → Success, isError + findings → Failure,
+/// isError + error object → Error.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum ExitStatus {
+    Success,
+    Failure,
+    Error,
+}
 
 #[derive(Debug, Clone, Copy)]
 pub enum Interface {
@@ -33,8 +45,8 @@ impl std::fmt::Display for Interface {
 }
 
 trait Backend {
-    fn check(&self, dir: TempDir, working_dir: &Path, args: &[&str]) -> Box<dyn CheckResult>;
-    fn list_checks(&self, dir: TempDir) -> Box<dyn ListChecksResult>;
+    fn check(&self, dir: TempDir, working_dir: &Path, args: &[&str]) -> CheckResult;
+    fn list_checks(&self, dir: TempDir) -> ListChecksResult;
 }
 
 pub struct Scute {
@@ -102,12 +114,12 @@ impl Scute {
         self
     }
 
-    pub fn list_checks(self) -> Box<dyn ListChecksResult> {
+    pub fn list_checks(self) -> ListChecksResult {
         let dir = self.project.build();
         self.backend.list_checks(dir)
     }
 
-    pub fn check(self, args: &[&str]) -> Box<dyn CheckResult> {
+    pub fn check(self, args: &[&str]) -> CheckResult {
         let mut full_args = vec!["check"];
         full_args.extend_from_slice(args);
         let dir = self.project.build();
@@ -123,28 +135,187 @@ impl Scute {
     }
 }
 
-pub trait ListChecksResult {
-    fn expect_contains(&self, name: &str) -> &dyn ListChecksResult;
+/// The result of listing available checks. Use its methods to assert on which checks are present.
+pub struct ListChecksResult {
+    pub(crate) _dir: TempDir,
+    pub(crate) checks: Vec<String>,
 }
 
-pub trait CheckResult {
-    fn expect_pass(&self) -> &dyn CheckResult;
-    fn expect_warn(&self) -> &dyn CheckResult;
-    fn expect_fail(&self) -> &dyn CheckResult;
-    fn expect_target(&self, expected: &str) -> &dyn CheckResult;
-    fn expect_target_contains(&self, substring: &str) -> &dyn CheckResult;
-    fn expect_target_matches_dir(&self) -> &dyn CheckResult;
-    fn expect_observed(&self, expected: u64) -> &dyn CheckResult;
-    fn expect_evidence_rule(&self, index: usize, rule: &str) -> &dyn CheckResult;
-    fn expect_evidence_has_expected(&self, index: usize) -> &dyn CheckResult;
-    fn expect_evidence_no_expected(&self, index: usize) -> &dyn CheckResult;
-    fn expect_finding_count(&self, expected: usize) -> &dyn CheckResult;
-    fn expect_no_findings(&self) -> &dyn CheckResult;
-    fn expect_error(&self, code: &str) -> &dyn CheckResult;
-    fn debug(&self) -> &dyn CheckResult;
+impl ListChecksResult {
+    pub fn expect_contains(&self, name: &str) -> &Self {
+        assert!(
+            self.checks.iter().any(|c| c == name),
+            "expected check '{name}' in {:?}",
+            self.checks
+        );
+        self
+    }
 }
 
-fn target_bin(name: &str) -> std::path::PathBuf {
+/// The result of running a check. Use its methods to assert on status, findings, and evidence.
+pub struct CheckResult {
+    pub(crate) _dir: TempDir,
+    pub(crate) json: serde_json::Value,
+    pub(crate) project_dir: PathBuf,
+    pub(crate) exit_status: ExitStatus,
+    pub(crate) debug_info: String,
+}
+
+impl CheckResult {
+    pub fn expect_pass(&self) -> &Self {
+        let summary = self.summary();
+        assert!(
+            summary["failed"] == 0
+                && summary["errored"] == 0
+                && summary["passed"].as_u64() > Some(0),
+            "expected pass, got: {}",
+            self.json
+        );
+        self.assert_exit_status(ExitStatus::Success);
+        self
+    }
+
+    pub fn expect_warn(&self) -> &Self {
+        self.assert_summary_nonzero("warned");
+        self.assert_exit_status(ExitStatus::Success);
+        self
+    }
+
+    pub fn expect_fail(&self) -> &Self {
+        self.assert_summary_nonzero("failed");
+        self.assert_exit_status(ExitStatus::Failure);
+        self
+    }
+
+    pub fn expect_target(&self, expected: &str) -> &Self {
+        assert_eq!(self.first_finding()["target"], expected);
+        self
+    }
+
+    pub fn expect_target_contains(&self, substring: &str) -> &Self {
+        let target = self.first_finding()["target"]
+            .as_str()
+            .expect("target should be a string");
+        assert!(
+            target.contains(substring),
+            "expected target to contain '{substring}', got '{target}'"
+        );
+        self
+    }
+
+    pub fn expect_target_matches_dir(&self) -> &Self {
+        let target = self.first_finding()["target"]
+            .as_str()
+            .expect("target should be a string");
+        assert_eq!(
+            std::path::Path::new(target).canonicalize().unwrap(),
+            self.project_dir
+        );
+        self
+    }
+
+    pub fn expect_observed(&self, expected: u64) -> &Self {
+        assert_eq!(self.first_finding()["measurement"]["observed"], expected);
+        self
+    }
+
+    pub fn expect_evidence_rule(&self, index: usize, rule: &str) -> &Self {
+        assert_eq!(self.first_finding()["evidence"][index]["rule"], rule);
+        self
+    }
+
+    pub fn expect_evidence_has_expected(&self, index: usize) -> &Self {
+        assert!(
+            !self.first_finding()["evidence"][index]["expected"].is_null(),
+            "expected evidence[{index}].expected to be present"
+        );
+        self
+    }
+
+    pub fn expect_evidence_no_expected(&self, index: usize) -> &Self {
+        assert!(
+            self.first_finding()["evidence"][index]
+                .get("expected")
+                .is_none(),
+            "expected evidence[{index}].expected to be absent"
+        );
+        self
+    }
+
+    pub fn expect_finding_count(&self, expected: usize) -> &Self {
+        assert_eq!(
+            self.findings().len(),
+            expected,
+            "expected {expected} findings, got {}",
+            self.findings().len()
+        );
+        self
+    }
+
+    pub fn expect_no_findings(&self) -> &Self {
+        assert!(
+            self.findings().is_empty(),
+            "expected no findings, got: {:?}",
+            self.findings()
+        );
+        self
+    }
+
+    pub fn expect_error(&self, code: &str) -> &Self {
+        let error = &self.json["error"];
+        assert_eq!(error["code"], code, "got: {}", self.json);
+        assert!(
+            error["message"].is_string(),
+            "error.message should be present"
+        );
+        assert!(
+            error["recovery"].is_string(),
+            "error.recovery should be present"
+        );
+        self.assert_exit_status(ExitStatus::Error);
+        self
+    }
+
+    pub fn debug(&self) -> &Self {
+        eprintln!("{}", self.debug_info);
+        eprintln!("json: {}", self.json);
+        self
+    }
+
+    fn summary(&self) -> &serde_json::Value {
+        &self.json["summary"]
+    }
+
+    fn findings(&self) -> &Vec<serde_json::Value> {
+        self.json["findings"]
+            .as_array()
+            .expect("findings should be an array")
+    }
+
+    fn first_finding(&self) -> &serde_json::Value {
+        self.findings()
+            .first()
+            .expect("expected at least one finding")
+    }
+
+    fn assert_summary_nonzero(&self, field: &str) {
+        assert!(
+            self.summary()[field].as_u64() > Some(0),
+            "expected at least one {field}, got: {}",
+            self.json
+        );
+    }
+
+    fn assert_exit_status(&self, expected: ExitStatus) {
+        assert_eq!(
+            self.exit_status, expected,
+            "expected {expected:?}, got {:?}:\n{}",
+            self.exit_status, self.debug_info
+        );
+    }
+}
+
+pub fn target_bin(name: &str) -> std::path::PathBuf {
     let mut dir = std::env::current_exe().expect("need current_exe for binary lookup");
     dir.pop();
     if dir.ends_with("deps") {

@@ -362,13 +362,29 @@ mod tests {
         check(dir, focus_files, &low_threshold()).unwrap()
     }
 
+    /// Create a temp directory with the given files and run a similarity check.
+    /// Returns `(TempDir, Vec<Evaluation>)` — caller keeps `TempDir` alive for
+    /// any assertions that reference paths.
+    fn check_files(files: &[(&str, &str)]) -> (TempDir, Vec<Evaluation>) {
+        let dir = make_dir(files);
+        let evals = check_dir(dir.path());
+        (dir, evals)
+    }
+
+    fn make_dir(files: &[(&str, &str)]) -> TempDir {
+        let dir = TempDir::new().unwrap();
+        for (name, content) in files {
+            write_file(dir.path(), name, content);
+        }
+        dir
+    }
+
     fn check_clone_pair() -> Vec<Evaluation> {
-        let dir = clone_pair_dir();
-        check_dir(dir.path())
+        check_files(CLONE_PAIR).1
     }
 
     fn check_clone_pair_with_thresholds(warn: u64, fail: u64) -> Vec<Evaluation> {
-        let dir = clone_pair_dir();
+        let dir = make_dir(CLONE_PAIR);
         check(
             dir.path(),
             &[],
@@ -384,26 +400,18 @@ mod tests {
         .unwrap()
     }
 
-    fn clone_pair_dir() -> TempDir {
-        let dir = TempDir::new().unwrap();
-        write_file(dir.path(), "a.rs", "fn foo(x: i32) -> i32 { x + 1 }");
-        write_file(dir.path(), "b.rs", "fn bar(y: i32) -> i32 { y + 1 }");
-        dir
-    }
+    const CLONE_PAIR: &[(&str, &str)] = &[
+        ("a.rs", "fn foo(x: i32) -> i32 { x + 1 }"),
+        ("b.rs", "fn bar(y: i32) -> i32 { y + 1 }"),
+    ];
 
     fn two_clone_pairs_dir() -> TempDir {
-        let dir = clone_pair_dir();
-        write_file(
-            dir.path(),
-            "c.rs",
-            "const A: [i32; 5] = [10, 20, 30, 40, 50];",
-        );
-        write_file(
-            dir.path(),
-            "d.rs",
-            "const B: [u32; 5] = [60, 70, 80, 90, 100];",
-        );
-        dir
+        let mut files = CLONE_PAIR.to_vec();
+        files.extend_from_slice(&[
+            ("c.rs", "const A: [i32; 5] = [10, 20, 30, 40, 50];"),
+            ("d.rs", "const B: [u32; 5] = [60, 70, 80, 90, 100];"),
+        ]);
+        make_dir(&files)
     }
 
     fn write_file(dir: &Path, name: &str, content: &str) {
@@ -466,11 +474,7 @@ mod tests {
 
     #[test]
     fn directory_with_only_unsupported_files_passes() {
-        let dir = TempDir::new().unwrap();
-        write_file(dir.path(), "readme.md", "# Hello");
-        write_file(dir.path(), "data.json", "{}");
-
-        let evals = check_dir(dir.path());
+        let (_, evals) = check_files(&[("readme.md", "# Hello"), ("data.json", "{}")]);
 
         assert_that!(evals, len(eq(1)));
         assert!(evals[0].is_pass());
@@ -478,11 +482,10 @@ mod tests {
 
     #[test]
     fn discovers_files_in_subdirectories() {
-        let dir = TempDir::new().unwrap();
-        write_file(dir.path(), "src/a.rs", "fn foo(x: i32) -> i32 { x + 1 }");
-        write_file(dir.path(), "lib/b.rs", "fn bar(y: i32) -> i32 { y + 1 }");
-
-        let evals = check_dir(dir.path());
+        let (_, evals) = check_files(&[
+            ("src/a.rs", "fn foo(x: i32) -> i32 { x + 1 }"),
+            ("lib/b.rs", "fn bar(y: i32) -> i32 { y + 1 }"),
+        ]);
 
         assert_that!(evals, len(eq(1)));
         let evidence = unwrap_evidence(&evals[0]);
@@ -490,17 +493,19 @@ mod tests {
         assert_location_contains(evidence, "lib");
     }
 
+    fn gitignore_dir() -> TempDir {
+        let dir = make_dir(&[
+            (".gitignore", "vendor/\n"),
+            ("src/a.rs", "fn foo(x: i32) -> i32 { x + 1 }"),
+            ("vendor/lib/b.rs", "fn bar(y: i32) -> i32 { y + 1 }"),
+        ]);
+        std::fs::create_dir(dir.path().join(".git")).unwrap();
+        dir
+    }
+
     #[test]
     fn skips_gitignored_directories() {
-        let dir = TempDir::new().unwrap();
-        std::fs::create_dir(dir.path().join(".git")).unwrap();
-        write_file(dir.path(), ".gitignore", "vendor/\n");
-        write_file(dir.path(), "src/a.rs", "fn foo(x: i32) -> i32 { x + 1 }");
-        write_file(
-            dir.path(),
-            "vendor/lib/b.rs",
-            "fn bar(y: i32) -> i32 { y + 1 }",
-        );
+        let dir = gitignore_dir();
 
         let evals = check_dir(dir.path());
 
@@ -513,15 +518,7 @@ mod tests {
 
     #[test]
     fn skip_ignored_files_false_scans_gitignored_directories() {
-        let dir = TempDir::new().unwrap();
-        std::fs::create_dir(dir.path().join(".git")).unwrap();
-        write_file(dir.path(), ".gitignore", "vendor/\n");
-        write_file(dir.path(), "src/a.rs", "fn foo(x: i32) -> i32 { x + 1 }");
-        write_file(
-            dir.path(),
-            "vendor/lib/b.rs",
-            "fn bar(y: i32) -> i32 { y + 1 }",
-        );
+        let dir = gitignore_dir();
 
         let evals = check(
             dir.path(),
@@ -567,11 +564,10 @@ mod tests {
 
     #[test]
     fn distinct_code_passes() {
-        let dir = TempDir::new().unwrap();
-        write_file(dir.path(), "a.rs", "let x = 1 + 2;");
-        write_file(dir.path(), "b.rs", "if true { return false; }");
-
-        let evals = check_dir(dir.path());
+        let (_, evals) = check_files(&[
+            ("a.rs", "let x = 1 + 2;"),
+            ("b.rs", "if true { return false; }"),
+        ]);
 
         assert_that!(evals, len(eq(1)));
         assert!(evals[0].is_pass());
@@ -579,19 +575,10 @@ mod tests {
 
     #[test]
     fn detects_typescript_duplications() {
-        let dir = TempDir::new().unwrap();
-        write_file(
-            dir.path(),
-            "a.ts",
-            "function foo(x: number): number { return x + 1; }",
-        );
-        write_file(
-            dir.path(),
-            "b.ts",
-            "function bar(y: number): number { return y + 1; }",
-        );
-
-        let evals = check_dir(dir.path());
+        let (_, evals) = check_files(&[
+            ("a.ts", "function foo(x: number): number { return x + 1; }"),
+            ("b.ts", "function bar(y: number): number { return y + 1; }"),
+        ]);
 
         assert_that!(evals, len(eq(1)));
     }
@@ -610,8 +597,7 @@ mod tests {
 
     #[test]
     fn unsupported_focus_file_produces_errored_evaluation() {
-        let dir = TempDir::new().unwrap();
-        write_file(dir.path(), "script.py", "def foo(): pass");
+        let dir = make_dir(&[("script.py", "def foo(): pass")]);
 
         let evals = check_focused(dir.path(), &[dir.path().join("script.py")]);
 
@@ -633,10 +619,11 @@ mod tests {
 
     #[test]
     fn focus_file_without_clones_passes() {
-        let dir = TempDir::new().unwrap();
-        write_file(dir.path(), "clean.rs", "fn unique_stuff() -> bool { true }");
-        write_file(dir.path(), "a.rs", "fn foo(x: i32) -> i32 { x + 1 }");
-        write_file(dir.path(), "b.rs", "fn bar(y: i32) -> i32 { y + 1 }");
+        let dir = make_dir(&[
+            ("clean.rs", "fn unique_stuff() -> bool { true }"),
+            ("a.rs", "fn foo(x: i32) -> i32 { x + 1 }"),
+            ("b.rs", "fn bar(y: i32) -> i32 { y + 1 }"),
+        ]);
 
         let evals = check_focused(dir.path(), &[dir.path().join("clean.rs")]);
 
@@ -658,11 +645,10 @@ mod tests {
 
     #[test]
     fn test_thresholds_applied_to_test_directory_clones() {
-        let dir = TempDir::new().unwrap();
-        write_file(dir.path(), "tests/a.rs", "fn foo(x: i32) -> i32 { x + 1 }");
-        write_file(dir.path(), "tests/b.rs", "fn bar(y: i32) -> i32 { y + 1 }");
-
-        let evals = check_dir(dir.path());
+        let (_, evals) = check_files(&[
+            ("tests/a.rs", "fn foo(x: i32) -> i32 { x + 1 }"),
+            ("tests/b.rs", "fn bar(y: i32) -> i32 { y + 1 }"),
+        ]);
 
         // 14 tokens: would fail production thresholds (>10),
         // but only warns against test thresholds (>10 warn, <20 fail)
@@ -674,11 +660,10 @@ mod tests {
 
     #[test]
     fn test_thresholds_not_applied_to_mixed_test_and_production_clones() {
-        let dir = TempDir::new().unwrap();
-        write_file(dir.path(), "src/a.rs", "fn foo(x: i32) -> i32 { x + 1 }");
-        write_file(dir.path(), "tests/b.rs", "fn bar(y: i32) -> i32 { y + 1 }");
-
-        let evals = check_dir(dir.path());
+        let (_, evals) = check_files(&[
+            ("src/a.rs", "fn foo(x: i32) -> i32 { x + 1 }"),
+            ("tests/b.rs", "fn bar(y: i32) -> i32 { y + 1 }"),
+        ]);
 
         // Mixed group: one in src/, one in tests/ → production thresholds → fail
         assert!(
@@ -689,19 +674,16 @@ mod tests {
 
     #[test]
     fn test_thresholds_applied_to_typescript_test_files() {
-        let dir = TempDir::new().unwrap();
-        write_file(
-            dir.path(),
-            "a.test.ts",
-            "function foo(x: number): number { return x + 1; }",
-        );
-        write_file(
-            dir.path(),
-            "b.test.ts",
-            "function bar(y: number): number { return y + 1; }",
-        );
-
-        let evals = check_dir(dir.path());
+        let (_, evals) = check_files(&[
+            (
+                "a.test.ts",
+                "function foo(x: number): number { return x + 1; }",
+            ),
+            (
+                "b.test.ts",
+                "function bar(y: number): number { return y + 1; }",
+            ),
+        ]);
 
         assert!(
             evals[0].is_warn(),
@@ -711,8 +693,10 @@ mod tests {
 
     #[test]
     fn test_thresholds_applied_to_inline_rust_test_modules() {
-        let dir = TempDir::new().unwrap();
-        let file_a = "\
+        let (_, evals) = check_files(&[
+            (
+                "src/a.rs",
+                "\
 fn serve() -> String { String::from(\"hello\") }
 fn route() -> bool { true }
 
@@ -720,19 +704,20 @@ fn route() -> bool { true }
 mod tests {
     fn helper_a(x: i32) -> i32 { x + 1 }
 }
-";
-        let file_b = "\
+",
+            ),
+            (
+                "src/b.rs",
+                "\
 use std::collections::HashMap;
 
 #[cfg(test)]
 mod tests {
     fn helper_b(y: i32) -> i32 { y + 1 }
 }
-";
-        write_file(dir.path(), "src/a.rs", file_a);
-        write_file(dir.path(), "src/b.rs", file_b);
-
-        let evals = check_dir(dir.path());
+",
+            ),
+        ]);
 
         // Clone is inside #[cfg(test)] modules → test thresholds apply
         assert!(
@@ -743,19 +728,10 @@ mod tests {
 
     #[test]
     fn test_thresholds_applied_to_naked_test_fns() {
-        let dir = TempDir::new().unwrap();
-        write_file(
-            dir.path(),
-            "src/a.rs",
-            "#[test]\nfn test_a(x: i32) -> i32 { x + 1 }",
-        );
-        write_file(
-            dir.path(),
-            "src/b.rs",
-            "#[test]\nfn test_b(y: i32) -> i32 { y + 1 }",
-        );
-
-        let evals = check_dir(dir.path());
+        let (_, evals) = check_files(&[
+            ("src/a.rs", "#[test]\nfn test_a(x: i32) -> i32 { x + 1 }"),
+            ("src/b.rs", "#[test]\nfn test_b(y: i32) -> i32 { y + 1 }"),
+        ]);
 
         // 14 tokens: would fail production thresholds (>10),
         // but only warns against test thresholds (>10 warn, <20 fail)
@@ -767,10 +743,7 @@ mod tests {
 
     #[test]
     fn single_file_without_duplication_passes() {
-        let dir = TempDir::new().unwrap();
-        write_file(dir.path(), "a.rs", "fn foo(x: i32) -> i32 { x + 1 }");
-
-        let evals = check_dir(dir.path());
+        let (_, evals) = check_files(&[("a.rs", "fn foo(x: i32) -> i32 { x + 1 }")]);
 
         assert_that!(evals, len(eq(1)));
         assert!(evals[0].is_pass());
@@ -778,14 +751,11 @@ mod tests {
 
     #[test]
     fn default_definition_uses_sensible_defaults() {
-        let dir = TempDir::new().unwrap();
-        // These functions produce ~14 tokens each, well under default min_tokens (50)
-        write_file(dir.path(), "a.rs", "fn foo(x: i32) -> i32 { x + 1 }");
-        write_file(dir.path(), "b.rs", "fn bar(y: i32) -> i32 { y + 1 }");
-
-        let evals = check(dir.path(), &[], &Definition::default()).unwrap();
+        let dir = make_dir(CLONE_PAIR);
 
         // 14 tokens < default min_tokens of 50 → no clones detected → pass
+        let evals = check(dir.path(), &[], &Definition::default()).unwrap();
+
         assert_that!(evals, len(eq(1)));
         assert!(evals[0].is_pass());
     }
