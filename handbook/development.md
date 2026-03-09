@@ -42,7 +42,7 @@ Changes outside those paths (docs, handbook, etc.) don't trigger CI.
 2. release-plz detects releasable changes, opens a Release PR (bumps version in `Cargo.toml`)
 3. Review and merge the Release PR
 4. release-plz publishes to crates.io, creates a git tag (`v0.2.0`), and creates a draft GitHub Release with generated notes
-5. The tag triggers the `release-scute` workflow (cargo-dist)
+5. The tag triggers the `release` workflow (cargo-dist)
 6. cargo-dist builds binaries for 5 targets, attaches them to the GitHub Release, undrafts it, and pushes the Homebrew formula
 
 **Targets:** `x86_64-unknown-linux-gnu`, `aarch64-unknown-linux-gnu`, `x86_64-apple-darwin`, `aarch64-apple-darwin`, `x86_64-pc-windows-msvc`
