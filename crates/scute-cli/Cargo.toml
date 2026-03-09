@@ -1,6 +1,6 @@
 [package]
 name = "scute"
-version = "0.0.1"
+version = "0.0.2"
 edition = "2024"
 description = "Deterministic fitness checks for your codebase"
 repository = "https://github.com/scute-sh/scute"
@@ -13,9 +13,9 @@ workspace = true
 [dependencies]
 anyhow = "1"
 clap = { version = "4", features = ["derive"] }
-scute-config = { path = "../scute-config", version = "0.0.1" }
-scute-core = { path = "../scute-core", version = "0.0.1" }
-scute-mcp = { path = "../scute-mcp", version = "0.0.1" }
+scute-config = { path = "../scute-config", version = "0.0.2" }
+scute-core = { path = "../scute-core", version = "0.0.2" }
+scute-mcp = { path = "../scute-mcp", version = "0.0.2" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
