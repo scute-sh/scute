@@ -1,8 +1,16 @@
-use scute_core::code_similarity::{SourceEntry, find_clones, language};
+use scute_core::code_similarity::{CloneGroup, LanguageConfig, SourceEntry, find_clones, language};
 
 use super::helpers::snapshot;
 
 const LOW_TOKEN_THRESHOLD: usize = 10;
+
+fn find_clone_groups(files: &[(&str, &str, &LanguageConfig)]) -> Vec<CloneGroup> {
+    let entries: Vec<_> = files
+        .iter()
+        .map(|(content, path, lang)| SourceEntry::new(content, path, lang))
+        .collect();
+    find_clones(&entries, LOW_TOKEN_THRESHOLD).unwrap()
+}
 
 #[test]
 fn detects_duplication_across_rust_files() {
@@ -31,12 +39,10 @@ fn validate_username(name: &str) -> Result<String, Error> {
 }";
 
     let rust = language::rust();
-    let entries = vec![
-        SourceEntry::new(file_a, "validators/email.rs", &rust),
-        SourceEntry::new(file_b, "validators/username.rs", &rust),
-    ];
-
-    let groups = find_clones(&entries, LOW_TOKEN_THRESHOLD).unwrap();
+    let groups = find_clone_groups(&[
+        (file_a, "validators/email.rs", &rust),
+        (file_b, "validators/username.rs", &rust),
+    ]);
 
     insta::assert_snapshot!(snapshot(&groups));
 }
@@ -62,12 +68,10 @@ export async function fetchOrder(orderId: number): Promise<Order> {
 }";
 
     let ts = language::typescript();
-    let entries = vec![
-        SourceEntry::new(file_a, "api/users.ts", &ts),
-        SourceEntry::new(file_b, "api/orders.ts", &ts),
-    ];
-
-    let groups = find_clones(&entries, LOW_TOKEN_THRESHOLD).unwrap();
+    let groups = find_clone_groups(&[
+        (file_a, "api/users.ts", &ts),
+        (file_b, "api/orders.ts", &ts),
+    ]);
 
     insta::assert_snapshot!(snapshot(&groups));
 }
@@ -80,17 +84,15 @@ fn mixed_languages_detect_within_same_language() {
 
     let rust = language::rust();
     let ts = language::typescript();
-    let entries = vec![
-        SourceEntry::new(rust_a, "a.rs", &rust),
-        SourceEntry::new(rust_b, "b.rs", &rust),
-        SourceEntry::new(ts_code, "c.ts", &ts),
-    ];
-
-    let groups = find_clones(&entries, LOW_TOKEN_THRESHOLD).unwrap();
-
     // Rust files should match each other; TS has different token structure
     // so it may or may not match (cross-language is out of scope, but tokens
     // might coincidentally align). Snapshot captures the actual behavior.
+    let groups = find_clone_groups(&[
+        (rust_a, "a.rs", &rust),
+        (rust_b, "b.rs", &rust),
+        (ts_code, "c.ts", &ts),
+    ]);
+
     insta::assert_snapshot!(snapshot(&groups));
 }
 
@@ -158,14 +160,12 @@ impl Config {
 }";
 
     let rust = language::rust();
-    let entries = vec![
-        SourceEntry::new(validate_email, "validators/email.rs", &rust),
-        SourceEntry::new(validate_phone, "validators/phone.rs", &rust),
-        SourceEntry::new(handlers, "handlers.rs", &rust),
-        SourceEntry::new(config, "config.rs", &rust),
-    ];
-
-    let groups = find_clones(&entries, LOW_TOKEN_THRESHOLD).unwrap();
+    let groups = find_clone_groups(&[
+        (validate_email, "validators/email.rs", &rust),
+        (validate_phone, "validators/phone.rs", &rust),
+        (handlers, "handlers.rs", &rust),
+        (config, "config.rs", &rust),
+    ]);
 
     insta::assert_snapshot!(snapshot(&groups));
 }
