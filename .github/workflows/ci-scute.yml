@@ -23,7 +23,7 @@ env:
 
 jobs:
   ci:
-    name: fmt + lint + test
+    name: Lint & Tests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -37,3 +37,24 @@ jobs:
           workspaces: crates
 
       - run: ./scripts/scute/ci.sh
+
+  code-similarity:
+    name: Code duplication
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        run: rustup show
+        working-directory: crates
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates
+
+      - name: Check for duplication
+        run: |
+          cd crates
+          cargo run -q -- check code-similarity
