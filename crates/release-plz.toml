@@ -3,9 +3,7 @@ changelog_update = false
 semver_check = false
 git_release_enable = true
 git_release_draft = true
-git_tag_name = "v{{ version }}"
 
-# Only create GitHub Releases for the CLI
 [[package]]
 name = "scute"
 git_release_enable = true
