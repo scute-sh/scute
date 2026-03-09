@@ -58,27 +58,34 @@ fn reuses_parser_across_languages() {
     assert_ne!(rust_tokens, ts_tokens);
 }
 
-#[test]
-fn normalizes_rust_function() {
-    let source = "\
-fn add(a: i32, b: i32) -> i32 {
-    a + b
-}";
-
-    insta::assert_snapshot!(token_labels(source, &language::rust()));
+macro_rules! snapshot_tokenizer {
+    ($name:ident, $lang:expr, $source:expr) => {
+        #[test]
+        fn $name() {
+            insta::assert_snapshot!(token_labels($source, &$lang));
+        }
+    };
 }
 
-#[test]
-fn normalizes_typescript_with_literals_and_strips_comments() {
-    let source = "\
+snapshot_tokenizer!(
+    normalizes_rust_function,
+    language::rust(),
+    "\
+fn add(a: i32, b: i32) -> i32 {
+    a + b
+}"
+);
+
+snapshot_tokenizer!(
+    normalizes_typescript_with_literals_and_strips_comments,
+    language::typescript(),
+    "\
 // helper function
 const greet = (name: string) => {
   console.log(\"hello\", name);
   return 42;
-}";
-
-    insta::assert_snapshot!(token_labels(source, &language::typescript()));
-}
+}"
+);
 
 #[test]
 fn renamed_identifiers_and_literals_produce_identical_tokens() {
@@ -113,57 +120,52 @@ fn transform(a: u32, b: u32) -> u32 {
     );
 }
 
-#[test]
-fn strips_rust_attributes() {
-    let source = "\
+snapshot_tokenizer!(
+    strips_rust_attributes,
+    language::rust(),
+    "\
 #[derive(Debug, Clone)]
 #[serde(rename_all = \"camelCase\")]
 struct Foo {
     bar: String,
-}";
+}"
+);
 
-    insta::assert_snapshot!(token_labels(source, &language::rust()));
-}
-
-#[test]
-fn strips_rust_inner_attributes() {
-    let source = "\
+snapshot_tokenizer!(
+    strips_rust_inner_attributes,
+    language::rust(),
+    "\
 #![allow(unused)]
-fn main() {}";
+fn main() {}"
+);
 
-    insta::assert_snapshot!(token_labels(source, &language::rust()));
-}
-
-#[test]
-fn strips_typescript_decorators() {
-    let source = "\
+snapshot_tokenizer!(
+    strips_typescript_decorators,
+    language::typescript(),
+    "\
 @Injectable()
 @Component({ selector: 'app-root' })
 class AppComponent {
   name: string = 'hello';
-}";
+}"
+);
 
-    insta::assert_snapshot!(token_labels(source, &language::typescript()));
-}
-
-#[test]
-fn strips_rust_doc_comments() {
-    let source = "\
+snapshot_tokenizer!(
+    strips_rust_doc_comments,
+    language::rust(),
+    "\
 /// This is a doc comment.
 ///
 /// With multiple lines.
-fn documented() {}";
+fn documented() {}"
+);
 
-    insta::assert_snapshot!(token_labels(source, &language::rust()));
-}
-
-#[test]
-fn preserves_macro_invocations() {
-    let source = "\
+snapshot_tokenizer!(
+    preserves_macro_invocations,
+    language::rust(),
+    "\
 fn example() {
     let v = vec![1, 2, 3];
     assert_eq!(v.len(), 3);
-}";
-
-    insta::assert_snapshot!(token_labels(source, &language::rust()));
-}
+}"
+);
