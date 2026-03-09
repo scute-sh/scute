@@ -1,14 +1,14 @@
 [package]
-name = "scute-cli"
+name = "scute"
 version = "0.1.0"
 edition = "2024"
+description = "Deterministic fitness checks for your codebase"
+repository = "https://github.com/scute-sh/scute"
+homepage = "https://github.com/scute-sh/scute"
+license = "Apache-2.0"
 
 [lints]
 workspace = true
-
-[[bin]]
-name = "scute"
-path = "src/main.rs"
 
 [dependencies]
 anyhow = "1"

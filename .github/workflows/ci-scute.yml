@@ -1,0 +1,39 @@
+name: Scute / CI
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/**"
+      - "scripts/scute/**"
+      - ".github/workflows/ci-scute.yml"
+      - ".scute.yml"
+  pull_request:
+    paths:
+      - "crates/**"
+      - "scripts/scute/**"
+      - ".github/workflows/ci-scute.yml"
+      - ".scute.yml"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  ci:
+    name: fmt + lint + test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        run: rustup show
+        working-directory: crates
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates
+
+      - run: ./scripts/scute/ci.sh

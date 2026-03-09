@@ -114,9 +114,14 @@ result. Agents and CI consume it the same way.
 Install:
 
 ```sh
-git clone https://github.com/scute/scute.git
-cd scute
-cargo install --path crates/scute-cli
+# Homebrew (macOS / Linux)
+brew install scute-sh/tap/scute
+
+# Cargo
+cargo install scute
+
+# Pre-built binary (if you have cargo-binstall)
+cargo binstall scute
 ```
 
 Run a check:
@@ -367,8 +372,6 @@ vision, principles, roadmap, and architecture decisions.
 - More checks (cognitive complexity, circular dependencies, layer dependency)
 - Broader ecosystem support (deno, node, java, etc.)
 - Trend tracking (delta-from-baseline, direction over time)
-
-**Current scope:** Requires a Rust toolchain to install (from source).
 
 We're building in the open from day one. If this resonates with how you think
 about software, watch the repo, open issues, start conversations.

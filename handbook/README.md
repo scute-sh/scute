@@ -7,4 +7,5 @@ contributing, building on, or trying to understand the project deeply.
 - [Attributes](attributes.md) — project values and commitments
 - [Roadmap](roadmap.md) — phased build plan and explicit boundaries
 - [Pain Points](pain-points.md) — observed bad practices across the delivery lifecycle, backlog of enforcement opportunities
+- [Development](development.md) — dev setup, scripts, CI, and release flow
 - [Decisions](decisions/) — architecture decision records

@@ -1086,7 +1086,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "scute-cli"
+name = "scute"
 version = "0.1.0"
 dependencies = [
  "anyhow",

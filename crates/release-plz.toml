@@ -1,0 +1,30 @@
+[workspace]
+changelog_update = false
+git_release_enable = true
+git_release_draft = true
+git_tag_name = "v{{ version }}"
+
+# Only publish the CLI binary, skip library crates
+[[package]]
+name = "scute"
+publish = true
+
+[[package]]
+name = "scute-core"
+publish = false
+release = false
+
+[[package]]
+name = "scute-config"
+publish = false
+release = false
+
+[[package]]
+name = "scute-mcp"
+publish = false
+release = false
+
+[[package]]
+name = "scute-test-utils"
+publish = false
+release = false

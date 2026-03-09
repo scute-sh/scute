@@ -1,0 +1,38 @@
+name: Scute / Release-plz
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/**"
+
+permissions:
+  contents: read
+
+jobs:
+  release-plz:
+    name: Release-plz
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/create-github-app-token@v2
+        id: app-token
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token }}
+
+      - name: Install Rust toolchain
+        run: rustup show
+        working-directory: crates
+
+      - uses: release-plz/action@v0.5
+        with:
+          manifest_path: crates/Cargo.toml
+          config: crates/release-plz.toml
+        env:
+          GITHUB_TOKEN: ${{ steps.app-token.outputs.token }}
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
