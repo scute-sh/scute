@@ -37,3 +37,46 @@ jobs:
           workspaces: crates
 
       - run: ./scripts/scute/ci.sh
+
+  commit-message:
+    name: commit-message
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        run: rustup show
+        working-directory: crates
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates
+
+      - name: Validate PR title
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+        run: |
+          cd crates
+          cargo run -q -- check commit-message "$PR_TITLE"
+
+  code-similarity:
+    name: code-similarity
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        run: rustup show
+        working-directory: crates
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates
+
+      - name: Check for duplication
+        run: |
+          cd crates
+          cargo run -q -- check code-similarity
