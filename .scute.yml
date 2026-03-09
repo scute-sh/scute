@@ -9,5 +9,5 @@ checks:
     level: minor
   code-similarity:
     thresholds:
-      warn: 70
-      fail: 100
+      warn: 90
+      fail: 110

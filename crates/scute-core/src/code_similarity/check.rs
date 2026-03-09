@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 
 use super::language::{self, LanguageConfig};
 use super::parser::AstParser;
-use super::{CloneGroup, SourceEntry, TreeSitterParser, find_clones};
+use super::{CloneGroup, Occurrence, SourceEntry, TreeSitterParser, find_clones};
 use serde::Deserialize;
 
 use crate::{Evaluation, Evidence, ExecutionError, Thresholds};
@@ -284,38 +284,55 @@ fn language_for_path(path: &Path) -> Option<&'static LanguageConfig> {
     }
 }
 
+/// A line is "trivial" if it's only punctuation and whitespace (closing braces,
+/// semicolons, etc.). We skip these when picking a representative snippet.
+fn is_trivial_line(line: &str) -> bool {
+    let trimmed = line.trim();
+    trimmed.is_empty() || trimmed.chars().all(|c| c.is_ascii_punctuation())
+}
+
+fn occurrence_evidence(
+    occ: &Occurrence,
+    token_count: usize,
+    sources: &HashMap<&str, (&str, &'static LanguageConfig)>,
+) -> Evidence {
+    let line_count = occ.end_line.saturating_sub(occ.start_line) + 1;
+    let snippet = sources
+        .get(occ.source_id.as_str())
+        .and_then(|(content, _)| {
+            content
+                .lines()
+                .skip(occ.start_line.saturating_sub(1))
+                .take(line_count)
+                .map(str::trim)
+                .find(|line| !is_trivial_line(line))
+        });
+
+    let found = match snippet {
+        Some(line) => format!("{token_count} duplicated tokens, e.g. `{line}`"),
+        None => format!("{token_count} duplicated tokens"),
+    };
+
+    Evidence {
+        rule: None,
+        location: Some(format!(
+            "{}:{}-{}",
+            occ.source_id, occ.start_line, occ.end_line
+        )),
+        found,
+        expected: None,
+    }
+}
+
 fn to_evaluation(
     group: &CloneGroup,
     thresholds: &Thresholds,
     sources: &HashMap<&str, (&str, &'static LanguageConfig)>,
 ) -> Evaluation {
-    let snippet = group.occurrences.first().and_then(|occ| {
-        let (content, _) = sources.get(occ.source_id.as_str())?;
-        content
-            .lines()
-            .skip(occ.start_line.saturating_sub(1))
-            .take(occ.end_line - occ.start_line + 1)
-            .map(str::trim)
-            .find(|line| line.len() > 15)
-    });
-
-    let found = match snippet {
-        Some(line) => format!("{} duplicated tokens, e.g. `{line}`", group.token_count),
-        None => format!("{} duplicated tokens", group.token_count),
-    };
-
     let evidence = group
         .occurrences
         .iter()
-        .map(|occ| Evidence {
-            rule: None,
-            location: Some(format!(
-                "{}:{}-{}",
-                occ.source_id, occ.start_line, occ.end_line
-            )),
-            found: found.clone(),
-            expected: None,
-        })
+        .map(|occ| occurrence_evidence(occ, group.token_count, sources))
         .collect();
 
     let observed = u64::try_from(group.token_count).unwrap_or(u64::MAX);
@@ -545,6 +562,15 @@ mod tests {
         assert_that!(evidence, len(eq(2)));
         assert_location_contains(evidence, "a.rs");
         assert_location_contains(evidence, "b.rs");
+    }
+
+    #[test]
+    fn evidence_snippets_reflect_each_occurrence() {
+        let evals = check_clone_pair();
+
+        let evidence = unwrap_evidence(&evals[0]);
+        assert_that!(evidence[0].found, contains_substring("fn foo"));
+        assert_that!(evidence[1].found, contains_substring("fn bar"));
     }
 
     #[test]
