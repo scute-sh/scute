@@ -1,13 +1,16 @@
 [package]
 name = "scute-config"
-version = "0.1.0"
+version = "0.0.0"
 edition = "2024"
+description = "Configuration loading for Scute"
+repository = "https://github.com/scute-sh/scute"
+license = "Apache-2.0"
 
 [lints]
 workspace = true
 
 [dependencies]
-scute-core = { path = "../scute-core" }
+scute-core = { path = "../scute-core", version = "0.0.0" }
 serde = { workspace = true }
 serde_yml = "0.0.12"
 dirs = "6"
