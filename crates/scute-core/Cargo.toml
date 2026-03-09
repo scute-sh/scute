@@ -11,7 +11,7 @@ workspace = true
 
 [dependencies]
 ignore = "0.4.25"
-libsais = "0.2"
+libsais = { version = "0.2", default-features = false }
 minreq = { version = "2", features = ["https"] }
 semver = "1"
 serde = { workspace = true }
