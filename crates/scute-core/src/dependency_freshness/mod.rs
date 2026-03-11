@@ -195,19 +195,20 @@ fn collect_projects(target: &Path) -> Result<Vec<Manifest>, FetchError> {
         .filter_map(|entry| Manifest::detect(entry.path()))
         .collect();
 
-    let dirs: Vec<_> = manifests
-        .iter()
-        .map(|m| m.dir.display().to_string())
-        .collect();
-
     std::thread::scope(|scope| {
         let handles: Vec<_> = manifests
             .into_iter()
-            .map(|manifest| scope.spawn(move || manifest.is_project_root().then_some(manifest)))
+            .map(|manifest| {
+                let dir = manifest.dir.display().to_string();
+                (
+                    scope.spawn(move || manifest.is_project_root().then_some(manifest)),
+                    dir,
+                )
+            })
             .collect();
 
         let mut projects = Vec::new();
-        for (handle, dir) in handles.into_iter().zip(&dirs) {
+        for (handle, dir) in handles {
             match handle.join() {
                 Ok(Some(manifest)) => projects.push(manifest),
                 Ok(None) => {}
