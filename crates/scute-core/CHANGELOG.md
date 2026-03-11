@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.4](https://github.com/scute-sh/scute/compare/scute-core-v0.0.3...scute-core-v0.0.4) - 2026-03-11
+
+### Added
+
+- *(dependency-freshness)* polyglot monorepo support ([#36](https://github.com/scute-sh/scute/pull/36))
+- *(dependency-freshness)* add npm workspace support ([#35](https://github.com/scute-sh/scute/pull/35))
+- *(dependency-freshness)* add npm support for single projects ([#32](https://github.com/scute-sh/scute/pull/32))
+- *(code-similarity)* support file exclude patterns ([#29](https://github.com/scute-sh/scute/pull/29))
+
+### Other
+
+- *(dependency-freshness)* hardening pass ([#39](https://github.com/scute-sh/scute/pull/39))
+- *(dependency-freshness)* restructure tests along the test pyramid ([#38](https://github.com/scute-sh/scute/pull/38))
+- *(dependency-freshness)* replace PackageManager enum with trait ([#37](https://github.com/scute-sh/scute/pull/37))
+- *(dependency-freshness)* reorganize module structure ([#34](https://github.com/scute-sh/scute/pull/34))
+
 ## [0.0.3](https://github.com/scute-sh/scute/compare/scute-core-v0.0.2...scute-core-v0.0.3) - 2026-03-11
 
 ### Added
