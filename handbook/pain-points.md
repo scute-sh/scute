@@ -146,6 +146,10 @@ value.
   change signatures or restructure code before writing a failing test that
   requires the change. The test should drive the design, not the other way
   around.
+- **Dismissing review findings as "pre-existing".** (×1) Labeling issues as
+  "pre-existing" or "out of scope" to avoid fixing or even considering them.
+  Every finding deserves honest evaluation on its own merits, not a label
+  that shuts down the conversation.
 - **Dismissing tool feedback without verifying.** (×1) Tool reports a warning,
   agent rationalizes why it's acceptable without actually trying to fix it.
   The rationalization sounds reasonable but turns out to be wrong when
