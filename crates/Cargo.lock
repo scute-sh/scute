@@ -1117,6 +1117,7 @@ dependencies = [
  "tempfile",
  "test-case",
  "tree-sitter",
+ "tree-sitter-javascript",
  "tree-sitter-rust",
  "tree-sitter-typescript",
 ]
@@ -1435,6 +1436,16 @@ dependencies = [
  "regex-syntax",
  "serde_json",
  "streaming-iterator",
+ "tree-sitter-language",
+]
+
+[[package]]
+name = "tree-sitter-javascript"
+version = "0.25.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "68204f2abc0627a90bdf06e605f5c470aa26fdcb2081ea553a04bdad756693f5"
+dependencies = [
+ "cc",
  "tree-sitter-language",
 ]
 

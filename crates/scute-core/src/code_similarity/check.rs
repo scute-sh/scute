@@ -53,8 +53,8 @@ pub struct Definition {
 
 /// Check a directory for code duplication.
 ///
-/// Discovers supported source files (`.rs`, `.ts`, `.tsx`), runs clone
-/// detection, and returns one [`Evaluation`] per clone group found.
+/// Discovers supported source files (Rust, JavaScript, TypeScript), runs
+/// clone detection, and returns one [`Evaluation`] per clone group found.
 /// When no clones are detected, returns a single passing evaluation.
 ///
 /// When `focus_files` is non-empty, only clone groups involving at least
@@ -182,7 +182,7 @@ fn validate_focus_file(path: &Path) -> Result<PathBuf, Evaluation> {
             ExecutionError {
                 code: "unsupported_language".into(),
                 message: format!("unsupported file type: {}", path.display()),
-                recovery: "only .rs, .ts, and .tsx files are supported".into(),
+                recovery: "only Rust, JavaScript, and TypeScript files are supported".into(),
             },
         ));
     }
@@ -274,11 +274,14 @@ fn discover_files(dir: &Path, skip_ignored: bool) -> Vec<(PathBuf, &'static Lang
 
 fn language_for_path(path: &Path) -> Option<&'static LanguageConfig> {
     static RUST: std::sync::LazyLock<LanguageConfig> = std::sync::LazyLock::new(language::rust);
+    static JAVASCRIPT: std::sync::LazyLock<LanguageConfig> =
+        std::sync::LazyLock::new(language::javascript);
     static TYPESCRIPT: std::sync::LazyLock<LanguageConfig> =
         std::sync::LazyLock::new(language::typescript);
 
     match path.extension()?.to_str()? {
         "rs" => Some(&RUST),
+        "js" | "jsx" | "mjs" | "cjs" => Some(&JAVASCRIPT),
         "ts" | "tsx" => Some(&TYPESCRIPT),
         _ => None,
     }
@@ -610,6 +613,45 @@ mod tests {
     }
 
     #[test]
+    fn detects_javascript_duplications() {
+        let (_, evals) = check_files(&[
+            ("a.js", "function foo(x) { return x + 1; }"),
+            ("b.js", "function bar(y) { return y + 1; }"),
+        ]);
+
+        assert_that!(evals, len(eq(1)));
+        assert!(evals[0].is_fail());
+    }
+
+    #[test]
+    fn detects_jsx_duplications() {
+        let (_, evals) = check_files(&[
+            (
+                "a.jsx",
+                "function Greeting({ name }) { return <div>Hello {name}</div>; }",
+            ),
+            (
+                "b.jsx",
+                "function Welcome({ name }) { return <div>Hello {name}</div>; }",
+            ),
+        ]);
+
+        assert_that!(evals, len(eq(1)));
+        assert!(evals[0].is_fail());
+    }
+
+    #[test]
+    fn detects_duplications_across_js_and_mjs_files() {
+        let (_, evals) = check_files(&[
+            ("a.js", "function foo(x) { return x + 1; }"),
+            ("b.mjs", "function bar(y) { return y + 1; }"),
+        ]);
+
+        assert_that!(evals, len(eq(1)));
+        assert!(evals[0].is_fail());
+    }
+
+    #[test]
     fn focus_file_only_reports_clone_groups_involving_that_file() {
         let dir = two_clone_pairs_dir();
 
@@ -670,7 +712,7 @@ mod tests {
     }
 
     #[test]
-    fn test_thresholds_applied_to_test_directory_clones() {
+    fn applies_test_thresholds_to_test_directory_clones() {
         let (_, evals) = check_files(&[
             ("tests/a.rs", "fn foo(x: i32) -> i32 { x + 1 }"),
             ("tests/b.rs", "fn bar(y: i32) -> i32 { y + 1 }"),
@@ -685,7 +727,7 @@ mod tests {
     }
 
     #[test]
-    fn test_thresholds_not_applied_to_mixed_test_and_production_clones() {
+    fn uses_production_thresholds_for_mixed_test_and_production_clones() {
         let (_, evals) = check_files(&[
             ("src/a.rs", "fn foo(x: i32) -> i32 { x + 1 }"),
             ("tests/b.rs", "fn bar(y: i32) -> i32 { y + 1 }"),
@@ -699,7 +741,7 @@ mod tests {
     }
 
     #[test]
-    fn test_thresholds_applied_to_typescript_test_files() {
+    fn applies_test_thresholds_to_typescript_test_files() {
         let (_, evals) = check_files(&[
             (
                 "a.test.ts",
@@ -718,7 +760,33 @@ mod tests {
     }
 
     #[test]
-    fn test_thresholds_applied_to_inline_rust_test_modules() {
+    fn applies_test_thresholds_to_javascript_test_files() {
+        let (_, evals) = check_files(&[
+            ("a.test.js", "function foo(x) { return x + 1; }"),
+            ("b.test.js", "function bar(y) { return y + 1; }"),
+        ]);
+
+        assert!(
+            evals[0].is_warn(),
+            "JS test files should use test thresholds, got: {evals:?}"
+        );
+    }
+
+    #[test]
+    fn applies_test_thresholds_to_js_files_in_tests_directory() {
+        let (_, evals) = check_files(&[
+            ("__tests__/a.js", "function foo(x) { return x + 1; }"),
+            ("__tests__/b.js", "function bar(y) { return y + 1; }"),
+        ]);
+
+        assert!(
+            evals[0].is_warn(),
+            "__tests__/ JS files should use test thresholds, got: {evals:?}"
+        );
+    }
+
+    #[test]
+    fn applies_test_thresholds_to_inline_rust_test_modules() {
         let (_, evals) = check_files(&[
             (
                 "src/a.rs",
@@ -753,7 +821,7 @@ mod tests {
     }
 
     #[test]
-    fn test_thresholds_applied_to_naked_test_fns() {
+    fn applies_test_thresholds_to_naked_test_fns() {
         let (_, evals) = check_files(&[
             ("src/a.rs", "#[test]\nfn test_a(x: i32) -> i32 { x + 1 }"),
             ("src/b.rs", "#[test]\nfn test_b(y: i32) -> i32 { y + 1 }"),
