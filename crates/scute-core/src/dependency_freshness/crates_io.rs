@@ -54,7 +54,6 @@ fn parse_latest_stable(ndjson: &str) -> Option<semver::Version> {
         .filter_map(|entry| {
             let vers = entry["vers"].as_str()?;
             let v = vers.parse::<semver::Version>().ok()?;
-            // Skip pre-release versions
             if !v.pre.is_empty() {
                 return None;
             }

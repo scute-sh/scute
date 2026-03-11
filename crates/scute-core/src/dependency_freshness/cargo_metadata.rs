@@ -114,7 +114,6 @@ fn is_direct_dep(dep: &serde_json::Value) -> bool {
 fn resolve_package(pkg_id: &str, packages: &[serde_json::Value]) -> Option<DirectDep> {
     let pkg = packages.iter().find(|p| p["id"].as_str() == Some(pkg_id))?;
 
-    // Only include crates.io deps (source starts with "registry+")
     let source = pkg["source"].as_str()?;
     if !source.starts_with("registry+") {
         return None;
