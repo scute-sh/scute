@@ -247,6 +247,24 @@ mod tests {
     }
 
     #[test]
+    fn code_similarity_reads_exclude_patterns() {
+        let def: code_similarity::Definition = definition(
+            r"
+            code-similarity:
+              exclude:
+                - '*.d.ts'
+                - 'generated/**'
+            ",
+            code_similarity::CHECK_NAME,
+        );
+
+        assert_eq!(
+            def.exclude,
+            Some(vec!["*.d.ts".into(), "generated/**".into()])
+        );
+    }
+
+    #[test]
     fn rejects_unknown_fields_in_check_definition() {
         let config = config_from_yaml(
             r"

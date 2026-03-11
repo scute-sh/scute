@@ -49,6 +49,8 @@ pub struct Definition {
     /// in test code. Defaults to warn: 100, fail: 130.
     #[serde(alias = "test-thresholds")]
     pub test_thresholds: Option<Thresholds>,
+    /// Glob patterns for files to exclude from similarity analysis.
+    pub exclude: Option<Vec<String>>,
 }
 
 /// Check a directory for code duplication.
@@ -95,7 +97,8 @@ pub fn check(
     };
 
     let skip_ignored = definition.skip_ignored_files.unwrap_or(true);
-    let sources = read_sources(&canonical_dir, skip_ignored);
+    let exclude = definition.exclude.as_deref().unwrap_or_default();
+    let sources = read_sources(&canonical_dir, skip_ignored, exclude);
     let clone_groups = detect_clones(&sources, min_tokens)?;
     let relevant = filter_by_focus(&clone_groups, &focus_files);
 
@@ -141,8 +144,12 @@ fn filter_by_focus<'a>(
         .collect()
 }
 
-fn read_sources(dir: &Path, skip_ignored: bool) -> Vec<(String, String, &'static LanguageConfig)> {
-    discover_files(dir, skip_ignored)
+fn read_sources(
+    dir: &Path,
+    skip_ignored: bool,
+    exclude: &[String],
+) -> Vec<(String, String, &'static LanguageConfig)> {
+    discover_files(dir, skip_ignored, exclude)
         .into_iter()
         .filter_map(|(path, lang)| {
             let content = std::fs::read_to_string(&path).ok()?;
@@ -257,9 +264,25 @@ fn is_test_only_group(
     })
 }
 
-fn discover_files(dir: &Path, skip_ignored: bool) -> Vec<(PathBuf, &'static LanguageConfig)> {
-    let mut files: Vec<_> = ignore::WalkBuilder::new(dir)
-        .standard_filters(skip_ignored)
+fn discover_files(
+    dir: &Path,
+    skip_ignored: bool,
+    exclude: &[String],
+) -> Vec<(PathBuf, &'static LanguageConfig)> {
+    let mut builder = ignore::WalkBuilder::new(dir);
+    builder.standard_filters(skip_ignored);
+
+    if !exclude.is_empty() {
+        let mut overrides = ignore::overrides::OverrideBuilder::new(dir);
+        for pattern in exclude {
+            overrides.add(&format!("!{pattern}")).ok();
+        }
+        if let Ok(built) = overrides.build() {
+            builder.overrides(built);
+        }
+    }
+
+    let mut files: Vec<_> = builder
         .build()
         .filter_map(Result::ok)
         .filter(|e| e.file_type().is_some_and(|ft| ft.is_file()))
@@ -775,6 +798,73 @@ mod tests {
 
         assert_that!(evals, len(eq(1)));
         assert!(evals[0].is_pass());
+    }
+
+    #[test]
+    fn excludes_files_matching_a_glob_pattern() {
+        let dir = make_dir(CLONE_PAIR);
+
+        let evals = check(
+            dir.path(),
+            &[],
+            &Definition {
+                exclude: Some(vec!["b.rs".to_string()]),
+                ..low_threshold()
+            },
+        )
+        .unwrap();
+
+        assert!(
+            evals.iter().all(Evaluation::is_pass),
+            "b.rs should be excluded, got: {evals:?}"
+        );
+    }
+
+    #[test]
+    fn excludes_files_matching_multiple_glob_patterns() {
+        let dir = make_dir(&[
+            ("a.rs", "fn foo(x: i32) -> i32 { x + 1 }"),
+            ("b.rs", "fn bar(y: i32) -> i32 { y + 1 }"),
+            ("c.ts", "function baz(z: number): number { return z + 1; }"),
+        ]);
+
+        let evals = check(
+            dir.path(),
+            &[],
+            &Definition {
+                exclude: Some(vec!["b.rs".to_string(), "*.ts".to_string()]),
+                ..low_threshold()
+            },
+        )
+        .unwrap();
+
+        assert!(
+            evals.iter().all(Evaluation::is_pass),
+            "b.rs and *.ts should be excluded, got: {evals:?}"
+        );
+    }
+
+    #[test]
+    fn excludes_files_in_subdirectory_matching_glob_pattern() {
+        let dir = make_dir(&[
+            ("src/a.rs", "fn foo(x: i32) -> i32 { x + 1 }"),
+            ("generated/b.rs", "fn bar(y: i32) -> i32 { y + 1 }"),
+        ]);
+
+        let evals = check(
+            dir.path(),
+            &[],
+            &Definition {
+                exclude: Some(vec!["generated/**".to_string()]),
+                ..low_threshold()
+            },
+        )
+        .unwrap();
+
+        assert!(
+            evals.iter().all(Evaluation::is_pass),
+            "generated/** should be excluded, got: {evals:?}"
+        );
     }
 
     #[test]

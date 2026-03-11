@@ -190,6 +190,28 @@ checks:
             .check(&["code-similarity"])
             .expect_fail();
     }
+
+    #[test_case(Cli)]
+    #[test_case(Mcp)]
+    fn exclude_patterns_skip_matching_files(interface: Interface) {
+        Scute::new(interface)
+            .source_file("a.rs", "fn foo(x: i32) -> i32 { x + 1 }")
+            .source_file("b.rs", "fn bar(y: i32) -> i32 { y + 1 }")
+            .scute_config(
+                r"
+checks:
+  code-similarity:
+    thresholds:
+      fail: 0
+    min-tokens: 5
+    exclude:
+      - 'b.rs'
+",
+            )
+            .check(&["code-similarity"])
+            .expect_pass();
+    }
+
     #[test_case(Cli)]
     #[test_case(Mcp)]
     fn nonexistent_source_dir_produces_error(interface: Interface) {
