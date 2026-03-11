@@ -1,4 +1,4 @@
-use super::FetchError;
+use crate::dependency_freshness::FetchError;
 
 const INDEX_BASE: &str = "https://index.crates.io";
 const USER_AGENT: &str = concat!(
@@ -9,6 +9,10 @@ const USER_AGENT: &str = concat!(
 const TIMEOUT_SECS: u64 = 10;
 
 pub(super) fn fetch_latest_version(name: &str) -> Result<Option<semver::Version>, FetchError> {
+    if name.is_empty() {
+        return Err(FetchError::Failed("empty crate name".into()));
+    }
+
     let path = sparse_index_path(name);
     let url = format!("{INDEX_BASE}/{path}");
 
@@ -54,7 +58,6 @@ fn parse_latest_stable(ndjson: &str) -> Option<semver::Version> {
         .filter_map(|entry| {
             let vers = entry["vers"].as_str()?;
             let v = vers.parse::<semver::Version>().ok()?;
-            // Skip pre-release versions
             if !v.pre.is_empty() {
                 return None;
             }
