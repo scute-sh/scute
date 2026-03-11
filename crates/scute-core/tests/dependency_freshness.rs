@@ -213,6 +213,54 @@ fn npm_workspace_member_dev_dep_location_points_to_member_manifest() {
 }
 
 #[test]
+fn polyglot_monorepo_reports_deps_from_all_package_managers() {
+    let dir = TestProject::empty()
+        .nested(
+            "backend",
+            TestProject::cargo().member("crates/api", |m| m.dependency("rand", "=0.7.3")),
+        )
+        .nested(
+            "frontend",
+            TestProject::npm().member("apps/web", |m| m.dependency("is-odd", "1.0.0")),
+        )
+        .build();
+
+    let dependencies = fetch_outdated(dir.path()).unwrap();
+
+    let names: Vec<&str> = dependencies.iter().map(|d| d.name.as_str()).collect();
+    assert!(names.contains(&"rand"), "missing rand, got: {names:?}");
+    assert!(names.contains(&"is-odd"), "missing is-odd, got: {names:?}");
+}
+
+#[test]
+fn polyglot_monorepo_locations_are_relative_to_target() {
+    let dir = TestProject::empty()
+        .nested(
+            "backend",
+            TestProject::cargo().member("crates/api", |m| m.dependency("rand", "=0.7.3")),
+        )
+        .nested(
+            "frontend",
+            TestProject::npm().member("apps/web", |m| m.dependency("is-odd", "1.0.0")),
+        )
+        .build();
+
+    let dependencies = fetch_outdated(dir.path()).unwrap();
+
+    let rand_dep = dependencies.iter().find(|d| d.name == "rand").unwrap();
+    assert_eq!(
+        rand_dep.location.as_deref(),
+        Some("backend/crates/api/Cargo.toml")
+    );
+
+    let npm_dep = dependencies.iter().find(|d| d.name == "is-odd").unwrap();
+    assert_eq!(
+        npm_dep.location.as_deref(),
+        Some("frontend/apps/web/package.json")
+    );
+}
+
+#[test]
 fn check_sets_target_to_canonicalized_path() {
     let dir = TestProject::cargo().build();
     let definition = dependency_freshness::Definition::default();
