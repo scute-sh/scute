@@ -63,7 +63,7 @@ fn fetch_latest_versions(
 
         handles
             .into_iter()
-            .map(|handle| handle.join().unwrap())
+            .filter_map(|handle| handle.join().ok())
             .collect()
     })
 }

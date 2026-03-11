@@ -1,7 +1,6 @@
 use std::path::Path;
 
-use super::FetchError;
-use super::OutdatedDependency;
+use super::{FetchError, OutdatedDependency};
 
 pub(super) fn is_npm_project(target: &Path) -> bool {
     target.join("package.json").exists()
@@ -33,6 +32,7 @@ fn parse_outdated(json: &str, target: &Path) -> Result<Vec<OutdatedDependency>, 
         .as_object()
         .ok_or_else(|| FetchError::Failed("npm outdated returned non-object".into()))?;
 
+    let project_identity = ProjectIdentity::from_target(target);
     let mut outdated = Vec::new();
 
     for (name, info) in packages {
@@ -54,7 +54,7 @@ fn parse_outdated(json: &str, target: &Path) -> Result<Vec<OutdatedDependency>, 
 
         let location = info["dependent"]
             .as_str()
-            .and_then(|dependent_name| resolve_location(dependent_name, target));
+            .and_then(|dependent_name| project_identity.resolve_location(dependent_name));
 
         outdated.push(OutdatedDependency {
             name: name.clone(),
@@ -67,19 +67,37 @@ fn parse_outdated(json: &str, target: &Path) -> Result<Vec<OutdatedDependency>, 
     Ok(outdated)
 }
 
-fn resolve_location(dependent_name: &str, target: &Path) -> Option<String> {
-    let root_package_path = target.join("package.json");
-    let root_name = std::fs::read_to_string(&root_package_path)
-        .ok()
-        .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
-        .and_then(|v| v["name"].as_str().map(String::from));
+struct ProjectIdentity {
+    dir_name: Option<String>,
+    package_name: Option<String>,
+}
 
-    // npm uses the directory name as `dependent`, not the package.json name
-    let dir_name = target.file_name().map(|n| n.to_string_lossy().into_owned());
+impl ProjectIdentity {
+    fn from_target(target: &Path) -> Self {
+        let dir_name = target
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned());
 
-    if dir_name.as_deref() == Some(dependent_name) || root_name.as_deref() == Some(dependent_name) {
-        return Some("package.json".into());
+        let package_name = std::fs::read_to_string(target.join("package.json"))
+            .ok()
+            .and_then(|contents| serde_json::from_str::<serde_json::Value>(&contents).ok())
+            .and_then(|value| value["name"].as_str().map(String::from));
+
+        Self {
+            dir_name,
+            package_name,
+        }
     }
 
-    None
+    fn resolve_location(&self, dependent_name: &str) -> Option<String> {
+        // npm uses the directory name as `dependent`, not the package.json name
+        let matches_dir = self.dir_name.as_deref() == Some(dependent_name);
+        let matches_package = self.package_name.as_deref() == Some(dependent_name);
+
+        if matches_dir || matches_package {
+            return Some("package.json".into());
+        }
+
+        None
+    }
 }
