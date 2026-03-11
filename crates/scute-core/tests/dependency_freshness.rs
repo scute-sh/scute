@@ -6,8 +6,6 @@ fn assert_single_dep(deps: &[OutdatedDependency], expected_name: &str) {
     assert_eq!(deps[0].name, expected_name);
 }
 
-// --- Cargo ---
-
 #[test]
 fn outdated_report_excludes_transitive_dependencies() {
     let dir = TestProject::cargo().dependency("rand", "=0.7.3").build();
@@ -81,8 +79,6 @@ fn check_sets_target_to_canonicalized_path() {
         dir.path().canonicalize().unwrap().display().to_string()
     );
 }
-
-// --- npm ---
 
 #[test]
 fn npm_outdated_report_includes_direct_dependencies() {

@@ -82,6 +82,5 @@ fn resolve_location(dependent_name: &str, target: &Path) -> Option<String> {
         return Some("package.json".into());
     }
 
-    // TODO: workspace member lookup
     None
 }
