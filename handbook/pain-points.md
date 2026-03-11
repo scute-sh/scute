@@ -150,7 +150,7 @@ value.
   agent rationalizes why it's acceptable without actually trying to fix it.
   The rationalization sounds reasonable but turns out to be wrong when
   challenged. "It's fine" is not analysis.
-- **Checklists skipped under momentum.** (×14) Established workflows and
+- **Checklists skipped under momentum.** (×15) Established workflows and
   checklists exist but get bypassed when focus is on "just get the thing done."
   The process is known, the trigger is clear, but urgency wins over discipline.
   Especially common with agents who optimize for task completion over process
