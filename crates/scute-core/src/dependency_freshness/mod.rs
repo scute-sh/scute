@@ -144,6 +144,81 @@ fn classify_error(err: FetchError) -> ExecutionError {
     }
 }
 
+/// A package manager that can detect project roots and fetch outdated
+/// dependencies.
+trait PackageManager: Send + Sync {
+    /// Returns true for standalone projects and workspace roots, false for
+    /// workspace members whose root is an ancestor.
+    fn is_project_root(&self, dir: &Path) -> bool;
+
+    /// Returns dependencies with locations relative to `dir`.
+    fn fetch_outdated(&self, dir: &Path) -> Result<Vec<OutdatedDependency>, FetchError>;
+}
+
+/// A discovered manifest file paired with its package manager.
+struct Manifest {
+    dir: std::path::PathBuf,
+    pm: Box<dyn PackageManager>,
+}
+
+impl Manifest {
+    fn detect(path: &Path) -> Option<Self> {
+        let dir = path.parent()?.to_path_buf();
+        let pm: Box<dyn PackageManager> = match path.file_name()?.to_str()? {
+            "Cargo.toml" => Box::new(cargo::Cargo),
+            "package.json" => Box::new(npm::Npm),
+            _ => return None,
+        };
+        Some(Self { dir, pm })
+    }
+
+    fn is_project_root(&self) -> bool {
+        self.pm.is_project_root(&self.dir)
+    }
+
+    fn fetch_outdated(&self) -> Result<Vec<OutdatedDependency>, FetchError> {
+        self.pm.fetch_outdated(&self.dir)
+    }
+}
+
+fn collect_projects(target: &Path) -> Result<Vec<Manifest>, FetchError> {
+    let walker = ignore::WalkBuilder::new(target)
+        .standard_filters(true)
+        .build();
+
+    let manifests: Vec<_> = walker
+        .filter_map(Result::ok)
+        .filter(|entry| entry.file_type().is_some_and(|ft| ft.is_file()))
+        .filter_map(|entry| Manifest::detect(entry.path()))
+        .collect();
+
+    let dirs: Vec<_> = manifests
+        .iter()
+        .map(|m| m.dir.display().to_string())
+        .collect();
+
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = manifests
+            .into_iter()
+            .map(|manifest| scope.spawn(move || manifest.is_project_root().then_some(manifest)))
+            .collect();
+
+        let mut projects = Vec::new();
+        for (handle, dir) in handles.into_iter().zip(&dirs) {
+            match handle.join() {
+                Ok(Some(manifest)) => projects.push(manifest),
+                Ok(None) => {}
+                Err(_) => {
+                    return Err(FetchError::Failed(format!(
+                        "root detection failed for {dir}"
+                    )));
+                }
+            }
+        }
+        Ok(projects)
+    })
+}
+
 /// Walk `target` for supported package managers, identify project roots,
 /// and collect outdated dependencies from each one.
 ///
@@ -153,9 +228,9 @@ fn classify_error(err: FetchError) -> ExecutionError {
 /// Fails fast: if any project root errors out, the whole call fails.
 #[doc(hidden)]
 pub fn fetch_outdated(target: &Path) -> Result<Vec<OutdatedDependency>, FetchError> {
-    let roots = discover_project_roots(target);
+    let projects = collect_projects(target)?;
 
-    if roots.is_empty() {
+    if projects.is_empty() {
         return Err(FetchError::InvalidTarget(
             "no supported project found".into(),
         ));
@@ -163,13 +238,9 @@ pub fn fetch_outdated(target: &Path) -> Result<Vec<OutdatedDependency>, FetchErr
 
     let mut all_outdated = Vec::new();
 
-    for (project_dir, package_manager) in &roots {
-        let mut deps = match package_manager {
-            PackageManager::Cargo => cargo::fetch_outdated(project_dir)?,
-            PackageManager::Npm => npm::fetch_outdated(project_dir)?,
-        };
-
-        let prefix = project_dir.strip_prefix(target).unwrap_or(project_dir);
+    for project in &projects {
+        let mut deps = project.fetch_outdated()?;
+        let prefix = project.dir.strip_prefix(target).unwrap_or(&project.dir);
 
         if !prefix.as_os_str().is_empty() {
             for dep in &mut deps {
@@ -184,60 +255,6 @@ pub fn fetch_outdated(target: &Path) -> Result<Vec<OutdatedDependency>, FetchErr
     }
 
     Ok(all_outdated)
-}
-
-#[derive(Debug, PartialEq)]
-enum PackageManager {
-    Cargo,
-    Npm,
-}
-
-impl std::fmt::Display for PackageManager {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Self::Cargo => f.write_str("Cargo"),
-            Self::Npm => f.write_str("npm"),
-        }
-    }
-}
-
-fn discover_project_roots(target: &Path) -> Vec<(std::path::PathBuf, PackageManager)> {
-    let walker = ignore::WalkBuilder::new(target)
-        .standard_filters(true)
-        .build();
-
-    let manifests: Vec<_> = walker
-        .filter_map(Result::ok)
-        .filter(|entry| entry.file_type().is_some_and(|ft| ft.is_file()))
-        .filter_map(|entry| {
-            let dir = entry.path().parent()?.to_path_buf();
-            match entry.file_name().to_str()? {
-                "Cargo.toml" => Some((dir, PackageManager::Cargo)),
-                "package.json" => Some((dir, PackageManager::Npm)),
-                _ => None,
-            }
-        })
-        .collect();
-
-    std::thread::scope(|scope| {
-        let handles: Vec<_> = manifests
-            .into_iter()
-            .map(|(dir, pm)| {
-                scope.spawn(move || {
-                    let is_root = match &pm {
-                        PackageManager::Cargo => cargo::is_project_root(&dir),
-                        PackageManager::Npm => npm::is_project_root(&dir),
-                    };
-                    is_root.then_some((dir, pm))
-                })
-            })
-            .collect();
-
-        handles
-            .into_iter()
-            .filter_map(|h| h.join().ok().flatten())
-            .collect()
-    })
 }
 
 fn evaluate(

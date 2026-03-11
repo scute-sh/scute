@@ -1,61 +1,66 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use super::{FetchError, OutdatedDependency};
+use super::{FetchError, OutdatedDependency, PackageManager};
 
-/// Ask `npm query :root` whether this directory is the project root.
-/// Returns true for both standalone projects and workspace roots,
-/// false for workspace members (whose root is an ancestor).
-pub(super) fn is_project_root(target: &Path) -> bool {
-    let Ok(output) = std::process::Command::new("npm")
-        .args(["query", ":root"])
-        .current_dir(target)
-        .output()
-    else {
-        return false;
-    };
+pub(super) struct Npm;
 
-    if !output.status.success() {
-        return false;
+impl PackageManager for Npm {
+    /// Ask `npm query :root` whether this directory is the project root.
+    /// Returns true for both standalone projects and workspace roots,
+    /// false for workspace members (whose root is an ancestor).
+    fn is_project_root(&self, target: &Path) -> bool {
+        let Ok(output) = std::process::Command::new("npm")
+            .args(["query", ":root"])
+            .current_dir(target)
+            .output()
+        else {
+            return false;
+        };
+
+        if !output.status.success() {
+            return false;
+        }
+
+        let root_path = String::from_utf8(output.stdout)
+            .ok()
+            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+            .and_then(|v| {
+                v.as_array()?
+                    .first()?
+                    .get("path")?
+                    .as_str()
+                    .map(String::from)
+            });
+
+        let Some(canonical_target) = target.canonicalize().ok() else {
+            return false;
+        };
+
+        root_path
+            .as_deref()
+            .is_some_and(|root| Path::new(root) == canonical_target)
     }
 
-    let root_path = String::from_utf8(output.stdout)
-        .ok()
-        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-        .and_then(|v| {
-            v.as_array()?
-                .first()?
-                .get("path")?
-                .as_str()
-                .map(String::from)
-        });
+    fn fetch_outdated(&self, target: &Path) -> Result<Vec<OutdatedDependency>, FetchError> {
+        let output = std::process::Command::new("npm")
+            .args(["outdated", "--json"])
+            .current_dir(target)
+            .output()
+            .map_err(|e| FetchError::Failed(format!("could not run npm outdated: {e}")))?;
 
-    let Some(canonical_target) = target.canonicalize().ok() else {
-        return false;
-    };
+        // npm outdated exits with code 1 when there ARE outdated deps.
+        // It only fails with non-json output on actual errors.
+        let stdout =
+            String::from_utf8(output.stdout).map_err(|e| FetchError::Failed(e.to_string()))?;
 
-    root_path
-        .as_deref()
-        .is_some_and(|root| Path::new(root) == canonical_target)
-}
+        if stdout.trim().is_empty() {
+            return Ok(vec![]);
+        }
 
-pub(super) fn fetch_outdated(target: &Path) -> Result<Vec<OutdatedDependency>, FetchError> {
-    let output = std::process::Command::new("npm")
-        .args(["outdated", "--json"])
-        .current_dir(target)
-        .output()
-        .map_err(|e| FetchError::Failed(format!("could not run npm outdated: {e}")))?;
-
-    // npm outdated exits with code 1 when there ARE outdated deps.
-    // It only fails with non-json output on actual errors.
-    let stdout = String::from_utf8(output.stdout).map_err(|e| FetchError::Failed(e.to_string()))?;
-
-    if stdout.trim().is_empty() {
-        return Ok(vec![]);
+        let layout = WorkspaceLayout::from_target(target);
+        parse_outdated(&stdout, &layout)
     }
-
-    let layout = WorkspaceLayout::from_target(target);
-    parse_outdated(&stdout, &layout)
 }
 
 fn parse_outdated(
