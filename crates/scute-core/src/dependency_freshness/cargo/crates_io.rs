@@ -1,4 +1,4 @@
-use super::FetchError;
+use super::super::FetchError;
 
 const INDEX_BASE: &str = "https://index.crates.io";
 const USER_AGENT: &str = concat!(

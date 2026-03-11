@@ -1,5 +1,4 @@
-mod cargo_metadata;
-mod crates_io;
+mod cargo;
 mod npm;
 
 use std::path::Path;
@@ -160,7 +159,7 @@ pub fn fetch_outdated(target: &Path) -> Result<Vec<OutdatedDependency>, FetchErr
     let mut all_outdated = Vec::new();
 
     if has_cargo {
-        all_outdated.extend(fetch_outdated_cargo(target)?);
+        all_outdated.extend(cargo::fetch_outdated(target)?);
     }
 
     if has_npm {
@@ -168,63 +167,6 @@ pub fn fetch_outdated(target: &Path) -> Result<Vec<OutdatedDependency>, FetchErr
     }
 
     Ok(all_outdated)
-}
-
-fn fetch_outdated_cargo(target: &Path) -> Result<Vec<OutdatedDependency>, FetchError> {
-    let direct_deps = cargo_metadata::collect_direct_deps(target)?;
-
-    let latest_versions = fetch_latest_versions(&direct_deps);
-
-    let mut outdated = Vec::new();
-    let mut errors = Vec::new();
-
-    for (dep, result) in &latest_versions {
-        match result {
-            Ok(Some(latest)) if latest > &dep.version => {
-                outdated.push(as_outdated(dep, latest.clone(), target));
-            }
-            Ok(_) => {}
-            Err(e) => errors.push(format!("{}: {e}", dep.name)),
-        }
-    }
-
-    if outdated.is_empty() && errors.len() == direct_deps.len() && !direct_deps.is_empty() {
-        return Err(FetchError::Failed(format!(
-            "all registry lookups failed: {}",
-            errors.join(", ")
-        )));
-    }
-
-    Ok(outdated)
-}
-
-fn as_outdated(
-    dep: &cargo_metadata::DirectDep,
-    latest: semver::Version,
-    target: &Path,
-) -> OutdatedDependency {
-    OutdatedDependency {
-        name: dep.name.clone(),
-        current: dep.version.clone(),
-        latest,
-        location: dep.location_relative_to(target),
-    }
-}
-
-fn fetch_latest_versions(
-    deps: &[cargo_metadata::DirectDep],
-) -> Vec<(
-    &cargo_metadata::DirectDep,
-    Result<Option<semver::Version>, FetchError>,
-)> {
-    std::thread::scope(|s| {
-        let handles: Vec<_> = deps
-            .iter()
-            .map(|dep| s.spawn(move || (dep, crates_io::fetch_latest_version(&dep.name))))
-            .collect();
-
-        handles.into_iter().map(|h| h.join().unwrap()).collect()
-    })
 }
 
 fn evaluate(

@@ -1,6 +1,6 @@
 use std::path::Path;
 
-use super::FetchError;
+use super::super::FetchError;
 
 #[derive(Debug)]
 pub(super) struct DirectDep {
