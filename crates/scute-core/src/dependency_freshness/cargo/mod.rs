@@ -5,7 +5,7 @@ use std::path::Path;
 
 use super::{FetchError, OutdatedDependency, PackageManager};
 
-pub(super) struct Cargo;
+pub struct Cargo;
 
 impl PackageManager for Cargo {
     /// Ask `cargo metadata` whether this directory is the workspace root.
