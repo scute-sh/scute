@@ -190,6 +190,7 @@ checks:
             .check(&["code-similarity"])
             .expect_fail();
     }
+
     #[test_case(Cli)]
     #[test_case(Mcp)]
     fn exclude_patterns_skip_matching_files(interface: Interface) {
