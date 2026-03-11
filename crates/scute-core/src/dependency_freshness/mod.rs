@@ -134,8 +134,7 @@ fn classify_error(err: FetchError) -> ExecutionError {
         FetchError::InvalidTarget(msg) => ExecutionError {
             code: "invalid_target".into(),
             message: msg,
-            recovery: "pass a directory containing a supported project (Cargo.toml, package.json)"
-                .into(),
+            recovery: "pass a directory containing a supported project".into(),
         },
         FetchError::Failed(msg) => ExecutionError {
             code: "tool_failed".into(),
@@ -147,12 +146,12 @@ fn classify_error(err: FetchError) -> ExecutionError {
 
 #[doc(hidden)]
 pub fn fetch_outdated(target: &Path) -> Result<Vec<OutdatedDependency>, FetchError> {
-    let has_cargo = target.join("Cargo.toml").exists();
+    let has_cargo = cargo::is_cargo_project(target);
     let has_npm = npm::is_npm_project(target);
 
     if !has_cargo && !has_npm {
         return Err(FetchError::InvalidTarget(
-            "no supported project found (looked for Cargo.toml, package.json)".into(),
+            "no supported project found".into(),
         ));
     }
 

@@ -5,6 +5,10 @@ use std::path::Path;
 
 use super::{FetchError, OutdatedDependency};
 
+pub(super) fn is_cargo_project(target: &Path) -> bool {
+    target.join("Cargo.toml").exists()
+}
+
 pub(super) fn fetch_outdated(target: &Path) -> Result<Vec<OutdatedDependency>, FetchError> {
     let direct_deps = metadata::collect_direct_deps(target)?;
 
