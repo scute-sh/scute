@@ -278,11 +278,14 @@ fn language_for_path(path: &Path) -> Option<&'static LanguageConfig> {
         std::sync::LazyLock::new(language::javascript);
     static TYPESCRIPT: std::sync::LazyLock<LanguageConfig> =
         std::sync::LazyLock::new(language::typescript);
+    static TYPESCRIPT_TSX: std::sync::LazyLock<LanguageConfig> =
+        std::sync::LazyLock::new(language::typescript_tsx);
 
     match path.extension()?.to_str()? {
         "rs" => Some(&RUST),
         "js" | "jsx" | "mjs" | "cjs" => Some(&JAVASCRIPT),
-        "ts" | "tsx" => Some(&TYPESCRIPT),
+        "ts" => Some(&TYPESCRIPT),
+        "tsx" => Some(&TYPESCRIPT_TSX),
         _ => None,
     }
 }
@@ -368,7 +371,7 @@ mod tests {
             }),
             test_thresholds: Some(Thresholds {
                 warn: Some(10),
-                fail: Some(20),
+                fail: Some(30),
             }),
             ..Definition::default()
         }
@@ -602,53 +605,45 @@ mod tests {
         assert!(evals[0].is_pass());
     }
 
-    #[test]
-    fn detects_typescript_duplications() {
-        let (_, evals) = check_files(&[
-            ("a.ts", "function foo(x: number): number { return x + 1; }"),
-            ("b.ts", "function bar(y: number): number { return y + 1; }"),
-        ]);
-
+    #[test_case::test_case(
+        &[("a.ts", "function foo(x: number): number { return x + 1; }"),
+          ("b.ts", "function bar(y: number): number { return y + 1; }")]
+        ; "typescript"
+    )]
+    #[test_case::test_case(
+        &[("a.js", "function foo(x) { return x + 1; }"),
+          ("b.js", "function bar(y) { return y + 1; }")]
+        ; "javascript"
+    )]
+    #[test_case::test_case(
+        &[("a.jsx", "function Greeting({ name }) { return <div>Hello {name}</div>; }"),
+          ("b.jsx", "function Welcome({ name }) { return <div>Hello {name}</div>; }")]
+        ; "jsx"
+    )]
+    #[test_case::test_case(
+        &[("a.js", "function foo(x) { return x + 1; }"),
+          ("b.mjs", "function bar(y) { return y + 1; }")]
+        ; "across js and mjs"
+    )]
+    #[test_case::test_case(
+        &[("a.js", "function foo(x) { return x + 1; }"),
+          ("b.cjs", "function bar(y) { return y + 1; }")]
+        ; "across js and cjs"
+    )]
+    #[test_case::test_case(
+        &[("a.tsx", "function Greeting({ name }: { name: string }) { return <div>Hello {name}</div>; }"),
+          ("b.tsx", "function Welcome({ name }: { name: string }) { return <div>Hello {name}</div>; }")]
+        ; "tsx"
+    )]
+    #[test_case::test_case(
+        &[("a.ts", "function foo(x: number): number { return x + 1; }"),
+          ("b.tsx", "function bar(y: number): number { return y + 1; }")]
+        ; "across ts and tsx"
+    )]
+    fn detects_duplications(files: &[(&str, &str)]) {
+        let (_, evals) = check_files(files);
         assert_that!(evals, len(eq(1)));
-    }
-
-    #[test]
-    fn detects_javascript_duplications() {
-        let (_, evals) = check_files(&[
-            ("a.js", "function foo(x) { return x + 1; }"),
-            ("b.js", "function bar(y) { return y + 1; }"),
-        ]);
-
-        assert_that!(evals, len(eq(1)));
-        assert!(evals[0].is_fail());
-    }
-
-    #[test]
-    fn detects_jsx_duplications() {
-        let (_, evals) = check_files(&[
-            (
-                "a.jsx",
-                "function Greeting({ name }) { return <div>Hello {name}</div>; }",
-            ),
-            (
-                "b.jsx",
-                "function Welcome({ name }) { return <div>Hello {name}</div>; }",
-            ),
-        ]);
-
-        assert_that!(evals, len(eq(1)));
-        assert!(evals[0].is_fail());
-    }
-
-    #[test]
-    fn detects_duplications_across_js_and_mjs_files() {
-        let (_, evals) = check_files(&[
-            ("a.js", "function foo(x) { return x + 1; }"),
-            ("b.mjs", "function bar(y) { return y + 1; }"),
-        ]);
-
-        assert_that!(evals, len(eq(1)));
-        assert!(evals[0].is_fail());
+        assert!(evals[0].is_fail(), "expected fail, got: {evals:?}");
     }
 
     #[test]
@@ -730,6 +725,16 @@ mod tests {
         &[("__tests__/a.js", "function foo(x) { return x + 1; }"),
           ("__tests__/b.js", "function bar(y) { return y + 1; }")]
         ; "js files in __tests__ directory"
+    )]
+    #[test_case::test_case(
+        &[("a.spec.ts", "function foo(x: number): number { return x + 1; }"),
+          ("b.spec.ts", "function bar(y: number): number { return y + 1; }")]
+        ; "spec ts files"
+    )]
+    #[test_case::test_case(
+        &[("a.test.tsx", "function Greeting({ name }: { name: string }) { return <div>Hello {name}</div>; }"),
+          ("b.test.tsx", "function Welcome({ name }: { name: string }) { return <div>Hello {name}</div>; }")]
+        ; "tsx test files"
     )]
     #[test_case::test_case(
         &[("src/a.rs", "#[test]\nfn test_a(x: i32) -> i32 { x + 1 }"),
