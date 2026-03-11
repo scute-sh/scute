@@ -99,7 +99,7 @@ fn collect_member_deps(node: &serde_json::Value, packages: &[serde_json::Value])
 }
 
 /// A dep is "direct" if it has at least one `dep_kind` that is null (normal)
-/// or "dev", and its source is from crates.io (not a path/git dep).
+/// or "dev". Source filtering (registry vs path/git) happens in `resolve_package`.
 fn is_direct_dep(dep: &serde_json::Value) -> bool {
     let Some(dep_kinds) = dep["dep_kinds"].as_array() else {
         return false;

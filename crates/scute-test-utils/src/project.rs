@@ -163,12 +163,11 @@ fn setup_cargo_project(
             "[package]\nname = \"test-project\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
         )
     } else {
-        let paths: Vec<&str> = members.iter().map(|(p, _)| p.as_str()).collect();
         format!(
             "[workspace]\nmembers = [{}]\n",
-            paths
+            members
                 .iter()
-                .map(|p| format!("\"{p}\""))
+                .map(|(path, _)| format!("\"{path}\""))
                 .collect::<Vec<_>>()
                 .join(", ")
         )

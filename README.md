@@ -108,7 +108,7 @@ result. Agents and CI consume it the same way.
 | ------------------------------------------------------------- | ------------------------------- | ---------------------------- |
 | [`commit-message`](docs/checks/commit-message.md)             | Conventional Commits violations | Any project                  |
 | [`code-similarity`](docs/checks/code-similarity.md)           | Structural code duplication     | Rust, JavaScript, TypeScript |
-| [`dependency-freshness`](docs/checks/dependency-freshness.md) | Outdated dependencies           | Cargo (Rust)                 |
+| [`dependency-freshness`](docs/checks/dependency-freshness.md) | Outdated dependencies           | Cargo, npm                   |
 
 ## Quickstart
 

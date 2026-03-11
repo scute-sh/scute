@@ -136,12 +136,12 @@ fn classify_error(err: FetchError) -> ExecutionError {
         FetchError::InvalidTarget(msg) => ExecutionError {
             code: "invalid_target".into(),
             message: msg,
-            recovery: "pass a directory containing a supported project".into(),
+            recovery: "pass a directory containing a Cargo.toml or package.json".into(),
         },
         FetchError::Failed(msg) => ExecutionError {
             code: "tool_failed".into(),
             message: msg,
-            recovery: "check the project directory and try again".into(),
+            recovery: "check network connectivity and project setup, then try again".into(),
         },
     }
 }
@@ -195,19 +195,20 @@ fn collect_projects(target: &Path) -> Result<Vec<Manifest>, FetchError> {
         .filter_map(|entry| Manifest::detect(entry.path()))
         .collect();
 
-    let dirs: Vec<_> = manifests
-        .iter()
-        .map(|m| m.dir.display().to_string())
-        .collect();
-
     std::thread::scope(|scope| {
         let handles: Vec<_> = manifests
             .into_iter()
-            .map(|manifest| scope.spawn(move || manifest.is_project_root().then_some(manifest)))
+            .map(|manifest| {
+                let dir = manifest.dir.display().to_string();
+                (
+                    scope.spawn(move || manifest.is_project_root().then_some(manifest)),
+                    dir,
+                )
+            })
             .collect();
 
         let mut projects = Vec::new();
-        for (handle, dir) in handles.into_iter().zip(&dirs) {
+        for (handle, dir) in handles {
             match handle.join() {
                 Ok(Some(manifest)) => projects.push(manifest),
                 Ok(None) => {}
