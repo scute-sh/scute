@@ -1,0 +1,134 @@
+# Checks whether dependencies are outdated on a weekly schedule.
+# When outdated deps are found, creates (or updates) a tracking issue.
+# When all deps are fresh again, closes the issue automatically.
+name: Scute / Dependency freshness
+
+on:
+  schedule:
+    - cron: "0 9 * * 1" # Every Monday at 9am UTC
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  CARGO_TERM_COLOR: always
+  ISSUE_TITLE: "deps: outdated dependencies found"
+  ISSUE_LABEL: "dependencies"
+  ISSUE_MARKER: "<!-- scute:dependency-freshness -->"
+
+jobs:
+  check:
+    name: Check dependency freshness
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install Rust toolchain
+        run: rustup show
+        working-directory: crates
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates
+
+      - name: Run dependency freshness check
+        id: check
+        run: |
+          cd crates
+          if ! output=$(cargo run -q -- check dependency-freshness 2>&1); then
+            echo "::error::Dependency freshness check failed to run"
+            echo "check_failed=true" >> "$GITHUB_OUTPUT"
+            echo "$output"
+            exit 1
+          fi
+
+          echo "$output" | jq .
+
+          delimiter="SCUTE_EOF_$(date +%s%N)"
+          echo "output<<$delimiter" >> "$GITHUB_OUTPUT"
+          echo "$output" >> "$GITHUB_OUTPUT"
+          echo "$delimiter" >> "$GITHUB_OUTPUT"
+
+          failed=$(echo "$output" | jq '(.summary.failed // 0) + (.summary.warned // 0)')
+          echo "has_issues=$( [ "$failed" -gt 0 ] && echo true || echo false )" >> "$GITHUB_OUTPUT"
+
+      - name: Find existing tracking issue
+        id: existing
+        run: |
+          number=$(gh issue list --state open --label "$ISSUE_LABEL" --json number,body \
+            --jq '.[] | select(.body | contains("'"$ISSUE_MARKER"'")) | .number' \
+            | head -1)
+          echo "number=${number:-}" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Ensure label exists
+        if: steps.check.outputs.has_issues == 'true'
+        run: gh label create "$ISSUE_LABEL" --color "1d76db" --description "Dependency updates" 2>/dev/null || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build issue body
+        if: steps.check.outputs.has_issues == 'true'
+        id: body
+        env:
+          CHECK_OUTPUT: ${{ steps.check.outputs.output }}
+        run: |
+          body=$(echo "$CHECK_OUTPUT" | jq -r '
+            "Some dependencies need attention.\n\n" +
+            "| Dependency | Current | Latest |\n" +
+            "| --- | --- | --- |\n" +
+            ([.findings[] | select(.evidence) | .target as $dep | .evidence[] |
+              "| " + $dep +
+              " | " + (.found | split(" ")[1]) +
+              " | " + .expected +
+              " |"
+            ] | join("\n")) +
+            "\n\n<details>\n<summary>Raw check output</summary>\n\n```json\n" +
+            (. | tojson) +
+            "\n```\n</details>\n\n---\n*Updated by the scheduled dependency freshness check.*"
+          ')
+
+          delimiter="SCUTE_EOF_$(date +%s%N)"
+          echo "body<<$delimiter" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$body" >> "$GITHUB_OUTPUT"
+          echo "$delimiter" >> "$GITHUB_OUTPUT"
+
+          # Short summary for the update comment (e.g. "3 outdated: serde, tokio, clap")
+          summary=$(echo "$CHECK_OUTPUT" | jq -r '
+            (.summary.failed + .summary.warned | tostring) + " outdated: " +
+            ([.findings[] | select(.evidence) | .target] | join(", "))
+          ')
+          echo "summary=$summary" >> "$GITHUB_OUTPUT"
+
+      - name: Create or update issue
+        if: steps.check.outputs.has_issues == 'true'
+        run: |
+          existing="${{ steps.existing.outputs.number }}"
+          body="${ISSUE_MARKER}
+          ${BODY}"
+
+          if [ -n "$existing" ]; then
+            gh issue edit "$existing" --body "$body"
+            gh issue comment "$existing" --body "$SUMMARY"
+          else
+            gh issue create --title "$ISSUE_TITLE" --label "$ISSUE_LABEL" --body "$body"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          BODY: ${{ steps.body.outputs.body }}
+          SUMMARY: ${{ steps.body.outputs.summary }}
+
+      - name: Close issue if all fresh
+        if: steps.check.outputs.has_issues == 'false'
+        run: |
+          existing="${{ steps.existing.outputs.number }}"
+
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "All dependencies are fresh now. Closing. 🐢"
+            gh issue close "$existing"
+          fi
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
