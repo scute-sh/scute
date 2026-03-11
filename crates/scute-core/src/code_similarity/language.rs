@@ -167,7 +167,8 @@ fn first_preceding_attr_row(node: &tree_sitter::Node) -> Option<usize> {
     first_row
 }
 
-fn ts_is_test(
+/// Detects test files by JS/TS conventions: `*.test.*`, `*.spec.*`, or `__tests__/` directory.
+fn js_is_test(
     _parser: &mut dyn AstParser,
     path: &Path,
     _content: &str,
@@ -223,6 +224,40 @@ pub fn rust() -> LanguageConfig {
 }
 
 #[must_use]
+pub fn javascript() -> LanguageConfig {
+    LanguageConfig::new(
+        tree_sitter_javascript::LANGUAGE.into(),
+        &[
+            (
+                NodeRole::Identifier,
+                &[
+                    "identifier",
+                    "shorthand_property_identifier",
+                    "shorthand_property_identifier_pattern",
+                    "property_identifier",
+                ],
+            ),
+            (
+                NodeRole::Literal,
+                &[
+                    "string",
+                    "template_string",
+                    "number",
+                    "true",
+                    "false",
+                    "null",
+                    "undefined",
+                    "regex",
+                ],
+            ),
+            (NodeRole::Comment, &["comment"]),
+            (NodeRole::Decoration, &["decorator"]),
+        ],
+        js_is_test,
+    )
+}
+
+#[must_use]
 pub fn typescript() -> LanguageConfig {
     LanguageConfig::new(
         tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
@@ -254,7 +289,7 @@ pub fn typescript() -> LanguageConfig {
             (NodeRole::Comment, &["comment"]),
             (NodeRole::Decoration, &["decorator"]),
         ],
-        ts_is_test,
+        js_is_test,
     )
 }
 

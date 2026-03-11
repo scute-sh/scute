@@ -146,7 +146,7 @@ All clear.
 
 ## Scope & limitations
 
-- **Supported languages:** Rust, TypeScript. More coming.
+- **Supported languages:** Rust, JavaScript, TypeScript.
 - **Structural, not semantic.** Compares token sequences. Whitespace and formatting don't matter. Renamed variables in otherwise-identical blocks still match. But two functions that do the same thing with different implementations won't be flagged.
 - **Focus vs. scan.** The `files` parameter focuses the *results* (only report clones involving those files), but the full project is always scanned for matches. You're filtering the report, not the search.
 - **Token granularity.** Very small clones (common patterns, boilerplate) are expected and usually not worth flagging. The `min-tokens` threshold controls what's worth reporting.
