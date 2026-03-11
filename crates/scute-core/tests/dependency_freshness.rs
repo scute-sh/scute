@@ -2,12 +2,18 @@
 mod cargo;
 #[path = "dependency_freshness/npm.rs"]
 mod npm;
+#[path = "dependency_freshness/package_managers.rs"]
+mod package_managers;
 
 use scute_core::dependency_freshness::{self, OutdatedDependency, fetch_outdated};
 use scute_test_utils::TestProject;
 
-fn assert_single_dep(deps: &[OutdatedDependency], name: &str, expected_location: &str) {
-    let matching: Vec<_> = deps.iter().filter(|d| d.name == name).collect();
+fn assert_single_dependency(
+    dependencies: &[OutdatedDependency],
+    name: &str,
+    expected_location: &str,
+) {
+    let matching: Vec<_> = dependencies.iter().filter(|d| d.name == name).collect();
     assert_eq!(
         matching.len(),
         1,
@@ -33,10 +39,10 @@ fn check_sets_target_to_canonicalized_path() {
     let dir = TestProject::cargo().build();
     let definition = dependency_freshness::Definition::default();
 
-    let evals = dependency_freshness::check(dir.path(), &definition).unwrap();
+    let evaluations = dependency_freshness::check(dir.path(), &definition).unwrap();
 
     assert_eq!(
-        evals[0].target,
+        evaluations[0].target,
         dir.path().canonicalize().unwrap().display().to_string()
     );
 }
@@ -46,18 +52,18 @@ fn polyglot_monorepo_reports_each_root_once_with_relative_locations() {
     let dir = TestProject::empty()
         .nested(
             "backend",
-            TestProject::cargo().member("crates/api", |m| m.dependency("rand", "=0.7.3")),
+            TestProject::cargo().member("crates/api", |member| member.dependency("rand", "=0.7.3")),
         )
         .nested(
             "frontend",
-            TestProject::npm().member("apps/web", |m| m.dependency("is-odd", "1.0.0")),
+            TestProject::npm().member("apps/web", |member| member.dependency("is-odd", "1.0.0")),
         )
         .build();
 
-    let deps = fetch_outdated(dir.path()).unwrap();
+    let dependencies = fetch_outdated(dir.path()).unwrap();
 
-    assert_single_dep(&deps, "rand", "backend/crates/api/Cargo.toml");
-    assert_single_dep(&deps, "is-odd", "frontend/apps/web/package.json");
+    assert_single_dependency(&dependencies, "rand", "backend/crates/api/Cargo.toml");
+    assert_single_dependency(&dependencies, "is-odd", "frontend/apps/web/package.json");
 }
 
 #[test]
