@@ -150,6 +150,10 @@ value.
   agent rationalizes why it's acceptable without actually trying to fix it.
   The rationalization sounds reasonable but turns out to be wrong when
   challenged. "It's fine" is not analysis.
+- **Destroying active worktrees.** (×1) Removing a git worktree that another
+  agent was actively using, instead of working within the existing worktree or
+  creating a new one with `isolation: "worktree"`. The shortcut to unblock
+  yourself destroys someone else's workspace.
 - **Checklists skipped under momentum.** (×15) Established workflows and
   checklists exist but get bypassed when focus is on "just get the thing done."
   The process is known, the trigger is clear, but urgency wins over discipline.

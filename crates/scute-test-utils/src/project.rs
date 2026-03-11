@@ -19,6 +19,7 @@ pub struct TestProject {
     dependencies: Vec<(String, String)>,
     dev_dependencies: Vec<(String, String)>,
     members: Vec<(String, TestMember)>,
+    children: Vec<(String, TestProject)>,
     source_files: Vec<(String, String)>,
     scute_config: Option<String>,
 }
@@ -48,6 +49,7 @@ impl TestProject {
             dependencies: Vec::new(),
             dev_dependencies: Vec::new(),
             members: Vec::new(),
+            children: Vec::new(),
             source_files: Vec::new(),
             scute_config: None,
         }
@@ -99,18 +101,35 @@ impl TestProject {
         self
     }
 
+    /// Nest a child project at the given relative path inside this project.
+    pub fn nested(mut self, path: &str, child: TestProject) -> Self {
+        self.children.push((path.into(), child));
+        self
+    }
+
     /// Materialize the project into a temporary directory.
+    ///
+    /// The directory is initialized as a git repo with a `.gitignore`
+    /// that excludes `node_modules/` and `target/`, matching what any
+    /// real project would have.
     pub fn build(self) -> TempDir {
         let dir = TempDir::new().unwrap();
+        init_git_repo(dir.path());
+        self.setup_at(dir.path());
+        dir
+    }
+
+    fn setup_at(self, root: &Path) {
+        std::fs::create_dir_all(root).unwrap();
         match self.kind {
             ProjectKind::Cargo => setup_cargo_project(
-                &dir,
+                root,
                 &self.dependencies,
                 &self.dev_dependencies,
                 &self.members,
             ),
             ProjectKind::Npm => setup_npm_project(
-                &dir,
+                root,
                 &self.dependencies,
                 &self.dev_dependencies,
                 &self.members,
@@ -118,21 +137,23 @@ impl TestProject {
             ProjectKind::Empty => {}
         }
         for (name, content) in &self.source_files {
-            let path = dir.path().join(name);
+            let path = root.join(name);
             if let Some(parent) = path.parent() {
                 std::fs::create_dir_all(parent).unwrap();
             }
             std::fs::write(path, content).unwrap();
         }
         if let Some(yaml) = &self.scute_config {
-            std::fs::write(dir.path().join(".scute.yml"), yaml).unwrap();
+            std::fs::write(root.join(".scute.yml"), yaml).unwrap();
         }
-        dir
+        for (path, child) in self.children {
+            child.setup_at(&root.join(path));
+        }
     }
 }
 
 fn setup_cargo_project(
-    dir: &TempDir,
+    root: &Path,
     dependencies: &[(String, String)],
     dev_dependencies: &[(String, String)],
     members: &[(String, TestMember)],
@@ -155,21 +176,21 @@ fn setup_cargo_project(
 
     append_cargo_deps(&mut toml, dependencies, dev_dependencies);
 
-    std::fs::write(dir.path().join("Cargo.toml"), toml).unwrap();
+    std::fs::write(root.join("Cargo.toml"), toml).unwrap();
 
     if members.is_empty() {
-        let src = dir.path().join("src");
+        let src = root.join("src");
         std::fs::create_dir(&src).unwrap();
         std::fs::write(src.join("lib.rs"), "").unwrap();
     }
 
     for (path, member) in members {
-        setup_cargo_member(dir, path, member);
+        setup_cargo_member(root, path, member);
     }
 }
 
-fn setup_cargo_member(dir: &TempDir, path: &str, member: &TestMember) {
-    let member_dir = dir.path().join(path);
+fn setup_cargo_member(root: &Path, path: &str, member: &TestMember) {
+    let member_dir = root.join(path);
     std::fs::create_dir_all(member_dir.join("src")).unwrap();
     std::fs::write(member_dir.join("src/lib.rs"), "").unwrap();
 
@@ -181,7 +202,7 @@ fn setup_cargo_member(dir: &TempDir, path: &str, member: &TestMember) {
 }
 
 fn setup_npm_project(
-    dir: &TempDir,
+    root: &Path,
     dependencies: &[(String, String)],
     dev_dependencies: &[(String, String)],
     members: &[(String, TestMember)],
@@ -201,15 +222,15 @@ fn setup_npm_project(
     append_npm_deps(&mut pkg, dependencies, dev_dependencies);
 
     let json = serde_json::to_string_pretty(&pkg).unwrap();
-    std::fs::write(dir.path().join("package.json"), json).unwrap();
+    std::fs::write(root.join("package.json"), json).unwrap();
 
     for (path, member) in members {
-        setup_npm_member(dir, path, member);
+        setup_npm_member(root, path, member);
     }
 
     let output = std::process::Command::new("npm")
         .args(["install"])
-        .current_dir(dir.path())
+        .current_dir(root)
         .output()
         .expect("npm must be installed to run npm integration tests");
 
@@ -220,8 +241,8 @@ fn setup_npm_project(
     );
 }
 
-fn setup_npm_member(dir: &TempDir, path: &str, member: &TestMember) {
-    let member_dir = dir.path().join(path);
+fn setup_npm_member(root: &Path, path: &str, member: &TestMember) {
+    let member_dir = root.join(path);
     std::fs::create_dir_all(&member_dir).unwrap();
 
     let basename = Path::new(path).file_name().unwrap().to_string_lossy();
@@ -253,6 +274,11 @@ fn append_npm_deps(
             pkg.insert(key.into(), map.into());
         }
     }
+}
+
+fn init_git_repo(root: &Path) {
+    std::fs::create_dir(root.join(".git")).unwrap();
+    std::fs::write(root.join(".gitignore"), "node_modules/\ntarget/\n").unwrap();
 }
 
 fn append_cargo_deps(
