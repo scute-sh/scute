@@ -10,6 +10,7 @@ license = "Apache-2.0"
 workspace = true
 
 [dependencies]
+glob = "0.3"
 ignore = "0.4.25"
 libsais = { version = "0.2", default-features = false }
 minreq = { version = "2", features = ["https"] }
