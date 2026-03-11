@@ -39,40 +39,30 @@ impl TestMember {
 }
 
 impl TestProject {
-    /// A bare directory with no project scaffolding.
-    pub fn empty() -> Self {
+    fn new(kind: ProjectKind) -> Self {
         Self {
-            kind: ProjectKind::Empty,
+            kind,
             dependencies: Vec::new(),
             dev_dependencies: Vec::new(),
             members: Vec::new(),
             source_files: Vec::new(),
             scute_config: None,
         }
+    }
+
+    /// A bare directory with no project scaffolding.
+    pub fn empty() -> Self {
+        Self::new(ProjectKind::Empty)
     }
 
     /// A minimal npm project. Runs `npm install` on build to resolve dependencies.
     pub fn npm() -> Self {
-        Self {
-            kind: ProjectKind::Npm,
-            dependencies: Vec::new(),
-            dev_dependencies: Vec::new(),
-            members: Vec::new(),
-            source_files: Vec::new(),
-            scute_config: None,
-        }
+        Self::new(ProjectKind::Npm)
     }
 
     /// A minimal Cargo project with `Cargo.toml` and empty `src/lib.rs`.
     pub fn cargo() -> Self {
-        Self {
-            kind: ProjectKind::Cargo,
-            dependencies: Vec::new(),
-            dev_dependencies: Vec::new(),
-            members: Vec::new(),
-            source_files: Vec::new(),
-            scute_config: None,
-        }
+        Self::new(ProjectKind::Cargo)
     }
 
     pub fn dependency(mut self, name: &str, version: &str) -> Self {
