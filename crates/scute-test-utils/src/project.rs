@@ -106,7 +106,12 @@ impl TestProject {
                 &self.dev_dependencies,
                 &self.members,
             ),
-            ProjectKind::Npm => setup_npm_project(&dir, &self.dependencies, &self.dev_dependencies),
+            ProjectKind::Npm => setup_npm_project(
+                &dir,
+                &self.dependencies,
+                &self.dev_dependencies,
+                &self.members,
+            ),
             ProjectKind::Empty => {}
         }
         for (name, content) in &self.source_files {
@@ -180,29 +185,28 @@ fn setup_npm_project(
     dir: &TempDir,
     dependencies: &[(String, String)],
     dev_dependencies: &[(String, String)],
+    members: &[(String, TestMember)],
 ) {
     let mut pkg = serde_json::Map::new();
     pkg.insert("name".into(), "test-project".into());
     pkg.insert("version".into(), "1.0.0".into());
 
-    if !dependencies.is_empty() {
-        let deps: serde_json::Map<String, serde_json::Value> = dependencies
+    if !members.is_empty() {
+        let workspace_paths: Vec<serde_json::Value> = members
             .iter()
-            .map(|(n, v)| (n.clone(), serde_json::Value::String(v.clone())))
+            .map(|(name, _)| serde_json::Value::String(format!("packages/{name}")))
             .collect();
-        pkg.insert("dependencies".into(), deps.into());
+        pkg.insert("workspaces".into(), workspace_paths.into());
     }
 
-    if !dev_dependencies.is_empty() {
-        let deps: serde_json::Map<String, serde_json::Value> = dev_dependencies
-            .iter()
-            .map(|(n, v)| (n.clone(), serde_json::Value::String(v.clone())))
-            .collect();
-        pkg.insert("devDependencies".into(), deps.into());
-    }
+    append_npm_deps(&mut pkg, dependencies, dev_dependencies);
 
     let json = serde_json::to_string_pretty(&pkg).unwrap();
     std::fs::write(dir.path().join("package.json"), json).unwrap();
+
+    for (name, member) in members {
+        setup_npm_member(dir, name, &member.dependencies, &member.dev_dependencies);
+    }
 
     let output = std::process::Command::new("npm")
         .args(["install"])
@@ -215,6 +219,44 @@ fn setup_npm_project(
         "npm install failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+fn setup_npm_member(
+    dir: &TempDir,
+    name: &str,
+    dependencies: &[(String, String)],
+    dev_dependencies: &[(String, String)],
+) {
+    let member_dir = dir.path().join("packages").join(name);
+    std::fs::create_dir_all(&member_dir).unwrap();
+
+    let mut pkg = serde_json::Map::new();
+    pkg.insert("name".into(), format!("@test/{name}").into());
+    pkg.insert("version".into(), "1.0.0".into());
+
+    append_npm_deps(&mut pkg, dependencies, dev_dependencies);
+
+    let json = serde_json::to_string_pretty(&pkg).unwrap();
+    std::fs::write(member_dir.join("package.json"), json).unwrap();
+}
+
+fn append_npm_deps(
+    pkg: &mut serde_json::Map<String, serde_json::Value>,
+    dependencies: &[(String, String)],
+    dev_dependencies: &[(String, String)],
+) {
+    for (key, deps) in [
+        ("dependencies", dependencies),
+        ("devDependencies", dev_dependencies),
+    ] {
+        if !deps.is_empty() {
+            let map: serde_json::Map<String, serde_json::Value> = deps
+                .iter()
+                .map(|(n, v)| (n.clone(), serde_json::Value::String(v.clone())))
+                .collect();
+            pkg.insert(key.into(), map.into());
+        }
+    }
 }
 
 fn append_cargo_deps(
