@@ -711,18 +711,43 @@ mod tests {
         assert_that!(evals, len(eq(2)));
     }
 
-    #[test]
-    fn applies_test_thresholds_to_test_directory_clones() {
-        let (_, evals) = check_files(&[
-            ("tests/a.rs", "fn foo(x: i32) -> i32 { x + 1 }"),
-            ("tests/b.rs", "fn bar(y: i32) -> i32 { y + 1 }"),
-        ]);
-
-        // 14 tokens: would fail production thresholds (>10),
-        // but only warns against test thresholds (>10 warn, <20 fail)
+    #[test_case::test_case(
+        &[("tests/a.rs", "fn foo(x: i32) -> i32 { x + 1 }"),
+          ("tests/b.rs", "fn bar(y: i32) -> i32 { y + 1 }")]
+        ; "test directory clones"
+    )]
+    #[test_case::test_case(
+        &[("a.test.ts", "function foo(x: number): number { return x + 1; }"),
+          ("b.test.ts", "function bar(y: number): number { return y + 1; }")]
+        ; "typescript test files"
+    )]
+    #[test_case::test_case(
+        &[("a.test.js", "function foo(x) { return x + 1; }"),
+          ("b.test.js", "function bar(y) { return y + 1; }")]
+        ; "javascript test files"
+    )]
+    #[test_case::test_case(
+        &[("__tests__/a.js", "function foo(x) { return x + 1; }"),
+          ("__tests__/b.js", "function bar(y) { return y + 1; }")]
+        ; "js files in __tests__ directory"
+    )]
+    #[test_case::test_case(
+        &[("src/a.rs", "#[test]\nfn test_a(x: i32) -> i32 { x + 1 }"),
+          ("src/b.rs", "#[test]\nfn test_b(y: i32) -> i32 { y + 1 }")]
+        ; "naked test fns"
+    )]
+    #[test_case::test_case(
+        &[("src/a.rs", "fn serve() -> String { String::from(\"hello\") }\n\
+                         #[cfg(test)]\nmod tests {\n    fn helper_a(x: i32) -> i32 { x + 1 }\n}"),
+          ("src/b.rs", "use std::collections::HashMap;\n\
+                         #[cfg(test)]\nmod tests {\n    fn helper_b(y: i32) -> i32 { y + 1 }\n}")]
+        ; "inline rust test modules"
+    )]
+    fn applies_test_thresholds(files: &[(&str, &str)]) {
+        let (_, evals) = check_files(files);
         assert!(
             evals[0].is_warn(),
-            "test code should use test thresholds, got: {evals:?}"
+            "expected warn (test thresholds), got: {evals:?}"
         );
     }
 
@@ -733,105 +758,9 @@ mod tests {
             ("tests/b.rs", "fn bar(y: i32) -> i32 { y + 1 }"),
         ]);
 
-        // Mixed group: one in src/, one in tests/ → production thresholds → fail
         assert!(
             evals[0].is_fail(),
             "mixed groups should use production thresholds, got: {evals:?}"
-        );
-    }
-
-    #[test]
-    fn applies_test_thresholds_to_typescript_test_files() {
-        let (_, evals) = check_files(&[
-            (
-                "a.test.ts",
-                "function foo(x: number): number { return x + 1; }",
-            ),
-            (
-                "b.test.ts",
-                "function bar(y: number): number { return y + 1; }",
-            ),
-        ]);
-
-        assert!(
-            evals[0].is_warn(),
-            "TS test files should use test thresholds, got: {evals:?}"
-        );
-    }
-
-    #[test]
-    fn applies_test_thresholds_to_javascript_test_files() {
-        let (_, evals) = check_files(&[
-            ("a.test.js", "function foo(x) { return x + 1; }"),
-            ("b.test.js", "function bar(y) { return y + 1; }"),
-        ]);
-
-        assert!(
-            evals[0].is_warn(),
-            "JS test files should use test thresholds, got: {evals:?}"
-        );
-    }
-
-    #[test]
-    fn applies_test_thresholds_to_js_files_in_tests_directory() {
-        let (_, evals) = check_files(&[
-            ("__tests__/a.js", "function foo(x) { return x + 1; }"),
-            ("__tests__/b.js", "function bar(y) { return y + 1; }"),
-        ]);
-
-        assert!(
-            evals[0].is_warn(),
-            "__tests__/ JS files should use test thresholds, got: {evals:?}"
-        );
-    }
-
-    #[test]
-    fn applies_test_thresholds_to_inline_rust_test_modules() {
-        let (_, evals) = check_files(&[
-            (
-                "src/a.rs",
-                "\
-fn serve() -> String { String::from(\"hello\") }
-fn route() -> bool { true }
-
-#[cfg(test)]
-mod tests {
-    fn helper_a(x: i32) -> i32 { x + 1 }
-}
-",
-            ),
-            (
-                "src/b.rs",
-                "\
-use std::collections::HashMap;
-
-#[cfg(test)]
-mod tests {
-    fn helper_b(y: i32) -> i32 { y + 1 }
-}
-",
-            ),
-        ]);
-
-        // Clone is inside #[cfg(test)] modules → test thresholds apply
-        assert!(
-            evals[0].is_warn(),
-            "clones inside #[cfg(test)] should use test thresholds, got: {evals:?}"
-        );
-    }
-
-    #[test]
-    fn applies_test_thresholds_to_naked_test_fns() {
-        let (_, evals) = check_files(&[
-            ("src/a.rs", "#[test]\nfn test_a(x: i32) -> i32 { x + 1 }"),
-            ("src/b.rs", "#[test]\nfn test_b(y: i32) -> i32 { y + 1 }"),
-        ]);
-
-        // 14 tokens: would fail production thresholds (>10),
-        // but only warns against test thresholds (>10 warn, <20 fail)
-        assert!(
-            evals[0].is_warn(),
-            "clones inside #[test] fns should use test thresholds, got: {evals:?}"
         );
     }
 
