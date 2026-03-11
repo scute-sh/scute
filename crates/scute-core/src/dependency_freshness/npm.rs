@@ -68,7 +68,6 @@ fn parse_outdated(json: &str, target: &Path) -> Result<Vec<OutdatedDependency>, 
 }
 
 fn resolve_location(dependent_name: &str, target: &Path) -> Option<String> {
-    // Try the root package.json first
     let root_package_path = target.join("package.json");
     let root_name = std::fs::read_to_string(&root_package_path)
         .ok()
