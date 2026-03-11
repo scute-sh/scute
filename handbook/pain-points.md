@@ -84,7 +84,7 @@ value.
 - **Premature optimization.** Adding complexity to avoid trivial costs.
   Extra variables, match arms, or type gymnastics to save an allocation
   that doesn't matter. Simplicity wins until profiling says otherwise.
-- **Poor variable names.** (×3) Names that don't communicate intent or that mislead.
+- **Poor variable names.** (×4) Names that don't communicate intent or that mislead.
   Defaulting to abbreviations instead of treating naming as a design decision.
   Repeatedly corrected on the same pattern.
 - **Formatting and linting not enforced.** (×2) Tools exist but aren't wired
