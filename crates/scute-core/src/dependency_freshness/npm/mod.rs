@@ -22,10 +22,14 @@ pub(super) fn fetch_outdated(target: &Path) -> Result<Vec<OutdatedDependency>, F
         return Ok(vec![]);
     }
 
-    parse_outdated(&stdout, target)
+    let layout = WorkspaceLayout::from_target(target);
+    parse_outdated(&stdout, &layout)
 }
 
-fn parse_outdated(json: &str, target: &Path) -> Result<Vec<OutdatedDependency>, FetchError> {
+fn parse_outdated(
+    json: &str,
+    layout: &WorkspaceLayout,
+) -> Result<Vec<OutdatedDependency>, FetchError> {
     let root: serde_json::Value =
         serde_json::from_str(json).map_err(|e| FetchError::Failed(e.to_string()))?;
 
@@ -33,7 +37,6 @@ fn parse_outdated(json: &str, target: &Path) -> Result<Vec<OutdatedDependency>, 
         .as_object()
         .ok_or_else(|| FetchError::Failed("npm outdated returned non-object".into()))?;
 
-    let layout = WorkspaceLayout::from_target(target);
     let mut outdated = Vec::new();
 
     for (name, info) in packages {
@@ -46,7 +49,7 @@ fn parse_outdated(json: &str, target: &Path) -> Result<Vec<OutdatedDependency>, 
         };
 
         for entry in entries {
-            if let Some(dependency) = parse_entry(name, entry, &layout) {
+            if let Some(dependency) = parse_entry(name, entry, layout) {
                 outdated.push(dependency);
             }
         }
@@ -137,45 +140,51 @@ impl WorkspaceLayout {
 fn discover_members(target: &Path, patterns: &[serde_json::Value]) -> HashMap<String, String> {
     let mut members = HashMap::new();
 
-    for pattern in patterns.iter().filter_map(|v| v.as_str()) {
-        for dir in resolve_workspace_pattern(target, pattern) {
-            if !dir.join("package.json").exists() {
-                continue;
-            }
-            let Some(basename) = dir.file_name() else {
-                continue;
-            };
-            let Ok(relative) = dir.strip_prefix(target) else {
-                continue;
-            };
-            members.insert(
-                basename.to_string_lossy().into_owned(),
-                format!("{}/package.json", relative.display()),
-            );
-        }
+    let dirs = patterns
+        .iter()
+        .filter_map(|v| v.as_str())
+        .flat_map(|pattern| resolve_workspace_pattern(target, pattern));
+
+    for dir in dirs {
+        register_member(target, &dir, &mut members);
     }
 
     members
 }
 
 fn resolve_workspace_pattern(target: &Path, pattern: &str) -> Vec<std::path::PathBuf> {
-    if !pattern.contains('*') {
-        return vec![target.join(pattern)];
+    let full = format!("{}/{pattern}", target.display());
+    glob::glob(&full)
+        .into_iter()
+        .flatten()
+        .filter_map(Result::ok)
+        .filter(|p| p.is_dir())
+        .collect()
+}
+
+fn register_member(target: &Path, dir: &Path, members: &mut HashMap<String, String>) {
+    if !dir.join("package.json").exists() {
+        return;
+    }
+    let Ok(relative) = dir.strip_prefix(target) else {
+        return;
+    };
+    let manifest = format!("{}/package.json", relative.display());
+
+    // Index by directory basename. npm currently uses directory names
+    // in the `dependent` field of `npm outdated --json`.
+    if let Some(basename) = dir.file_name() {
+        members.insert(basename.to_string_lossy().into_owned(), manifest.clone());
     }
 
-    // For glob patterns like "packages/*", list the parent directory.
-    let Some(prefix) = pattern.strip_suffix("/*") else {
-        return vec![];
-    };
+    // Also index by package name, in case npm changes behavior.
+    if let Some(pkg_name) = read_package_name(dir) {
+        members.insert(pkg_name, manifest);
+    }
+}
 
-    let parent = target.join(prefix);
-    let Ok(entries) = std::fs::read_dir(parent) else {
-        return vec![];
-    };
-
-    entries
-        .filter_map(Result::ok)
-        .map(|entry| entry.path())
-        .filter(|path| path.is_dir())
-        .collect()
+fn read_package_name(dir: &Path) -> Option<String> {
+    let contents = std::fs::read_to_string(dir.join("package.json")).ok()?;
+    let value: serde_json::Value = serde_json::from_str(&contents).ok()?;
+    value["name"].as_str().map(String::from)
 }

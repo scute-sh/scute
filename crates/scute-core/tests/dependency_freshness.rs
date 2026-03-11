@@ -124,7 +124,7 @@ fn workspace_member_location_points_to_subcrate_manifest() {
 #[test]
 fn npm_workspace_member_location_points_to_member_manifest() {
     let dir = TestProject::npm()
-        .member("app", |m| m.dependency("is-odd", "1.0.0"))
+        .member("apps/web", |m| m.dependency("is-odd", "1.0.0"))
         .build();
 
     let dependencies = fetch_outdated(dir.path()).unwrap();
@@ -133,15 +133,15 @@ fn npm_workspace_member_location_points_to_member_manifest() {
     assert_eq!(dependencies[0].name, "is-odd");
     assert_eq!(
         dependencies[0].location.as_deref(),
-        Some("packages/app/package.json")
+        Some("apps/web/package.json")
     );
 }
 
 #[test]
 fn npm_workspace_reports_outdated_from_multiple_members() {
     let dir = TestProject::npm()
-        .member("app", |m| m.dependency("is-odd", "1.0.0"))
-        .member("lib", |m| m.dependency("is-number", "1.0.0"))
+        .member("apps/web", |m| m.dependency("is-odd", "1.0.0"))
+        .member("packages/utils", |m| m.dependency("is-number", "1.0.0"))
         .build();
 
     let dependencies = fetch_outdated(dir.path()).unwrap();
@@ -158,7 +158,7 @@ fn npm_workspace_reports_outdated_from_multiple_members() {
 fn npm_workspace_root_deps_location_points_to_root_manifest() {
     let dir = TestProject::npm()
         .dependency("is-odd", "1.0.0")
-        .member("app", |m| m.dependency("is-even", "1.0.0"))
+        .member("apps/web", |m| m.dependency("is-even", "1.0.0"))
         .build();
 
     let dependencies = fetch_outdated(dir.path()).unwrap();
@@ -170,17 +170,45 @@ fn npm_workspace_root_deps_location_points_to_root_manifest() {
 #[test]
 fn npm_workspace_shared_dep_reported_per_member() {
     let dir = TestProject::npm()
-        .member("app", |m| m.dependency("is-odd", "1.0.0"))
-        .member("lib", |m| m.dependency("is-odd", "1.0.0"))
+        .member("apps/web", |m| m.dependency("is-odd", "1.0.0"))
+        .member("packages/utils", |m| m.dependency("is-odd", "1.0.0"))
         .build();
 
     let dependencies = fetch_outdated(dir.path()).unwrap();
 
-    let is_odd_deps: Vec<_> = dependencies.iter().filter(|d| d.name == "is-odd").collect();
+    let locations: Vec<_> = dependencies
+        .iter()
+        .filter(|d| d.name == "is-odd")
+        .filter_map(|d| d.location.as_deref())
+        .collect();
     assert_eq!(
-        is_odd_deps.len(),
+        locations.len(),
         2,
-        "shared dep should be reported per member, got: {is_odd_deps:?}"
+        "shared dep should be reported per member, got: {locations:?}"
+    );
+    assert!(
+        locations.contains(&"apps/web/package.json"),
+        "missing web, got: {locations:?}"
+    );
+    assert!(
+        locations.contains(&"packages/utils/package.json"),
+        "missing utils, got: {locations:?}"
+    );
+}
+
+#[test]
+fn npm_workspace_member_dev_dep_location_points_to_member_manifest() {
+    let dir = TestProject::npm()
+        .member("apps/web", |m| m.dev_dependency("is-odd", "1.0.0"))
+        .build();
+
+    let dependencies = fetch_outdated(dir.path()).unwrap();
+
+    assert_eq!(dependencies.len(), 1);
+    assert_eq!(dependencies[0].name, "is-odd");
+    assert_eq!(
+        dependencies[0].location.as_deref(),
+        Some("apps/web/package.json")
     );
 }
 

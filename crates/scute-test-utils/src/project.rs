@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use tempfile::TempDir;
 
 enum ProjectKind {
@@ -8,9 +10,10 @@ enum ProjectKind {
 
 /// A throwaway project directory for integration tests.
 ///
-/// Use [`cargo()`](Self::cargo) or [`empty()`](Self::empty) to start, chain
-/// builder methods, then call [`build()`](Self::build) to materialize the
-/// directory. The returned [`TempDir`] is cleaned up on drop.
+/// Use [`cargo()`](Self::cargo), [`npm()`](Self::npm), or
+/// [`empty()`](Self::empty) to start, chain builder methods, then call
+/// [`build()`](Self::build) to materialize the directory. The returned
+/// [`TempDir`] is cleaned up on drop.
 pub struct TestProject {
     kind: ProjectKind,
     dependencies: Vec<(String, String)>,
@@ -75,14 +78,14 @@ impl TestProject {
         self
     }
 
-    /// Add a workspace member. The closure receives an empty [`TestMember`]
-    /// to configure with its own dependencies.
-    pub fn member(mut self, name: &str, build: impl FnOnce(TestMember) -> TestMember) -> Self {
+    /// Add a workspace member at the given relative path. The closure receives
+    /// an empty [`TestMember`] to configure with its own dependencies.
+    pub fn member(mut self, path: &str, build: impl FnOnce(TestMember) -> TestMember) -> Self {
         let member = build(TestMember {
             dependencies: Vec::new(),
             dev_dependencies: Vec::new(),
         });
-        self.members.push((name.into(), member));
+        self.members.push((path.into(), member));
         self
     }
 
@@ -139,12 +142,12 @@ fn setup_cargo_project(
             "[package]\nname = \"test-project\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
         )
     } else {
-        let names: Vec<&str> = members.iter().map(|(n, _)| n.as_str()).collect();
+        let paths: Vec<&str> = members.iter().map(|(p, _)| p.as_str()).collect();
         format!(
             "[workspace]\nmembers = [{}]\n",
-            names
+            paths
                 .iter()
-                .map(|n| format!("\"{n}\""))
+                .map(|p| format!("\"{p}\""))
                 .collect::<Vec<_>>()
                 .join(", ")
         )
@@ -160,24 +163,20 @@ fn setup_cargo_project(
         std::fs::write(src.join("lib.rs"), "").unwrap();
     }
 
-    for (name, member) in members {
-        setup_cargo_member(dir, name, &member.dependencies, &member.dev_dependencies);
+    for (path, member) in members {
+        setup_cargo_member(dir, path, member);
     }
 }
 
-fn setup_cargo_member(
-    dir: &TempDir,
-    name: &str,
-    dependencies: &[(String, String)],
-    dev_dependencies: &[(String, String)],
-) {
-    let member_dir = dir.path().join(name);
+fn setup_cargo_member(dir: &TempDir, path: &str, member: &TestMember) {
+    let member_dir = dir.path().join(path);
     std::fs::create_dir_all(member_dir.join("src")).unwrap();
     std::fs::write(member_dir.join("src/lib.rs"), "").unwrap();
 
+    let name = Path::new(path).file_name().unwrap().to_string_lossy();
     let mut toml =
         format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n");
-    append_cargo_deps(&mut toml, dependencies, dev_dependencies);
+    append_cargo_deps(&mut toml, &member.dependencies, &member.dev_dependencies);
     std::fs::write(member_dir.join("Cargo.toml"), toml).unwrap();
 }
 
@@ -194,7 +193,7 @@ fn setup_npm_project(
     if !members.is_empty() {
         let workspace_paths: Vec<serde_json::Value> = members
             .iter()
-            .map(|(name, _)| serde_json::Value::String(format!("packages/{name}")))
+            .map(|(path, _)| serde_json::Value::String(path.clone()))
             .collect();
         pkg.insert("workspaces".into(), workspace_paths.into());
     }
@@ -204,8 +203,8 @@ fn setup_npm_project(
     let json = serde_json::to_string_pretty(&pkg).unwrap();
     std::fs::write(dir.path().join("package.json"), json).unwrap();
 
-    for (name, member) in members {
-        setup_npm_member(dir, name, &member.dependencies, &member.dev_dependencies);
+    for (path, member) in members {
+        setup_npm_member(dir, path, member);
     }
 
     let output = std::process::Command::new("npm")
@@ -221,20 +220,17 @@ fn setup_npm_project(
     );
 }
 
-fn setup_npm_member(
-    dir: &TempDir,
-    name: &str,
-    dependencies: &[(String, String)],
-    dev_dependencies: &[(String, String)],
-) {
-    let member_dir = dir.path().join("packages").join(name);
+fn setup_npm_member(dir: &TempDir, path: &str, member: &TestMember) {
+    let member_dir = dir.path().join(path);
     std::fs::create_dir_all(&member_dir).unwrap();
 
+    let basename = Path::new(path).file_name().unwrap().to_string_lossy();
+
     let mut pkg = serde_json::Map::new();
-    pkg.insert("name".into(), format!("@test/{name}").into());
+    pkg.insert("name".into(), format!("@test/{basename}").into());
     pkg.insert("version".into(), "1.0.0".into());
 
-    append_npm_deps(&mut pkg, dependencies, dev_dependencies);
+    append_npm_deps(&mut pkg, &member.dependencies, &member.dev_dependencies);
 
     let json = serde_json::to_string_pretty(&pkg).unwrap();
     std::fs::write(member_dir.join("package.json"), json).unwrap();
