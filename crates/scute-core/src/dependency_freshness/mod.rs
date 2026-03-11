@@ -144,6 +144,13 @@ fn classify_error(err: FetchError) -> ExecutionError {
     }
 }
 
+/// Walk `target` for supported package managers, identify project roots,
+/// and collect outdated dependencies from each one.
+///
+/// Dependency locations are prefixed with the project's relative path
+/// from `target`, so callers always get target-relative paths.
+///
+/// Fails fast: if any project root errors out, the whole call fails.
 #[doc(hidden)]
 pub fn fetch_outdated(target: &Path) -> Result<Vec<OutdatedDependency>, FetchError> {
     let roots = discover_project_roots(target);
@@ -179,10 +186,19 @@ pub fn fetch_outdated(target: &Path) -> Result<Vec<OutdatedDependency>, FetchErr
     Ok(all_outdated)
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 enum PackageManager {
     Cargo,
     Npm,
+}
+
+impl std::fmt::Display for PackageManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Cargo => f.write_str("Cargo"),
+            Self::Npm => f.write_str("npm"),
+        }
+    }
 }
 
 fn discover_project_roots(target: &Path) -> Vec<(std::path::PathBuf, PackageManager)> {
@@ -203,13 +219,25 @@ fn discover_project_roots(target: &Path) -> Vec<(std::path::PathBuf, PackageMana
         })
         .collect();
 
-    manifests
-        .into_iter()
-        .filter(|(dir, package_manager)| match package_manager {
-            PackageManager::Cargo => cargo::is_project_root(dir),
-            PackageManager::Npm => npm::is_project_root(dir),
-        })
-        .collect()
+    std::thread::scope(|scope| {
+        let handles: Vec<_> = manifests
+            .into_iter()
+            .map(|(dir, pm)| {
+                scope.spawn(move || {
+                    let is_root = match &pm {
+                        PackageManager::Cargo => cargo::is_project_root(&dir),
+                        PackageManager::Npm => npm::is_project_root(&dir),
+                    };
+                    is_root.then_some((dir, pm))
+                })
+            })
+            .collect();
+
+        handles
+            .into_iter()
+            .filter_map(|h| h.join().ok().flatten())
+            .collect()
+    })
 }
 
 fn evaluate(

@@ -1,6 +1,16 @@
-use scute_core::dependency_freshness::{self, fetch_outdated};
+use scute_core::dependency_freshness::{self, OutdatedDependency, fetch_outdated};
 use scute_test_utils::TestProject;
 use test_case::test_case;
+
+fn assert_single_dep(deps: &[OutdatedDependency], name: &str, expected_location: &str) {
+    let matching: Vec<_> = deps.iter().filter(|d| d.name == name).collect();
+    assert_eq!(
+        matching.len(),
+        1,
+        "{name} should appear exactly once, got: {matching:?}"
+    );
+    assert_eq!(matching[0].location.as_deref(), Some(expected_location));
+}
 
 struct Context {
     project: fn() -> TestProject,
@@ -213,7 +223,7 @@ fn npm_workspace_member_dev_dep_location_points_to_member_manifest() {
 }
 
 #[test]
-fn polyglot_monorepo_reports_deps_from_all_package_managers() {
+fn polyglot_monorepo_reports_each_root_once_with_relative_locations() {
     let dir = TestProject::empty()
         .nested(
             "backend",
@@ -225,38 +235,28 @@ fn polyglot_monorepo_reports_deps_from_all_package_managers() {
         )
         .build();
 
-    let dependencies = fetch_outdated(dir.path()).unwrap();
+    let deps = fetch_outdated(dir.path()).unwrap();
 
-    let names: Vec<&str> = dependencies.iter().map(|d| d.name.as_str()).collect();
-    assert!(names.contains(&"rand"), "missing rand, got: {names:?}");
-    assert!(names.contains(&"is-odd"), "missing is-odd, got: {names:?}");
+    assert_single_dep(&deps, "rand", "backend/crates/api/Cargo.toml");
+    assert_single_dep(&deps, "is-odd", "frontend/apps/web/package.json");
 }
 
 #[test]
-fn polyglot_monorepo_locations_are_relative_to_target() {
+fn polyglot_monorepo_fails_fast_when_one_root_errors() {
     let dir = TestProject::empty()
         .nested(
             "backend",
-            TestProject::cargo().member("crates/api", |m| m.dependency("rand", "=0.7.3")),
+            TestProject::cargo()
+                .dependency("this-crate-definitely-does-not-exist-scute-test", "=1.0.0"),
         )
-        .nested(
-            "frontend",
-            TestProject::npm().member("apps/web", |m| m.dependency("is-odd", "1.0.0")),
-        )
+        .nested("frontend", TestProject::npm().dependency("is-odd", "1.0.0"))
         .build();
 
-    let dependencies = fetch_outdated(dir.path()).unwrap();
+    let result = fetch_outdated(dir.path());
 
-    let rand_dep = dependencies.iter().find(|d| d.name == "rand").unwrap();
-    assert_eq!(
-        rand_dep.location.as_deref(),
-        Some("backend/crates/api/Cargo.toml")
-    );
-
-    let npm_dep = dependencies.iter().find(|d| d.name == "is-odd").unwrap();
-    assert_eq!(
-        npm_dep.location.as_deref(),
-        Some("frontend/apps/web/package.json")
+    assert!(
+        result.is_err(),
+        "should fail entirely when one root errors, not return partial results"
     );
 }
 

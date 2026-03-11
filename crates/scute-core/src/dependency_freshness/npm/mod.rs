@@ -30,9 +30,13 @@ pub(super) fn is_project_root(target: &Path) -> bool {
                 .map(String::from)
         });
 
+    let Some(canonical_target) = target.canonicalize().ok() else {
+        return false;
+    };
+
     root_path
         .as_deref()
-        .is_some_and(|root| Path::new(root) == target)
+        .is_some_and(|root| Path::new(root) == canonical_target)
 }
 
 pub(super) fn fetch_outdated(target: &Path) -> Result<Vec<OutdatedDependency>, FetchError> {

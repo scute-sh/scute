@@ -26,9 +26,13 @@ pub(super) fn is_project_root(target: &Path) -> bool {
         .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
         .and_then(|v| v["workspace_root"].as_str().map(String::from));
 
+    let Some(canonical_target) = target.canonicalize().ok() else {
+        return false;
+    };
+
     workspace_root
         .as_deref()
-        .is_some_and(|root| Path::new(root) == target)
+        .is_some_and(|root| Path::new(root) == canonical_target)
 }
 
 pub(super) fn fetch_outdated(target: &Path) -> Result<Vec<OutdatedDependency>, FetchError> {
