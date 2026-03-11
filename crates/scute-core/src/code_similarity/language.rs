@@ -223,6 +223,35 @@ pub fn rust() -> LanguageConfig {
     )
 }
 
+const TS_ROLES: &[(NodeRole, &[&str])] = &[
+    (
+        NodeRole::Identifier,
+        &[
+            "identifier",
+            "shorthand_property_identifier",
+            "shorthand_property_identifier_pattern",
+            "property_identifier",
+            "type_identifier",
+            "predefined_type",
+        ],
+    ),
+    (
+        NodeRole::Literal,
+        &[
+            "string",
+            "template_string",
+            "number",
+            "true",
+            "false",
+            "null",
+            "undefined",
+            "regex",
+        ],
+    ),
+    (NodeRole::Comment, &["comment"]),
+    (NodeRole::Decoration, &["decorator"]),
+];
+
 #[must_use]
 pub fn javascript() -> LanguageConfig {
     LanguageConfig::new(
@@ -261,34 +290,16 @@ pub fn javascript() -> LanguageConfig {
 pub fn typescript() -> LanguageConfig {
     LanguageConfig::new(
         tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-        &[
-            (
-                NodeRole::Identifier,
-                &[
-                    "identifier",
-                    "shorthand_property_identifier",
-                    "shorthand_property_identifier_pattern",
-                    "property_identifier",
-                    "type_identifier",
-                    "predefined_type",
-                ],
-            ),
-            (
-                NodeRole::Literal,
-                &[
-                    "string",
-                    "template_string",
-                    "number",
-                    "true",
-                    "false",
-                    "null",
-                    "undefined",
-                    "regex",
-                ],
-            ),
-            (NodeRole::Comment, &["comment"]),
-            (NodeRole::Decoration, &["decorator"]),
-        ],
+        TS_ROLES,
+        js_is_test,
+    )
+}
+
+#[must_use]
+pub fn typescript_tsx() -> LanguageConfig {
+    LanguageConfig::new(
+        tree_sitter_typescript::LANGUAGE_TSX.into(),
+        TS_ROLES,
         js_is_test,
     )
 }
