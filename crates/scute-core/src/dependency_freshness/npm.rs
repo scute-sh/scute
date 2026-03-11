@@ -29,13 +29,13 @@ fn parse_outdated(json: &str, target: &Path) -> Result<Vec<OutdatedDependency>, 
     let root: serde_json::Value =
         serde_json::from_str(json).map_err(|e| FetchError::Failed(e.to_string()))?;
 
-    let obj = root
+    let packages = root
         .as_object()
         .ok_or_else(|| FetchError::Failed("npm outdated returned non-object".into()))?;
 
     let mut outdated = Vec::new();
 
-    for (name, info) in obj {
+    for (name, info) in packages {
         let current = info["current"]
             .as_str()
             .or_else(|| info["wanted"].as_str())
@@ -54,7 +54,7 @@ fn parse_outdated(json: &str, target: &Path) -> Result<Vec<OutdatedDependency>, 
 
         let location = info["dependent"]
             .as_str()
-            .and_then(|dep_name| resolve_location(dep_name, target));
+            .and_then(|dependent_name| resolve_location(dependent_name, target));
 
         outdated.push(OutdatedDependency {
             name: name.clone(),
@@ -69,8 +69,8 @@ fn parse_outdated(json: &str, target: &Path) -> Result<Vec<OutdatedDependency>, 
 
 fn resolve_location(dependent_name: &str, target: &Path) -> Option<String> {
     // Try the root package.json first
-    let root_pkg_path = target.join("package.json");
-    let root_name = std::fs::read_to_string(&root_pkg_path)
+    let root_package_path = target.join("package.json");
+    let root_name = std::fs::read_to_string(&root_package_path)
         .ok()
         .and_then(|c| serde_json::from_str::<serde_json::Value>(&c).ok())
         .and_then(|v| v["name"].as_str().map(String::from));
