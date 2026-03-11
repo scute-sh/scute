@@ -1,5 +1,7 @@
-mod cargo;
-mod npm;
+#[doc(hidden)]
+pub mod cargo;
+#[doc(hidden)]
+pub mod npm;
 
 use std::path::Path;
 
@@ -146,7 +148,8 @@ fn classify_error(err: FetchError) -> ExecutionError {
 
 /// A package manager that can detect project roots and fetch outdated
 /// dependencies.
-trait PackageManager: Send + Sync {
+#[doc(hidden)]
+pub trait PackageManager: Send + Sync {
     /// Returns true for standalone projects and workspace roots, false for
     /// workspace members whose root is an ancestor.
     fn is_project_root(&self, dir: &Path) -> bool;

@@ -3,7 +3,7 @@ use std::path::Path;
 
 use super::{FetchError, OutdatedDependency, PackageManager};
 
-pub(super) struct Npm;
+pub struct Npm;
 
 impl PackageManager for Npm {
     /// Ask `npm query :root` whether this directory is the project root.
@@ -224,4 +224,112 @@ fn read_package_name(dir: &Path) -> Option<String> {
     let contents = std::fs::read_to_string(dir.join("package.json")).ok()?;
     let value: serde_json::Value = serde_json::from_str(&contents).ok()?;
     value["name"].as_str().map(String::from)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn empty_layout() -> WorkspaceLayout {
+        WorkspaceLayout {
+            root_dir_name: Some("my-project".into()),
+            root_package_name: Some("my-project".into()),
+            members: HashMap::new(),
+        }
+    }
+
+    fn workspace_layout() -> WorkspaceLayout {
+        let mut members = HashMap::new();
+        members.insert("web".into(), "apps/web/package.json".into());
+        members.insert("@test/web".into(), "apps/web/package.json".into());
+        WorkspaceLayout {
+            root_dir_name: Some("my-project".into()),
+            root_package_name: Some("my-project".into()),
+            members,
+        }
+    }
+
+    #[test]
+    fn rejects_non_object_root() {
+        let result = parse_outdated("[1,2,3]", &empty_layout());
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn falls_back_to_wanted_when_current_is_missing() {
+        let input = json!({
+            "is-odd": {
+                "wanted": "1.0.0",
+                "latest": "3.0.1",
+                "dependent": "my-project"
+            }
+        });
+
+        let deps = parse_outdated(&input.to_string(), &empty_layout()).unwrap();
+
+        assert_eq!(deps[0].current.to_string(), "1.0.0");
+    }
+
+    #[test]
+    fn parses_array_entries_for_shared_deps() {
+        let input = json!({
+            "is-odd": [
+                { "current": "1.0.0", "latest": "3.0.1", "dependent": "web" },
+                { "current": "1.0.0", "latest": "3.0.1", "dependent": "my-project" }
+            ]
+        });
+
+        let deps = parse_outdated(&input.to_string(), &workspace_layout()).unwrap();
+
+        assert_eq!(deps.len(), 2);
+    }
+
+    #[test]
+    fn skips_entries_with_unparseable_versions() {
+        let input = json!({
+            "is-odd": {
+                "current": "not-semver",
+                "latest": "3.0.1",
+                "dependent": "my-project"
+            }
+        });
+
+        let deps = parse_outdated(&input.to_string(), &empty_layout()).unwrap();
+
+        assert!(deps.is_empty());
+    }
+
+    #[test]
+    fn resolves_root_dep_by_dir_name() {
+        let layout = empty_layout();
+        assert_eq!(
+            layout.resolve_location("my-project"),
+            Some("package.json".into())
+        );
+    }
+
+    #[test]
+    fn resolves_workspace_member_by_basename() {
+        let layout = workspace_layout();
+        assert_eq!(
+            layout.resolve_location("web"),
+            Some("apps/web/package.json".into())
+        );
+    }
+
+    #[test]
+    fn resolves_workspace_member_by_package_name() {
+        let layout = workspace_layout();
+        assert_eq!(
+            layout.resolve_location("@test/web"),
+            Some("apps/web/package.json".into())
+        );
+    }
+
+    #[test]
+    fn unknown_dependent_returns_none() {
+        let layout = empty_layout();
+        assert_eq!(layout.resolve_location("totally-unknown"), None);
+    }
 }
