@@ -136,12 +136,12 @@ fn classify_error(err: FetchError) -> ExecutionError {
         FetchError::InvalidTarget(msg) => ExecutionError {
             code: "invalid_target".into(),
             message: msg,
-            recovery: "pass a directory containing a supported project".into(),
+            recovery: "pass a directory containing a Cargo.toml or package.json".into(),
         },
         FetchError::Failed(msg) => ExecutionError {
             code: "tool_failed".into(),
             message: msg,
-            recovery: "check the project directory and try again".into(),
+            recovery: "check network connectivity and project setup, then try again".into(),
         },
     }
 }
