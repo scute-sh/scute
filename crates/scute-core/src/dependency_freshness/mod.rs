@@ -1,5 +1,6 @@
 mod cargo_metadata;
 mod crates_io;
+mod npm;
 
 use std::path::Path;
 
@@ -92,12 +93,14 @@ impl OutdatedDependency {
     }
 }
 
-/// Run the dependency-freshness check against a Cargo project.
+/// Run the dependency-freshness check against a project directory.
+///
+/// Detects supported ecosystems (Cargo, npm) and checks each one found.
 ///
 /// # Errors
 ///
-/// Returns `Err` when the target path doesn't exist or the dependency
-/// data can't be fetched.
+/// Returns `Err` when the target path doesn't exist, no supported project
+/// is found, or the dependency data can't be fetched.
 pub fn check(target: &Path, definition: &Definition) -> Result<Vec<Evaluation>, ExecutionError> {
     let resolved = target.canonicalize().map_err(|_| ExecutionError {
         code: "invalid_target".into(),
@@ -132,7 +135,8 @@ fn classify_error(err: FetchError) -> ExecutionError {
         FetchError::InvalidTarget(msg) => ExecutionError {
             code: "invalid_target".into(),
             message: msg,
-            recovery: "pass a directory containing a Cargo.toml".into(),
+            recovery: "pass a directory containing a supported project (Cargo.toml, package.json)"
+                .into(),
         },
         FetchError::Failed(msg) => ExecutionError {
             code: "tool_failed".into(),
@@ -144,6 +148,29 @@ fn classify_error(err: FetchError) -> ExecutionError {
 
 #[doc(hidden)]
 pub fn fetch_outdated(target: &Path) -> Result<Vec<OutdatedDependency>, FetchError> {
+    let has_cargo = target.join("Cargo.toml").exists();
+    let has_npm = npm::is_npm_project(target);
+
+    if !has_cargo && !has_npm {
+        return Err(FetchError::InvalidTarget(
+            "no supported project found (looked for Cargo.toml, package.json)".into(),
+        ));
+    }
+
+    let mut all_outdated = Vec::new();
+
+    if has_cargo {
+        all_outdated.extend(fetch_outdated_cargo(target)?);
+    }
+
+    if has_npm {
+        all_outdated.extend(npm::fetch_outdated(target)?);
+    }
+
+    Ok(all_outdated)
+}
+
+fn fetch_outdated_cargo(target: &Path) -> Result<Vec<OutdatedDependency>, FetchError> {
     let direct_deps = cargo_metadata::collect_direct_deps(target)?;
 
     let latest_versions = fetch_latest_versions(&direct_deps);

@@ -46,7 +46,7 @@ value.
 - **Weak assertions.** Generic boolean checks instead of specific value
   comparisons. They hide the expected value and produce useless failure
   messages.
-- **Test pyramid violations.** (×1) Behavior verified at the wrong level.
+- **Test pyramid violations.** (×2) Behavior verified at the wrong level.
   Each layer should own its own concerns.
   - Integration tests asserting on domain-level details that belong in unit
     tests.

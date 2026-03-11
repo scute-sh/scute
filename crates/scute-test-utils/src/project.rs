@@ -3,6 +3,7 @@ use tempfile::TempDir;
 enum ProjectKind {
     Empty,
     Cargo,
+    Npm,
 }
 
 /// A throwaway project directory for integration tests.
@@ -42,6 +43,18 @@ impl TestProject {
     pub fn empty() -> Self {
         Self {
             kind: ProjectKind::Empty,
+            dependencies: Vec::new(),
+            dev_dependencies: Vec::new(),
+            members: Vec::new(),
+            source_files: Vec::new(),
+            scute_config: None,
+        }
+    }
+
+    /// A minimal npm project. Runs `npm install` on build to resolve dependencies.
+    pub fn npm() -> Self {
+        Self {
+            kind: ProjectKind::Npm,
             dependencies: Vec::new(),
             dev_dependencies: Vec::new(),
             members: Vec::new(),
@@ -96,13 +109,15 @@ impl TestProject {
     /// Materialize the project into a temporary directory.
     pub fn build(self) -> TempDir {
         let dir = TempDir::new().unwrap();
-        if matches!(self.kind, ProjectKind::Cargo) {
-            setup_cargo_project(
+        match self.kind {
+            ProjectKind::Cargo => setup_cargo_project(
                 &dir,
                 &self.dependencies,
                 &self.dev_dependencies,
                 &self.members,
-            );
+            ),
+            ProjectKind::Npm => setup_npm_project(&dir, &self.dependencies, &self.dev_dependencies),
+            ProjectKind::Empty => {}
         }
         for (name, content) in &self.source_files {
             let path = dir.path().join(name);
@@ -169,6 +184,47 @@ fn setup_cargo_member(
         format!("[package]\nname = \"{name}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n");
     append_cargo_deps(&mut toml, dependencies, dev_dependencies);
     std::fs::write(member_dir.join("Cargo.toml"), toml).unwrap();
+}
+
+fn setup_npm_project(
+    dir: &TempDir,
+    dependencies: &[(String, String)],
+    dev_dependencies: &[(String, String)],
+) {
+    let mut pkg = serde_json::Map::new();
+    pkg.insert("name".into(), "test-project".into());
+    pkg.insert("version".into(), "1.0.0".into());
+
+    if !dependencies.is_empty() {
+        let deps: serde_json::Map<String, serde_json::Value> = dependencies
+            .iter()
+            .map(|(n, v)| (n.clone(), serde_json::Value::String(v.clone())))
+            .collect();
+        pkg.insert("dependencies".into(), deps.into());
+    }
+
+    if !dev_dependencies.is_empty() {
+        let deps: serde_json::Map<String, serde_json::Value> = dev_dependencies
+            .iter()
+            .map(|(n, v)| (n.clone(), serde_json::Value::String(v.clone())))
+            .collect();
+        pkg.insert("devDependencies".into(), deps.into());
+    }
+
+    let json = serde_json::to_string_pretty(&pkg).unwrap();
+    std::fs::write(dir.path().join("package.json"), json).unwrap();
+
+    let output = std::process::Command::new("npm")
+        .args(["install"])
+        .current_dir(dir.path())
+        .output()
+        .expect("npm must be installed to run npm integration tests");
+
+    assert!(
+        output.status.success(),
+        "npm install failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 fn append_cargo_deps(
