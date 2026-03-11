@@ -2,8 +2,9 @@
 
 **Define the boundaries. Let your code evolve freely within them.**
 
-An open-source toolkit for deterministic fitness checks across your entire
-software delivery lifecycle. Built for developers and coding agents alike.
+An open-source toolkit for deterministic fitness checks, guardrails, and
+Harness Engineering across your entire software delivery lifecycle.
+Built for developers and coding agents alike.
 
 ## The Problem
 
@@ -103,11 +104,11 @@ result. Agents and CI consume it the same way.
 
 ## Available Checks
 
-| Check                  | What it catches                 | Scope            |
-| ---------------------- | ------------------------------- | ---------------- |
-| [`commit-message`](docs/checks/commit-message.md)       | Conventional Commits violations | Any project      |
-| [`code-similarity`](docs/checks/code-similarity.md)      | Structural code duplication     | Rust, JavaScript, TypeScript |
-| [`dependency-freshness`](docs/checks/dependency-freshness.md) | Outdated dependencies           | Cargo (Rust)     |
+| Check                                                         | What it catches                 | Scope                        |
+| ------------------------------------------------------------- | ------------------------------- | ---------------------------- |
+| [`commit-message`](docs/checks/commit-message.md)             | Conventional Commits violations | Any project                  |
+| [`code-similarity`](docs/checks/code-similarity.md)           | Structural code duplication     | Rust, JavaScript, TypeScript |
+| [`dependency-freshness`](docs/checks/dependency-freshness.md) | Outdated dependencies           | Cargo (Rust)                 |
 
 ## Quickstart
 
@@ -171,8 +172,19 @@ scute check commit-message "scute: reporting for duty 🐢"
         {
           "rule": "unknown-type",
           "found": "scute",
-          "expected": ["feat", "fix", "docs", "style", "refactor", "perf",
-                       "test", "build", "ci", "chore", "revert"]
+          "expected": [
+            "feat",
+            "fix",
+            "docs",
+            "style",
+            "refactor",
+            "perf",
+            "test",
+            "build",
+            "ci",
+            "chore",
+            "revert"
+          ]
         }
       ]
     }
