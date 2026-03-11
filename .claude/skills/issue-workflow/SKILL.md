@@ -20,41 +20,52 @@ Full lifecycle for working on a GitHub issue. Five phases, each with a clear exi
 
 ---
 
-## Phase 2: Set Up Worktree
-
-Create a worktree for this issue using the built-in worktree support. Name it after the issue (e.g., `fix-login-redirect`, `add-export-csv`).
-
-**Exit:** You're working inside the new worktree directory.
-
----
-
-## Phase 3: Build
+## Phase 2: Plan and Build
 
 Assess issue complexity to pick the right approach:
 
-- **Substantial feature or complex change** → invoke `/feature-development`. Each slice is a shippable PR — after completing a slice, go to Phase 4 and 5 before starting the next slice. Each PR must not break existing behavior. Only the final PR gets `Closes #<number>`.
+- **Substantial feature or complex change** → invoke `/feature-development`
 - **Small/focused fix** (bug fix, config change, small refactor) → use `/tdd` or the appropriate testing skill directly
 - **Unclear** → ask the user
 
 The build phase belongs to whatever skill you invoke. Follow its process fully.
 
+### Planning artifacts
+
+When the build process generates planning artifacts (criteria, scout report, sketch), attach them to the issue as comments once finalized. These artifacts belong to the issue, not to any worktree.
+
+### Multi-PR issues
+
+For substantial work, each slice is a shippable PR. The cycle per slice:
+
+1. Create a fresh worktree from latest main
+2. Build the slice
+3. Go to Phase 3 and 4 (PR → CI green)
+4. Worktree is disposable after merge
+
+Before starting a new slice, read planning artifacts back from the issue comments to restore context. Each PR must not break existing behavior.
+
+### Single-PR issues
+
+For small/focused fixes: create one worktree, build, then proceed to Phase 3.
+
 **Exit:** All changes committed, all tests pass.
 
 ---
 
-## Phase 4: Open PR
+## Phase 3: Open PR
 
 1. Push the branch
 2. Create the PR:
    - Title: short, under 70 characters
-   - Body: use the repo's PR template if one exists, otherwise write a concise description. Include `Closes #<number>` on the final PR to auto-close the issue. For intermediate PRs, reference the issue without closing it (`Part of #<number>`).
+   - Body: use the repo's PR template if one exists, otherwise write a concise description. Include `Closes #<number>` on the final (or only) PR to auto-close the issue. For intermediate PRs, reference the issue without closing it (`Part of #<number>`).
 3. Report the PR URL to the user
 
 **Exit:** PR is open and linked to the issue.
 
 ---
 
-## Phase 5: Watch CI and Iterate
+## Phase 4: Watch CI and Iterate
 
 1. Watch the PR's CI checks until they complete
 2. If all checks pass → done
@@ -72,7 +83,7 @@ The build phase belongs to whatever skill you invoke. Follow its process fully.
 ## When Done
 
 Report to the user:
-- PR URL
+- PR URL(s)
 - Summary of what was done
 - Any decisions made along the way that the user should know about
 
