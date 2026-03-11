@@ -82,25 +82,22 @@ fn fetch_latest_versions(
         let handles: Vec<_> = dependencies
             .iter()
             .map(|dependency| {
-                scope.spawn(move || {
-                    (
-                        dependency,
-                        crates_io::fetch_latest_version(&dependency.name),
-                    )
-                })
+                (
+                    scope.spawn(move || crates_io::fetch_latest_version(&dependency.name)),
+                    dependency,
+                )
             })
             .collect();
 
         handles
             .into_iter()
-            .zip(dependencies)
-            .map(|(handle, dep)| match handle.join() {
-                Ok(result) => result,
+            .map(|(handle, dependency)| match handle.join() {
+                Ok(result) => (dependency, result),
                 Err(_) => (
-                    dep,
+                    dependency,
                     Err(FetchError::Failed(format!(
                         "registry lookup failed for {}",
-                        dep.name
+                        dependency.name
                     ))),
                 ),
             })
