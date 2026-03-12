@@ -2,7 +2,7 @@ name: Scute / PR title
 
 on:
   pull_request:
-    types: [opened, edited, reopened]
+    types: [opened, edited, reopened, synchronize]
 
 permissions:
   contents: read
