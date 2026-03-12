@@ -1,6 +1,7 @@
 use scute_core::dependency_freshness::PackageManager;
 use scute_core::dependency_freshness::cargo::Cargo;
 use scute_core::dependency_freshness::npm::Npm;
+use scute_core::dependency_freshness::pnpm::Pnpm;
 use scute_test_utils::TestProject;
 use test_case::test_case;
 
@@ -28,8 +29,17 @@ const NPM: Context = Context {
     manifest: "package.json",
 };
 
+const PNPM: Context = Context {
+    project: TestProject::pnpm,
+    package_manager: || Box::new(Pnpm),
+    outdated_package: "is-odd",
+    pinned_version: "1.0.0",
+    manifest: "package.json",
+};
+
 #[test_case(&CARGO ; "cargo")]
 #[test_case(&NPM ; "npm")]
+#[test_case(&PNPM ; "pnpm")]
 fn excludes_transitive_dependencies(context: &Context) {
     let dir = (context.project)()
         .dependency(context.outdated_package, context.pinned_version)
@@ -49,6 +59,7 @@ fn excludes_transitive_dependencies(context: &Context) {
 
 #[test_case(&CARGO ; "cargo")]
 #[test_case(&NPM ; "npm")]
+#[test_case(&PNPM ; "pnpm")]
 fn reports_current_version(context: &Context) {
     let dir = (context.project)()
         .dependency(context.outdated_package, context.pinned_version)
@@ -66,6 +77,7 @@ fn reports_current_version(context: &Context) {
 
 #[test_case(&CARGO ; "cargo")]
 #[test_case(&NPM ; "npm")]
+#[test_case(&PNPM ; "pnpm")]
 fn reports_latest_available_version(context: &Context) {
     let dir = (context.project)()
         .dependency(context.outdated_package, context.pinned_version)
@@ -80,6 +92,7 @@ fn reports_latest_available_version(context: &Context) {
 
 #[test_case(&CARGO ; "cargo")]
 #[test_case(&NPM ; "npm")]
+#[test_case(&PNPM ; "pnpm")]
 fn no_dependencies_returns_empty_report(context: &Context) {
     let dir = (context.project)().build();
 
@@ -93,6 +106,7 @@ fn no_dependencies_returns_empty_report(context: &Context) {
 
 #[test_case(&CARGO ; "cargo")]
 #[test_case(&NPM ; "npm")]
+#[test_case(&PNPM ; "pnpm")]
 fn includes_dev_dependencies(context: &Context) {
     let dir = (context.project)()
         .dev_dependency(context.outdated_package, context.pinned_version)
@@ -108,6 +122,7 @@ fn includes_dev_dependencies(context: &Context) {
 
 #[test_case(&CARGO ; "cargo")]
 #[test_case(&NPM ; "npm")]
+#[test_case(&PNPM ; "pnpm")]
 fn location_points_to_manifest(context: &Context) {
     let dir = (context.project)()
         .dependency(context.outdated_package, context.pinned_version)

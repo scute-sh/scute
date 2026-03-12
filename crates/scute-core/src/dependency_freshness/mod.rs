@@ -2,6 +2,8 @@
 pub mod cargo;
 #[doc(hidden)]
 pub mod npm;
+#[doc(hidden)]
+pub mod pnpm;
 
 use std::path::Path;
 
@@ -169,6 +171,7 @@ impl Manifest {
         let dir = path.parent()?.to_path_buf();
         let pm: Box<dyn PackageManager> = match path.file_name()?.to_str()? {
             "Cargo.toml" => Box::new(cargo::Cargo),
+            "package.json" if dir.join("pnpm-lock.yaml").exists() => Box::new(pnpm::Pnpm),
             "package.json" => Box::new(npm::Npm),
             _ => return None,
         };

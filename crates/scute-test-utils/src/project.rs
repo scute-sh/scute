@@ -6,6 +6,7 @@ enum ProjectKind {
     Empty,
     Cargo,
     Npm,
+    Pnpm,
 }
 
 /// A throwaway project directory for integration tests.
@@ -63,6 +64,11 @@ impl TestProject {
     /// A minimal npm project. Runs `npm install` on build to resolve dependencies.
     pub fn npm() -> Self {
         Self::new(ProjectKind::Npm)
+    }
+
+    /// A minimal pnpm project. Runs `pnpm install` on build to resolve dependencies.
+    pub fn pnpm() -> Self {
+        Self::new(ProjectKind::Pnpm)
     }
 
     /// A minimal Cargo project with `Cargo.toml` and empty `src/lib.rs`.
@@ -129,6 +135,12 @@ impl TestProject {
                 &self.members,
             ),
             ProjectKind::Npm => setup_npm_project(
+                root,
+                &self.dependencies,
+                &self.dev_dependencies,
+                &self.members,
+            ),
+            ProjectKind::Pnpm => setup_pnpm_project(
                 root,
                 &self.dependencies,
                 &self.dev_dependencies,
@@ -241,6 +253,67 @@ fn setup_npm_project(
 }
 
 fn setup_npm_member(root: &Path, path: &str, member: &TestMember) {
+    let member_dir = root.join(path);
+    std::fs::create_dir_all(&member_dir).unwrap();
+
+    let basename = Path::new(path).file_name().unwrap().to_string_lossy();
+
+    let mut pkg = serde_json::Map::new();
+    pkg.insert("name".into(), format!("@test/{basename}").into());
+    pkg.insert("version".into(), "1.0.0".into());
+
+    append_npm_deps(&mut pkg, &member.dependencies, &member.dev_dependencies);
+
+    let json = serde_json::to_string_pretty(&pkg).unwrap();
+    std::fs::write(member_dir.join("package.json"), json).unwrap();
+}
+
+fn setup_pnpm_project(
+    root: &Path,
+    dependencies: &[(String, String)],
+    dev_dependencies: &[(String, String)],
+    members: &[(String, TestMember)],
+) {
+    let mut pkg = serde_json::Map::new();
+    pkg.insert("name".into(), "test-project".into());
+    pkg.insert("version".into(), "1.0.0".into());
+
+    append_npm_deps(&mut pkg, dependencies, dev_dependencies);
+
+    let json = serde_json::to_string_pretty(&pkg).unwrap();
+    std::fs::write(root.join("package.json"), json).unwrap();
+
+    if !members.is_empty() {
+        let patterns: Vec<String> = members.iter().map(|(path, _)| path.clone()).collect();
+        let yaml = format!(
+            "packages:\n{}",
+            patterns
+                .iter()
+                .map(|p| format!("  - {p}"))
+                .collect::<Vec<_>>()
+                .join("\n")
+        );
+        std::fs::write(root.join("pnpm-workspace.yaml"), yaml).unwrap();
+
+        for (path, member) in members {
+            setup_pnpm_member(root, path, member);
+        }
+    }
+
+    let output = std::process::Command::new("pnpm")
+        .args(["install"])
+        .current_dir(root)
+        .output()
+        .expect("pnpm must be installed to run pnpm integration tests");
+
+    assert!(
+        output.status.success(),
+        "pnpm install failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+fn setup_pnpm_member(root: &Path, path: &str, member: &TestMember) {
     let member_dir = root.join(path);
     std::fs::create_dir_all(&member_dir).unwrap();
 
