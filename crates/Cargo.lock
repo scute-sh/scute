@@ -1083,7 +1083,7 @@ dependencies = [
 
 [[package]]
 name = "scute"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "anyhow",
  "clap",
@@ -1098,7 +1098,7 @@ dependencies = [
 
 [[package]]
 name = "scute-config"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "dirs",
  "scute-core",
@@ -1109,7 +1109,7 @@ dependencies = [
 
 [[package]]
 name = "scute-core"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "glob",
  "googletest",
@@ -1131,7 +1131,7 @@ dependencies = [
 
 [[package]]
 name = "scute-mcp"
-version = "0.0.4"
+version = "0.0.5"
 dependencies = [
  "rmcp",
  "scute-config",
