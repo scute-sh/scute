@@ -1,6 +1,6 @@
 [package]
 name = "scute-core"
-version = "0.0.3"
+version = "0.0.4"
 edition = "2024"
 description = "Core check engine for Scute fitness checks"
 repository = "https://github.com/scute-sh/scute"
@@ -26,5 +26,5 @@ tree-sitter-typescript = "0.23"
 googletest = { workspace = true }
 test-case = { workspace = true }
 insta = "1"
-scute-test-utils = { path = "../scute-test-utils", version = "0.0.0" }
+scute-test-utils = { path = "../scute-test-utils", version = "0.0.1" }
 tempfile = "3"

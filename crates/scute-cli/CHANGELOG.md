@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.4](https://github.com/scute-sh/scute/compare/scute-v0.0.3...scute-v0.0.4) - 2026-03-11
+
+### Added
+
+- *(code-similarity)* support file exclude patterns ([#29](https://github.com/scute-sh/scute/pull/29))
+
 ## [0.0.3](https://github.com/scute-sh/scute/compare/scute-v0.0.2...scute-v0.0.3) - 2026-03-11
 
 ### Other
