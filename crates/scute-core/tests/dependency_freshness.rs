@@ -51,7 +51,12 @@ fn polyglot_monorepo_reports_each_root_once_with_relative_locations() {
             "frontend",
             TestProject::npm().member("apps/web", |member| member.dependency("is-odd", "1.0.0")),
         )
-        .nested("tools", TestProject::pnpm().dependency("is-odd", "1.0.0"))
+        .nested(
+            "tools",
+            TestProject::pnpm().member("packages/cli", |member| {
+                member.dependency("is-odd", "1.0.0")
+            }),
+        )
         .build();
 
     let dependencies = fetch_outdated(dir.path()).unwrap();
@@ -59,7 +64,7 @@ fn polyglot_monorepo_reports_each_root_once_with_relative_locations() {
     assert_eq!(dependencies.len(), 3);
     assert_dependency_at(&dependencies, "rand", "backend/crates/api/Cargo.toml");
     assert_dependency_at(&dependencies, "is-odd", "frontend/apps/web/package.json");
-    assert_dependency_at(&dependencies, "is-odd", "tools/package.json");
+    assert_dependency_at(&dependencies, "is-odd", "tools/packages/cli/package.json");
 }
 
 #[test]
