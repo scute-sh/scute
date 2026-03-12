@@ -32,6 +32,10 @@ jobs:
         run: rustup show
         working-directory: crates
 
+      - uses: pnpm/action-setup@v4
+        with:
+          version: latest
+
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: crates
