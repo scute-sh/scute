@@ -261,16 +261,16 @@ fn setup_js_project(
                 .unwrap();
             }
         }
-
-        for (path, member) in members {
-            setup_js_member(root, path, member);
-        }
     }
 
     append_js_deps(&mut pkg, dependencies, dev_dependencies);
 
     let json = serde_json::to_string_pretty(&pkg).unwrap();
     std::fs::write(root.join("package.json"), json).unwrap();
+
+    for (path, member) in members {
+        setup_js_member(root, path, member);
+    }
 
     let cmd = toolchain.command();
     let output = std::process::Command::new(cmd)

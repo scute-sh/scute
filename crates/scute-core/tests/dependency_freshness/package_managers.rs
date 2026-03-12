@@ -60,7 +60,7 @@ fn excludes_transitive_dependencies(context: &Context) {
 #[test_case(&CARGO ; "cargo")]
 #[test_case(&NPM ; "npm")]
 #[test_case(&PNPM ; "pnpm")]
-fn reports_current_version(context: &Context) {
+fn reports_current_version_of_outdated_dependency(context: &Context) {
     let dir = (context.project)()
         .dependency(context.outdated_package, context.pinned_version)
         .build();
@@ -78,7 +78,7 @@ fn reports_current_version(context: &Context) {
 #[test_case(&CARGO ; "cargo")]
 #[test_case(&NPM ; "npm")]
 #[test_case(&PNPM ; "pnpm")]
-fn reports_latest_available_version(context: &Context) {
+fn reports_latest_version_of_outdated_dependency(context: &Context) {
     let dir = (context.project)()
         .dependency(context.outdated_package, context.pinned_version)
         .build();

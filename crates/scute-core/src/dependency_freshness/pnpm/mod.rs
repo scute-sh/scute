@@ -10,6 +10,8 @@ impl PackageManager for Pnpm {
     }
 
     fn fetch_outdated(&self, target: &Path) -> Result<Vec<OutdatedDependency>, FetchError> {
+        // pnpm outdated exits with code 1 when there ARE outdated deps.
+        // We ignore the exit code and parse stdout directly.
         let output = std::process::Command::new("pnpm")
             .args(["outdated", "--format", "json"])
             .current_dir(target)
@@ -48,6 +50,7 @@ fn parse_outdated(json: &str) -> Result<Vec<OutdatedDependency>, FetchError> {
 fn parse_entry(name: &str, entry: &serde_json::Value) -> Option<OutdatedDependency> {
     let current = entry["current"]
         .as_str()
+        .or_else(|| entry["wanted"].as_str())
         .and_then(|v| v.parse::<semver::Version>().ok())?;
     let latest = entry["latest"]
         .as_str()

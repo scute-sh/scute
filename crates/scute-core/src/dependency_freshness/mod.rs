@@ -98,7 +98,7 @@ impl OutdatedDependency {
 
 /// Run the dependency-freshness check against a project directory.
 ///
-/// Discovers supported package managers (Cargo, npm) and checks each one found.
+/// Discovers supported package managers (Cargo, npm, pnpm) and checks each one found.
 ///
 /// # Errors
 ///
