@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.5](https://github.com/scute-sh/scute/compare/scute-core-v0.0.4...scute-core-v0.0.5) - 2026-03-12
+
+### Added
+
+- *(dependency-freshness)* add pnpm workspace support ([#43](https://github.com/scute-sh/scute/pull/43))
+
+### Other
+
+- *(dependency-freshness)* identify JS package managers by lock file ([#45](https://github.com/scute-sh/scute/pull/45))
+
 ## [0.0.4](https://github.com/scute-sh/scute/compare/scute-core-v0.0.3...scute-core-v0.0.4) - 2026-03-11
 
 ### Added
