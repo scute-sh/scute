@@ -11,6 +11,8 @@ struct Context {
     outdated_package: &'static str,
     pinned_version: &'static str,
     manifest: &'static str,
+    member_path: &'static str,
+    member_manifest: &'static str,
 }
 
 const CARGO: Context = Context {
@@ -19,6 +21,8 @@ const CARGO: Context = Context {
     outdated_package: "rand",
     pinned_version: "=0.7.3",
     manifest: "Cargo.toml",
+    member_path: "sub",
+    member_manifest: "sub/Cargo.toml",
 };
 
 const NPM: Context = Context {
@@ -27,6 +31,8 @@ const NPM: Context = Context {
     outdated_package: "is-odd",
     pinned_version: "1.0.0",
     manifest: "package.json",
+    member_path: "apps/web",
+    member_manifest: "apps/web/package.json",
 };
 
 const PNPM: Context = Context {
@@ -35,6 +41,8 @@ const PNPM: Context = Context {
     outdated_package: "is-odd",
     pinned_version: "1.0.0",
     manifest: "package.json",
+    member_path: "apps/web",
+    member_manifest: "apps/web/package.json",
 };
 
 #[test_case(&CARGO ; "cargo")]
@@ -133,4 +141,120 @@ fn location_points_to_manifest(context: &Context) {
         .unwrap();
 
     assert_eq!(dependencies[0].location.as_deref(), Some(context.manifest));
+}
+
+// --- Workspace tests ---
+
+#[test_case(&CARGO ; "cargo")]
+#[test_case(&NPM ; "npm")]
+#[test_case(&PNPM ; "pnpm")]
+fn workspace_member_location_points_to_member_manifest(context: &Context) {
+    let dir = (context.project)()
+        .member(context.member_path, |member| {
+            member.dependency(context.outdated_package, context.pinned_version)
+        })
+        .build();
+
+    let dependencies = (context.package_manager)()
+        .fetch_outdated(dir.path())
+        .unwrap();
+
+    assert_eq!(dependencies.len(), 1);
+    assert_eq!(
+        dependencies[0].location.as_deref(),
+        Some(context.member_manifest)
+    );
+}
+
+#[test_case(&NPM ; "npm")]
+#[test_case(&PNPM ; "pnpm")]
+fn workspace_reports_outdated_from_multiple_members(context: &Context) {
+    let dir = (context.project)()
+        .member("apps/web", |member| member.dependency("is-odd", "1.0.0"))
+        .member("packages/utils", |member| {
+            member.dependency("is-number", "1.0.0")
+        })
+        .build();
+
+    let dependencies = (context.package_manager)()
+        .fetch_outdated(dir.path())
+        .unwrap();
+
+    let names: Vec<&str> = dependencies.iter().map(|d| d.name.as_str()).collect();
+    assert!(names.contains(&"is-odd"), "missing is-odd, got: {names:?}");
+    assert!(
+        names.contains(&"is-number"),
+        "missing is-number, got: {names:?}"
+    );
+}
+
+#[test_case(&NPM ; "npm")]
+#[test_case(&PNPM ; "pnpm")]
+fn workspace_root_deps_location_points_to_root_manifest(context: &Context) {
+    let dir = (context.project)()
+        .dependency("is-odd", "1.0.0")
+        .member("apps/web", |member| member.dependency("is-even", "1.0.0"))
+        .build();
+
+    let dependencies = (context.package_manager)()
+        .fetch_outdated(dir.path())
+        .unwrap();
+
+    let root_dep = dependencies.iter().find(|d| d.name == "is-odd").unwrap();
+    assert_eq!(root_dep.location.as_deref(), Some("package.json"));
+}
+
+#[test_case(&NPM ; "npm")]
+#[test_case(&PNPM ; "pnpm")]
+fn workspace_shared_dep_reported_per_member(context: &Context) {
+    let dir = (context.project)()
+        .member("apps/web", |member| member.dependency("is-odd", "1.0.0"))
+        .member("packages/utils", |member| {
+            member.dependency("is-odd", "1.0.0")
+        })
+        .build();
+
+    let dependencies = (context.package_manager)()
+        .fetch_outdated(dir.path())
+        .unwrap();
+
+    let locations: Vec<_> = dependencies
+        .iter()
+        .filter(|d| d.name == "is-odd")
+        .filter_map(|d| d.location.as_deref())
+        .collect();
+    assert_eq!(
+        locations.len(),
+        2,
+        "shared dep should be reported per member, got: {locations:?}"
+    );
+    assert!(
+        locations.contains(&"apps/web/package.json"),
+        "missing web, got: {locations:?}"
+    );
+    assert!(
+        locations.contains(&"packages/utils/package.json"),
+        "missing utils, got: {locations:?}"
+    );
+}
+
+#[test_case(&NPM ; "npm")]
+#[test_case(&PNPM ; "pnpm")]
+fn workspace_member_dev_dep_location_points_to_member_manifest(context: &Context) {
+    let dir = (context.project)()
+        .member("apps/web", |member| {
+            member.dev_dependency("is-odd", "1.0.0")
+        })
+        .build();
+
+    let dependencies = (context.package_manager)()
+        .fetch_outdated(dir.path())
+        .unwrap();
+
+    assert_eq!(dependencies.len(), 1);
+    assert_eq!(dependencies[0].name, "is-odd");
+    assert_eq!(
+        dependencies[0].location.as_deref(),
+        Some("apps/web/package.json")
+    );
 }
