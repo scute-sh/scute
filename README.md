@@ -112,27 +112,29 @@ result. Agents and CI consume it the same way.
 
 ## Quickstart
 
-Install:
+### Install
+
+macOS / Linux:
 
 ```sh
-# macOS / Linux
 curl -fsSL scute.sh/install | sh
 ```
 
+Windows:
+
 ```powershell
-# Windows
 irm scute.sh/install.ps1 | iex
 ```
 
 Or via [Homebrew](https://brew.sh) / [Cargo](https://doc.rust-lang.org/cargo/):
 
 ```sh
-brew install scute-sh/tap/scute    # macOS / Linux
-cargo install scute                # from source
-cargo binstall scute               # pre-built binary
+brew install scute-sh/tap/scute
+cargo install scute
+cargo binstall scute
 ```
 
-Run a check:
+### Run a check
 
 ```sh
 scute check commit-message "feat: add login"
