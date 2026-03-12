@@ -138,7 +138,7 @@ fn classify_error(err: FetchError) -> ExecutionError {
         FetchError::InvalidTarget(msg) => ExecutionError {
             code: "invalid_target".into(),
             message: msg,
-            recovery: "pass a directory containing a Cargo.toml or package.json".into(),
+            recovery: "check that you're pointing at a project root".into(),
         },
         FetchError::Failed(msg) => ExecutionError {
             code: "tool_failed".into(),
@@ -172,7 +172,7 @@ impl Manifest {
         let pm: Box<dyn PackageManager> = match path.file_name()?.to_str()? {
             "Cargo.toml" => Box::new(cargo::Cargo),
             "package.json" if dir.join("pnpm-lock.yaml").exists() => Box::new(pnpm::Pnpm),
-            "package.json" => Box::new(npm::Npm),
+            "package.json" if dir.join("package-lock.json").exists() => Box::new(npm::Npm),
             _ => return None,
         };
         Some(Self { dir, pm })
@@ -226,6 +226,23 @@ fn collect_projects(target: &Path) -> Result<Vec<Manifest>, FetchError> {
     })
 }
 
+fn diagnose_empty_discovery(target: &Path) -> FetchError {
+    let has_package_json = ignore::WalkBuilder::new(target)
+        .standard_filters(true)
+        .build()
+        .filter_map(Result::ok)
+        .any(|entry| entry.file_name() == "package.json");
+
+    if has_package_json {
+        FetchError::InvalidTarget(
+            "found package.json but no lock file — run `npm install` or `pnpm install` first"
+                .into(),
+        )
+    } else {
+        FetchError::InvalidTarget("no Cargo.toml or package.json found".into())
+    }
+}
+
 /// Walk `target` for supported package managers, identify project roots,
 /// and collect outdated dependencies from each one.
 ///
@@ -238,9 +255,7 @@ pub fn fetch_outdated(target: &Path) -> Result<Vec<OutdatedDependency>, FetchErr
     let projects = collect_projects(target)?;
 
     if projects.is_empty() {
-        return Err(FetchError::InvalidTarget(
-            "no supported project found".into(),
-        ));
+        return Err(diagnose_empty_discovery(target));
     }
 
     let mut all_outdated = Vec::new();
