@@ -8,18 +8,13 @@ mod package_managers;
 use scute_core::dependency_freshness::{self, OutdatedDependency, fetch_outdated};
 use scute_test_utils::TestProject;
 
-fn assert_single_dependency(
-    dependencies: &[OutdatedDependency],
-    name: &str,
-    expected_location: &str,
-) {
-    let matching: Vec<_> = dependencies.iter().filter(|d| d.name == name).collect();
-    assert_eq!(
-        matching.len(),
-        1,
-        "{name} should appear exactly once, got: {matching:?}"
+fn assert_dependency_at(dependencies: &[OutdatedDependency], name: &str, location: &str) {
+    assert!(
+        dependencies
+            .iter()
+            .any(|d| d.name == name && d.location.as_deref() == Some(location)),
+        "{name} at {location} not found in {dependencies:?}"
     );
-    assert_eq!(matching[0].location.as_deref(), Some(expected_location));
 }
 
 #[test]
@@ -58,12 +53,15 @@ fn polyglot_monorepo_reports_each_root_once_with_relative_locations() {
             "frontend",
             TestProject::npm().member("apps/web", |member| member.dependency("is-odd", "1.0.0")),
         )
+        .nested("tools", TestProject::pnpm().dependency("is-odd", "1.0.0"))
         .build();
 
     let dependencies = fetch_outdated(dir.path()).unwrap();
 
-    assert_single_dependency(&dependencies, "rand", "backend/crates/api/Cargo.toml");
-    assert_single_dependency(&dependencies, "is-odd", "frontend/apps/web/package.json");
+    assert_eq!(dependencies.len(), 3);
+    assert_dependency_at(&dependencies, "rand", "backend/crates/api/Cargo.toml");
+    assert_dependency_at(&dependencies, "is-odd", "frontend/apps/web/package.json");
+    assert_dependency_at(&dependencies, "is-odd", "tools/package.json");
 }
 
 #[test]
