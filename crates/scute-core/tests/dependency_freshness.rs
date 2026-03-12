@@ -1,7 +1,3 @@
-#[path = "dependency_freshness/cargo.rs"]
-mod cargo;
-#[path = "dependency_freshness/npm.rs"]
-mod npm;
 #[path = "dependency_freshness/package_managers.rs"]
 mod package_managers;
 #[path = "dependency_freshness/pnpm.rs"]

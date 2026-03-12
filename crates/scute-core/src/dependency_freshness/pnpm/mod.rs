@@ -118,6 +118,7 @@ mod tests {
     use super::*;
     use serde_json::json;
     use std::path::PathBuf;
+    use test_case::test_case;
 
     fn any_root() -> PathBuf {
         PathBuf::from("/project")
@@ -150,30 +151,10 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
-    fn skips_entries_with_unparseable_versions() {
-        let input = json!({
-            "is-odd": {
-                "current": "not-semver",
-                "latest": "3.0.1",
-                "dependencyType": "dependencies"
-            }
-        });
-
-        let deps = parse_outdated(&input.to_string(), &any_root()).unwrap();
-
-        assert!(deps.is_empty());
-    }
-
-    #[test]
-    fn skips_entries_where_latest_is_not_newer() {
-        let input = json!({
-            "is-odd": {
-                "current": "3.0.1",
-                "latest": "3.0.1",
-                "dependencyType": "dependencies"
-            }
-        });
+    #[test_case("not-semver", "3.0.1" ; "unparseable_version")]
+    #[test_case("3.0.1", "3.0.1" ; "latest_not_newer")]
+    fn skips_entry(current: &str, latest: &str) {
+        let input = json!({ "is-odd": { "current": current, "latest": latest } });
 
         let deps = parse_outdated(&input.to_string(), &any_root()).unwrap();
 
@@ -183,11 +164,7 @@ mod tests {
     #[test]
     fn no_dependents_defaults_location_to_package_json() {
         let input = json!({
-            "is-odd": {
-                "current": "1.0.0",
-                "latest": "3.0.1",
-                "dependencyType": "dependencies"
-            }
+            "is-odd": { "current": "1.0.0", "latest": "3.0.1" }
         });
 
         let deps = parse_outdated(&input.to_string(), &any_root()).unwrap();
@@ -195,40 +172,21 @@ mod tests {
         assert_eq!(deps[0].location.as_deref(), Some("package.json"));
     }
 
-    #[test]
-    fn resolves_root_dependent_to_package_json() {
+    #[test_case("/tmp/my-project", "package.json" ; "root_to_package_json")]
+    #[test_case("/tmp/my-project/apps/web", "apps/web/package.json" ; "member_to_relative_manifest")]
+    fn resolves_dependent_location(location: &str, expected: &str) {
         let root = PathBuf::from("/tmp/my-project");
         let input = json!({
             "is-odd": {
                 "current": "1.0.0",
                 "latest": "3.0.1",
-                "dependentPackages": [
-                    { "name": "my-project", "location": "/tmp/my-project" }
-                ]
+                "dependentPackages": [{ "name": "any", "location": location }]
             }
         });
 
         let deps = parse_outdated(&input.to_string(), &root).unwrap();
 
-        assert_eq!(deps[0].location.as_deref(), Some("package.json"));
-    }
-
-    #[test]
-    fn resolves_member_dependent_to_relative_manifest() {
-        let root = PathBuf::from("/tmp/my-project");
-        let input = json!({
-            "is-odd": {
-                "current": "1.0.0",
-                "latest": "3.0.1",
-                "dependentPackages": [
-                    { "name": "@test/web", "location": "/tmp/my-project/apps/web" }
-                ]
-            }
-        });
-
-        let deps = parse_outdated(&input.to_string(), &root).unwrap();
-
-        assert_eq!(deps[0].location.as_deref(), Some("apps/web/package.json"));
+        assert_eq!(deps[0].location.as_deref(), Some(expected));
     }
 
     #[test]
