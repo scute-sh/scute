@@ -115,14 +115,21 @@ result. Agents and CI consume it the same way.
 Install:
 
 ```sh
-# Homebrew (macOS / Linux)
-brew install scute-sh/tap/scute
+# macOS / Linux
+curl -fsSL scute.sh/install | sh
+```
 
-# Cargo
-cargo install scute
+```powershell
+# Windows
+irm scute.sh/install.ps1 | iex
+```
 
-# Pre-built binary (if you have cargo-binstall)
-cargo binstall scute
+Or via [Homebrew](https://brew.sh) / [Cargo](https://doc.rust-lang.org/cargo/):
+
+```sh
+brew install scute-sh/tap/scute    # macOS / Linux
+cargo install scute                # from source
+cargo binstall scute               # pre-built binary
 ```
 
 Run a check:
