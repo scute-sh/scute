@@ -1,0 +1,16 @@
+name: "Scute / Website CI"
+
+on:
+  push:
+    branches: [main]
+    paths: [website/**]
+  pull_request:
+    paths: [website/**]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: denoland/setup-deno@v2
+      - run: deno check website/main.ts
