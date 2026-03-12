@@ -2,8 +2,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use super::language::{self, LanguageConfig};
-use super::parser::AstParser;
 use super::{CloneGroup, Occurrence, SourceEntry, TreeSitterParser, find_clones};
+use crate::parser::AstParser;
 use serde::Deserialize;
 
 use crate::{Evaluation, Evidence, ExecutionError, Thresholds};

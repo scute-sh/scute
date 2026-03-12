@@ -1,13 +1,13 @@
 mod check;
 mod detect;
 pub mod language;
-mod parser;
 mod tokenize;
+
+use crate::parser::TreeSitterParser;
 
 pub use check::{CHECK_NAME, Definition, check};
 pub use detect::{CloneGroup, Occurrence, detect_clones};
 pub use language::{LanguageConfig, NodeRole};
-pub use parser::{AstParser, ParseError, TreeSitterParser};
 pub use tokenize::{Token, TokenizeError, tokenize};
 
 /// A source entry for clone detection: raw source code + metadata.

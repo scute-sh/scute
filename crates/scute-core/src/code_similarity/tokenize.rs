@@ -1,5 +1,5 @@
 use super::language::{LanguageConfig, NodeRole};
-use super::parser::AstParser;
+use crate::parser::AstParser;
 
 /// A normalized token from source code.
 #[derive(Debug, Clone, PartialEq)]
