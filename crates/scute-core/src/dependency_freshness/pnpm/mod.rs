@@ -10,10 +10,8 @@ impl PackageManager for Pnpm {
     }
 
     fn fetch_outdated(&self, target: &Path) -> Result<Vec<OutdatedDependency>, FetchError> {
-        // pnpm outdated exits with code 1 when there ARE outdated deps.
-        // We ignore the exit code and parse stdout directly.
         let output = std::process::Command::new("pnpm")
-            .args(["outdated", "--format", "json"])
+            .args(["outdated", "--recursive", "--format", "json"])
             .current_dir(target)
             .output()
             .map_err(|e| FetchError::Failed(format!("could not run pnpm outdated: {e}")))?;
@@ -25,53 +23,88 @@ impl PackageManager for Pnpm {
             return Ok(vec![]);
         }
 
-        parse_outdated(&stdout)
+        parse_outdated(&stdout, target)
     }
 }
 
-fn parse_outdated(json: &str) -> Result<Vec<OutdatedDependency>, FetchError> {
-    let root: serde_json::Value =
+fn parse_outdated(json: &str, root: &Path) -> Result<Vec<OutdatedDependency>, FetchError> {
+    let top: serde_json::Value =
         serde_json::from_str(json).map_err(|e| FetchError::Failed(e.to_string()))?;
 
-    let packages = root
+    let packages = top
         .as_object()
         .ok_or_else(|| FetchError::Failed("pnpm outdated returned non-object".into()))?;
 
     let mut outdated = Vec::new();
     for (name, info) in packages {
-        if let Some(dep) = parse_entry(name, info) {
-            outdated.push(dep);
-        }
+        outdated.extend(parse_entry(name, info, root));
     }
 
     Ok(outdated)
 }
 
-fn parse_entry(name: &str, entry: &serde_json::Value) -> Option<OutdatedDependency> {
-    let current = entry["current"]
+fn parse_entry(name: &str, entry: &serde_json::Value, root: &Path) -> Vec<OutdatedDependency> {
+    let Some(current) = entry["current"]
         .as_str()
         .or_else(|| entry["wanted"].as_str())
-        .and_then(|v| v.parse::<semver::Version>().ok())?;
-    let latest = entry["latest"]
+        .and_then(|v| v.parse::<semver::Version>().ok())
+    else {
+        return vec![];
+    };
+    let Some(latest) = entry["latest"]
         .as_str()
-        .and_then(|v| v.parse::<semver::Version>().ok())?;
+        .and_then(|v| v.parse::<semver::Version>().ok())
+    else {
+        return vec![];
+    };
 
     if latest <= current {
-        return None;
+        return vec![];
     }
 
-    Some(OutdatedDependency {
-        name: name.into(),
-        current,
-        latest,
-        location: Some("package.json".into()),
-    })
+    match entry["dependentPackages"].as_array() {
+        Some(dependents) => dependents
+            .iter()
+            .map(|dep| {
+                let location = dep["location"]
+                    .as_str()
+                    .and_then(|loc| resolve_location(loc, root));
+                OutdatedDependency {
+                    name: name.into(),
+                    current: current.clone(),
+                    latest: latest.clone(),
+                    location,
+                }
+            })
+            .collect(),
+        None => vec![OutdatedDependency {
+            name: name.into(),
+            current,
+            latest,
+            location: Some("package.json".into()),
+        }],
+    }
+}
+
+fn resolve_location(absolute: &str, root: &Path) -> Option<String> {
+    let dep_path = Path::new(absolute);
+    let relative = dep_path.strip_prefix(root).ok()?;
+    if relative.as_os_str().is_empty() {
+        Some("package.json".into())
+    } else {
+        Some(format!("{}/package.json", relative.display()))
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::path::PathBuf;
+
+    fn any_root() -> PathBuf {
+        PathBuf::from("/project")
+    }
 
     #[test]
     fn parses_single_outdated_dependency() {
@@ -85,7 +118,7 @@ mod tests {
             }
         });
 
-        let deps = parse_outdated(&input.to_string()).unwrap();
+        let deps = parse_outdated(&input.to_string(), &any_root()).unwrap();
 
         assert_eq!(deps.len(), 1);
         assert_eq!(deps[0].name, "is-odd");
@@ -95,7 +128,7 @@ mod tests {
 
     #[test]
     fn rejects_non_object_root() {
-        let result = parse_outdated("[1,2,3]");
+        let result = parse_outdated("[1,2,3]", &any_root());
 
         assert!(result.is_err());
     }
@@ -110,7 +143,7 @@ mod tests {
             }
         });
 
-        let deps = parse_outdated(&input.to_string()).unwrap();
+        let deps = parse_outdated(&input.to_string(), &any_root()).unwrap();
 
         assert!(deps.is_empty());
     }
@@ -125,13 +158,13 @@ mod tests {
             }
         });
 
-        let deps = parse_outdated(&input.to_string()).unwrap();
+        let deps = parse_outdated(&input.to_string(), &any_root()).unwrap();
 
         assert!(deps.is_empty());
     }
 
     #[test]
-    fn location_defaults_to_package_json() {
+    fn no_dependents_defaults_location_to_package_json() {
         let input = json!({
             "is-odd": {
                 "current": "1.0.0",
@@ -140,8 +173,68 @@ mod tests {
             }
         });
 
-        let deps = parse_outdated(&input.to_string()).unwrap();
+        let deps = parse_outdated(&input.to_string(), &any_root()).unwrap();
 
         assert_eq!(deps[0].location.as_deref(), Some("package.json"));
+    }
+
+    #[test]
+    fn resolves_root_dependent_to_package_json() {
+        let root = PathBuf::from("/tmp/my-project");
+        let input = json!({
+            "is-odd": {
+                "current": "1.0.0",
+                "latest": "3.0.1",
+                "dependentPackages": [
+                    { "name": "my-project", "location": "/tmp/my-project" }
+                ]
+            }
+        });
+
+        let deps = parse_outdated(&input.to_string(), &root).unwrap();
+
+        assert_eq!(deps[0].location.as_deref(), Some("package.json"));
+    }
+
+    #[test]
+    fn resolves_member_dependent_to_relative_manifest() {
+        let root = PathBuf::from("/tmp/my-project");
+        let input = json!({
+            "is-odd": {
+                "current": "1.0.0",
+                "latest": "3.0.1",
+                "dependentPackages": [
+                    { "name": "@test/web", "location": "/tmp/my-project/apps/web" }
+                ]
+            }
+        });
+
+        let deps = parse_outdated(&input.to_string(), &root).unwrap();
+
+        assert_eq!(deps[0].location.as_deref(), Some("apps/web/package.json"));
+    }
+
+    #[test]
+    fn shared_dep_produces_one_entry_per_dependent() {
+        let root = PathBuf::from("/tmp/my-project");
+        let input = json!({
+            "is-odd": {
+                "current": "1.0.0",
+                "latest": "3.0.1",
+                "dependentPackages": [
+                    { "name": "@test/web", "location": "/tmp/my-project/apps/web" },
+                    { "name": "@test/utils", "location": "/tmp/my-project/packages/utils" }
+                ]
+            }
+        });
+
+        let deps = parse_outdated(&input.to_string(), &root).unwrap();
+
+        assert_eq!(deps.len(), 2);
+        assert_eq!(deps[0].location.as_deref(), Some("apps/web/package.json"));
+        assert_eq!(
+            deps[1].location.as_deref(),
+            Some("packages/utils/package.json")
+        );
     }
 }

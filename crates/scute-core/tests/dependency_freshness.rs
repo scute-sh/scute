@@ -4,6 +4,8 @@ mod cargo;
 mod npm;
 #[path = "dependency_freshness/package_managers.rs"]
 mod package_managers;
+#[path = "dependency_freshness/pnpm.rs"]
+mod pnpm;
 
 use scute_core::dependency_freshness::{self, OutdatedDependency, fetch_outdated};
 use scute_test_utils::TestProject;
