@@ -6,6 +6,8 @@ pub struct Pnpm;
 
 impl PackageManager for Pnpm {
     fn is_project_root(&self, target: &Path) -> bool {
+        // pnpm only creates the lockfile at the workspace/project root,
+        // never inside individual members, so its presence is sufficient.
         target.join("pnpm-lock.yaml").exists()
     }
 
@@ -20,10 +22,22 @@ impl PackageManager for Pnpm {
             String::from_utf8(output.stdout).map_err(|e| FetchError::Failed(e.to_string()))?;
 
         if stdout.trim().is_empty() || stdout.trim() == "{}" {
+            if !output.status.success() {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                if !stderr.trim().is_empty() {
+                    return Err(FetchError::Failed(stderr.trim().to_string()));
+                }
+            }
             return Ok(vec![]);
         }
 
-        parse_outdated(&stdout, target)
+        // Canonicalize so path comparisons match pnpm's absolute paths,
+        // which go through resolved symlinks (e.g. /tmp → /private/tmp on macOS).
+        let root = target
+            .canonicalize()
+            .unwrap_or_else(|_| target.to_path_buf());
+
+        parse_outdated(&stdout, &root)
     }
 }
 
@@ -86,8 +100,11 @@ fn parse_entry(name: &str, entry: &serde_json::Value, root: &Path) -> Vec<Outdat
     }
 }
 
-fn resolve_location(absolute: &str, root: &Path) -> Option<String> {
-    let dep_path = Path::new(absolute);
+fn resolve_location(location: &str, root: &Path) -> Option<String> {
+    let dep_path = Path::new(location);
+    if !dep_path.is_absolute() {
+        return None;
+    }
     let relative = dep_path.strip_prefix(root).ok()?;
     if relative.as_os_str().is_empty() {
         Some("package.json".into())
