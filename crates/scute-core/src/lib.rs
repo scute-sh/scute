@@ -12,6 +12,7 @@
 pub mod code_similarity;
 pub mod commit_message;
 pub mod dependency_freshness;
+pub mod parser;
 pub mod report;
 
 use serde::{Deserialize, Serialize};

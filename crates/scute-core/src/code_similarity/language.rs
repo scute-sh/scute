@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::path::Path;
 
-use super::parser::AstParser;
+use crate::parser::AstParser;
 
 type TestDetector = fn(&mut dyn AstParser, &Path, &str, usize, usize) -> bool;
 
@@ -307,7 +307,7 @@ pub fn typescript_tsx() -> LanguageConfig {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::code_similarity::TreeSitterParser;
+    use crate::parser::TreeSitterParser;
 
     fn parse_rust_test_ranges(src: &str) -> Vec<(usize, usize)> {
         let mut parser = TreeSitterParser::new();

@@ -1,4 +1,5 @@
-use scute_core::code_similarity::{TreeSitterParser, language, tokenize};
+use scute_core::code_similarity::{language, tokenize};
+use scute_core::parser::TreeSitterParser;
 
 #[test]
 fn line_numbers_are_one_indexed() {
@@ -20,7 +21,7 @@ fn token_labels(source: &str, lang: &scute_core::code_similarity::LanguageConfig
 }
 
 fn tokenize_to_labels(
-    parser: &mut dyn scute_core::code_similarity::AstParser,
+    parser: &mut dyn scute_core::parser::AstParser,
     source: &str,
     lang: &scute_core::code_similarity::LanguageConfig,
 ) -> String {
