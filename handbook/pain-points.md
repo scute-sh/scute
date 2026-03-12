@@ -74,7 +74,7 @@ value.
 - **Overparameterization.** (×1) Extracting a helper but keeping the
   hardcoded value as a parameter instead of encapsulating it. If every
   call site passes the same value, the helper should own that value.
-- **Solution-space anchoring.** (×3) Fixating on how existing code works
+- **Solution-space anchoring.** (×5) Fixating on how existing code works
   (helpers, models, constructors) instead of stepping back to the problem
   space. Leads to contorted designs that serve the implementation rather than
   the user. The question should always be "what does the consumer need?" not
@@ -158,15 +158,19 @@ value.
   agent was actively using, instead of working within the existing worktree or
   creating a new one with `isolation: "worktree"`. The shortcut to unblock
   yourself destroys someone else's workspace.
-- **Checklists skipped under momentum.** (×15) Established workflows and
+- **Checklists skipped under momentum.** (×16) Established workflows and
   checklists exist but get bypassed when focus is on "just get the thing done."
   The process is known, the trigger is clear, but urgency wins over discipline.
   Especially common with agents who optimize for task completion over process
   compliance.
-- **Exploratory poking instead of testing.** (×1) When exploring how something
+- **Exploratory poking instead of testing.** (×2) When exploring how something
   behaves (an API, an edge case, a library quirk), the agent reads source or
   writes throwaway scripts instead of writing a test. The test harness gives
   faster feedback and the answer persists as documentation.
+- **Stated assumptions without verifying.** (×2) Confidently claimed a tool's
+  fallback behavior ("it installs latest by default") without checking. The
+  claim was plausible but wrong, caught only after CI failed. When behavior
+  isn't documented in memory, verify it before asserting it.
 - **Docs/examples not consulted before building.** (×2) Framework documentation
   and official examples show the idiomatic pattern, but the agent invents a
   manual approach instead of reading the docs first. Wastes time and produces

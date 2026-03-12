@@ -30,9 +30,9 @@ Assess issue complexity to pick the right approach:
 
 The build phase belongs to whatever skill you invoke. Follow its process fully.
 
-### Planning artifacts
+### Acceptance criteria belong to the issue
 
-When the build process generates planning artifacts (criteria, scout report, sketch), attach them to the issue as comments once finalized. These artifacts belong to the issue, not to any worktree.
+When the build process produces acceptance criteria, update the issue description to include them. Criteria are the shared contract — they belong with the issue, not in a local file. Other planning artifacts (scout report, sketch) are working files that stay local in the worktree.
 
 ### Multi-PR issues
 
@@ -43,7 +43,7 @@ For substantial work, each slice is a shippable PR. The cycle per slice:
 3. Go to Phase 3 and 4 (PR → CI green)
 4. Worktree is disposable after merge
 
-Before starting a new slice, read planning artifacts back from the issue comments to restore context. Each PR must not break existing behavior.
+Each PR must not break existing behavior. If local planning files are lost between worktrees, re-derive slices from the criteria on the issue.
 
 ### Single-PR issues
 

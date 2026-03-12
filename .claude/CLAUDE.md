@@ -32,7 +32,7 @@ Use them.
 
 ## Explore by testing, not by poking
 
-When you need to understand how something behaves (an API, an edge case, a library), write a test and run it. Don't poke around with throwaway scripts or read source to guess. The test harness gives you a faster feedback loop and the answer sticks around as documentation.
+When you need to understand how something behaves (an API, an edge case, a library), write a test using the project's test harness and run it. Don't poke around with throwaway scripts, temp directories, or read source to guess. "Write a test" means use the actual test infrastructure (e.g. `TestProject`, existing test utilities), not a one-off shell experiment dressed up as exploration. The test harness gives you a faster feedback loop and the answer sticks around as documentation.
 
 ## Before committing
 
