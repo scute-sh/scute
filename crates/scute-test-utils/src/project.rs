@@ -134,17 +134,19 @@ impl TestProject {
                 &self.dev_dependencies,
                 &self.members,
             ),
-            ProjectKind::Npm => setup_npm_project(
+            ProjectKind::Npm => setup_js_project(
                 root,
                 &self.dependencies,
                 &self.dev_dependencies,
                 &self.members,
+                &JsToolchain::Npm,
             ),
-            ProjectKind::Pnpm => setup_pnpm_project(
+            ProjectKind::Pnpm => setup_js_project(
                 root,
                 &self.dependencies,
                 &self.dev_dependencies,
                 &self.members,
+                &JsToolchain::Pnpm,
             ),
             ProjectKind::Empty => {}
         }
@@ -212,108 +214,79 @@ fn setup_cargo_member(root: &Path, path: &str, member: &TestMember) {
     std::fs::write(member_dir.join("Cargo.toml"), toml).unwrap();
 }
 
-fn setup_npm_project(
+enum JsToolchain {
+    Npm,
+    Pnpm,
+}
+
+impl JsToolchain {
+    fn command(&self) -> &str {
+        match self {
+            Self::Npm => "npm",
+            Self::Pnpm => "pnpm",
+        }
+    }
+}
+
+fn setup_js_project(
     root: &Path,
     dependencies: &[(String, String)],
     dev_dependencies: &[(String, String)],
     members: &[(String, TestMember)],
+    toolchain: &JsToolchain,
 ) {
     let mut pkg = serde_json::Map::new();
     pkg.insert("name".into(), "test-project".into());
     pkg.insert("version".into(), "1.0.0".into());
 
     if !members.is_empty() {
-        let workspace_paths: Vec<serde_json::Value> = members
-            .iter()
-            .map(|(path, _)| serde_json::Value::String(path.clone()))
-            .collect();
-        pkg.insert("workspaces".into(), workspace_paths.into());
-    }
-
-    append_npm_deps(&mut pkg, dependencies, dev_dependencies);
-
-    let json = serde_json::to_string_pretty(&pkg).unwrap();
-    std::fs::write(root.join("package.json"), json).unwrap();
-
-    for (path, member) in members {
-        setup_npm_member(root, path, member);
-    }
-
-    let output = std::process::Command::new("npm")
-        .args(["install"])
-        .current_dir(root)
-        .output()
-        .expect("npm must be installed to run npm integration tests");
-
-    assert!(
-        output.status.success(),
-        "npm install failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-}
-
-fn setup_npm_member(root: &Path, path: &str, member: &TestMember) {
-    let member_dir = root.join(path);
-    std::fs::create_dir_all(&member_dir).unwrap();
-
-    let basename = Path::new(path).file_name().unwrap().to_string_lossy();
-
-    let mut pkg = serde_json::Map::new();
-    pkg.insert("name".into(), format!("@test/{basename}").into());
-    pkg.insert("version".into(), "1.0.0".into());
-
-    append_npm_deps(&mut pkg, &member.dependencies, &member.dev_dependencies);
-
-    let json = serde_json::to_string_pretty(&pkg).unwrap();
-    std::fs::write(member_dir.join("package.json"), json).unwrap();
-}
-
-fn setup_pnpm_project(
-    root: &Path,
-    dependencies: &[(String, String)],
-    dev_dependencies: &[(String, String)],
-    members: &[(String, TestMember)],
-) {
-    let mut pkg = serde_json::Map::new();
-    pkg.insert("name".into(), "test-project".into());
-    pkg.insert("version".into(), "1.0.0".into());
-
-    append_npm_deps(&mut pkg, dependencies, dev_dependencies);
-
-    let json = serde_json::to_string_pretty(&pkg).unwrap();
-    std::fs::write(root.join("package.json"), json).unwrap();
-
-    if !members.is_empty() {
-        let patterns: Vec<String> = members.iter().map(|(path, _)| path.clone()).collect();
-        let yaml = format!(
-            "packages:\n{}",
-            patterns
-                .iter()
-                .map(|p| format!("  - {p}"))
-                .collect::<Vec<_>>()
-                .join("\n")
-        );
-        std::fs::write(root.join("pnpm-workspace.yaml"), yaml).unwrap();
+        match toolchain {
+            JsToolchain::Npm => {
+                let workspace_paths: Vec<serde_json::Value> = members
+                    .iter()
+                    .map(|(path, _)| serde_json::Value::String(path.clone()))
+                    .collect();
+                pkg.insert("workspaces".into(), workspace_paths.into());
+            }
+            JsToolchain::Pnpm => {
+                let yaml = members
+                    .iter()
+                    .map(|(path, _)| format!("  - {path}"))
+                    .collect::<Vec<_>>()
+                    .join("\n");
+                std::fs::write(
+                    root.join("pnpm-workspace.yaml"),
+                    format!("packages:\n{yaml}"),
+                )
+                .unwrap();
+            }
+        }
 
         for (path, member) in members {
-            setup_pnpm_member(root, path, member);
+            setup_js_member(root, path, member);
         }
     }
 
-    let output = std::process::Command::new("pnpm")
+    append_js_deps(&mut pkg, dependencies, dev_dependencies);
+
+    let json = serde_json::to_string_pretty(&pkg).unwrap();
+    std::fs::write(root.join("package.json"), json).unwrap();
+
+    let cmd = toolchain.command();
+    let output = std::process::Command::new(cmd)
         .args(["install"])
         .current_dir(root)
         .output()
-        .expect("pnpm must be installed to run pnpm integration tests");
+        .unwrap_or_else(|_| panic!("{cmd} must be installed to run {cmd} integration tests"));
 
     assert!(
         output.status.success(),
-        "pnpm install failed: {}",
+        "{cmd} install failed: {}",
         String::from_utf8_lossy(&output.stderr)
     );
 }
 
-fn setup_pnpm_member(root: &Path, path: &str, member: &TestMember) {
+fn setup_js_member(root: &Path, path: &str, member: &TestMember) {
     let member_dir = root.join(path);
     std::fs::create_dir_all(&member_dir).unwrap();
 
@@ -323,13 +296,13 @@ fn setup_pnpm_member(root: &Path, path: &str, member: &TestMember) {
     pkg.insert("name".into(), format!("@test/{basename}").into());
     pkg.insert("version".into(), "1.0.0".into());
 
-    append_npm_deps(&mut pkg, &member.dependencies, &member.dev_dependencies);
+    append_js_deps(&mut pkg, &member.dependencies, &member.dev_dependencies);
 
     let json = serde_json::to_string_pretty(&pkg).unwrap();
     std::fs::write(member_dir.join("package.json"), json).unwrap();
 }
 
-fn append_npm_deps(
+fn append_js_deps(
     pkg: &mut serde_json::Map<String, serde_json::Value>,
     dependencies: &[(String, String)],
     dev_dependencies: &[(String, String)],
