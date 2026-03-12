@@ -150,8 +150,9 @@ scute check dependency-freshness crates/
 
 ## Scope & limitations
 
-- **Supported ecosystems:** Cargo (Rust) and npm (JavaScript/TypeScript). Other ecosystems are planned.
+- **Supported ecosystems:** Cargo (Rust), npm and pnpm (JavaScript/TypeScript). Other ecosystems are planned.
 - **Requires network access.** Queries crates.io and the npm registry to fetch latest versions.
 - **Direct dependencies only.** Transitive dependencies are not evaluated.
-- **Workspace support.** Cargo workspaces and npm workspaces are both supported. All workspace members are evaluated. The `location` field in evidence tells you which manifest (`Cargo.toml` or `package.json`) declares the dependency.
-- **Polyglot monorepos.** Point the check at a repo root containing both Cargo and npm projects. Each ecosystem is discovered and checked independently.
+- **Workspace support.** Cargo workspaces, npm workspaces, and pnpm workspaces are all supported. All workspace members are evaluated. The `location` field in evidence tells you which manifest (`Cargo.toml` or `package.json`) declares the dependency.
+- **Polyglot monorepos.** Point the check at a repo root containing Cargo, npm, and/or pnpm projects. Each ecosystem is discovered and checked independently.
+- **Project detection.** npm and pnpm projects are identified by their lock files (`package-lock.json` and `pnpm-lock.yaml` respectively). A `package.json` without a recognized lock file is skipped.
