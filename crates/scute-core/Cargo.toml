@@ -26,5 +26,5 @@ tree-sitter-typescript = "0.23"
 googletest = { workspace = true }
 test-case = { workspace = true }
 insta = "1"
-scute-test-utils = { path = "../scute-test-utils", version = "0.0.1" }
+scute-test-utils = { path = "../scute-test-utils" }
 tempfile = "3"

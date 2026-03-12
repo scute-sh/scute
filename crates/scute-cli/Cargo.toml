@@ -20,6 +20,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 
 [dev-dependencies]
-scute-test-utils = { path = "../scute-test-utils", version = "0.0.1" }
+scute-test-utils = { path = "../scute-test-utils" }
 serde_json = { workspace = true }
 test-case = { workspace = true }
