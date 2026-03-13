@@ -62,6 +62,12 @@ mod tests {
         assert_eq!(result.unwrap_err().code, "invalid_target");
     }
 
+    fn walk(dir: &Path, exclude: &[String]) -> Vec<PathBuf> {
+        walk_source_files(dir, false, exclude)
+            .map(ignore::DirEntry::into_path)
+            .collect()
+    }
+
     #[test]
     fn walks_only_files() {
         let dir = tempfile::tempdir().unwrap();
@@ -69,11 +75,7 @@ mod tests {
         fs::create_dir(dir.path().join("sub")).unwrap();
         fs::write(dir.path().join("sub/b.rs"), "").unwrap();
 
-        let files: Vec<_> = walk_source_files(dir.path(), false, &[])
-            .map(ignore::DirEntry::into_path)
-            .collect();
-
-        assert_eq!(files.len(), 2);
+        assert_eq!(walk(dir.path(), &[]).len(), 2);
     }
 
     #[test]
@@ -83,9 +85,7 @@ mod tests {
         fs::create_dir(dir.path().join("vendor")).unwrap();
         fs::write(dir.path().join("vendor/skip.rs"), "").unwrap();
 
-        let files: Vec<_> = walk_source_files(dir.path(), false, &["vendor/**".into()])
-            .map(ignore::DirEntry::into_path)
-            .collect();
+        let files = walk(dir.path(), &["vendor/**".into()]);
 
         assert_eq!(files.len(), 1);
         assert!(files[0].ends_with("keep.rs"));
