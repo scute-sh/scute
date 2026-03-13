@@ -8,12 +8,44 @@ pub enum Construct {
     While,
     Loop,
     Match,
+    Closure,
+}
+
+impl Construct {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::If => "if",
+            Self::For => "for",
+            Self::While => "while",
+            Self::Loop => "loop",
+            Self::Match => "match",
+            Self::Closure => "closure",
+        }
+    }
+
+    pub fn flow_break_label(self) -> &'static str {
+        match self {
+            Self::For | Self::While | Self::Loop => "loop",
+            Self::If => "conditional",
+            Self::Match => "expression",
+            Self::Closure => "closure",
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JumpKeyword {
     Break,
     Continue,
+}
+
+impl JumpKeyword {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Break => "break",
+            Self::Continue => "continue",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -196,6 +228,10 @@ fn nesting_chain(node: tree_sitter::Node) -> Vec<Construct> {
     let mut current = node;
     while let Some(parent) = current.parent() {
         if parent.kind() == "function_item" {
+            break;
+        }
+        if parent.kind() == "closure_expression" {
+            chain.push(Construct::Closure);
             break;
         }
         if let Some(construct) = parse_construct(parent.kind()) {
@@ -574,9 +610,18 @@ mod tests {
         );
     }
 
-    #[test]
-    fn jump_contributor_captures_keyword_and_label() {
-        let cs = contributors("fn f() { 'outer: loop { break 'outer; } }");
+    #[test_case(
+        "fn f() { 'outer: loop { break 'outer; } }",
+        JumpKeyword::Break
+        ; "break_captures_keyword_and_label"
+    )]
+    #[test_case(
+        "fn f() { 'outer: loop { continue 'outer; } }",
+        JumpKeyword::Continue
+        ; "continue_captures_keyword_and_label"
+    )]
+    fn jump_contributor(source: &str, expected_keyword: JumpKeyword) {
+        let cs = contributors(source);
         let jump = cs
             .iter()
             .find(|c| matches!(c.kind, ContributorKind::Jump { .. }));
@@ -585,11 +630,33 @@ mod tests {
             jump,
             Some(&Contributor {
                 kind: ContributorKind::Jump {
-                    keyword: JumpKeyword::Break,
+                    keyword: expected_keyword,
                     label: "'outer".into(),
                 },
                 line: 1,
                 increment: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn nesting_chain_includes_closure_boundary() {
+        let cs =
+            contributors("fn f() { for x in [1] { [1].iter().filter(|y| { if **y > 0 {} }); } }");
+        let nested = cs
+            .iter()
+            .find(|c| matches!(c.kind, ContributorKind::Nesting { .. }));
+
+        assert_eq!(
+            nested,
+            Some(&Contributor {
+                kind: ContributorKind::Nesting {
+                    construct: Construct::If,
+                    depth: 2,
+                    chain: vec![Construct::Closure, Construct::If],
+                },
+                line: 1,
+                increment: 3,
             })
         );
     }

@@ -89,35 +89,10 @@ fn score_file(
         .collect()
 }
 
-fn construct_label(construct: score::Construct) -> &'static str {
-    match construct {
-        score::Construct::If => "if",
-        score::Construct::For => "for",
-        score::Construct::While => "while",
-        score::Construct::Loop => "loop",
-        score::Construct::Match => "match",
-    }
-}
-
-fn flow_break_label(construct: score::Construct) -> &'static str {
-    match construct {
-        score::Construct::For | score::Construct::While | score::Construct::Loop => "loop",
-        score::Construct::If => "conditional",
-        score::Construct::Match => "expression",
-    }
-}
-
-fn jump_keyword_label(keyword: score::JumpKeyword) -> &'static str {
-    match keyword {
-        score::JumpKeyword::Break => "break",
-        score::JumpKeyword::Continue => "continue",
-    }
-}
-
 fn format_nesting_chain(chain: &[score::Construct]) -> String {
     chain
         .iter()
-        .map(|c| construct_label(*c))
+        .map(|c| c.label())
         .collect::<Vec<_>>()
         .join(" > ")
 }
@@ -127,14 +102,10 @@ fn pluralize_levels(n: u64) -> &'static str {
 }
 
 fn format_ops(operators: &[String]) -> String {
-    let mut seen: Vec<&str> = vec![];
-    for op in operators {
-        if !seen.contains(&op.as_str()) {
-            seen.push(op);
-        }
-    }
-    let quoted: Vec<String> = seen.iter().map(|o| format!("'{o}'")).collect();
-    let prefix = if seen.len() > 1 { "mixed " } else { "" };
+    let mut unique: Vec<&str> = operators.iter().map(String::as_str).collect();
+    unique.dedup();
+    let quoted: Vec<String> = unique.iter().map(|o| format!("'{o}'")).collect();
+    let prefix = if unique.len() > 1 { "mixed " } else { "" };
     format!("{prefix}{}", quoted.join(" and "))
 }
 
@@ -147,8 +118,8 @@ fn format_evidence(c: &score::Contributor, path: &Path) -> Evidence {
             "flow break",
             format!(
                 "'{}' {} (+{})",
-                construct_label(*construct),
-                flow_break_label(*construct),
+                construct.label(),
+                construct.flow_break_label(),
                 c.increment
             ),
             None,
@@ -158,7 +129,7 @@ fn format_evidence(c: &score::Contributor, path: &Path) -> Evidence {
             depth,
             chain,
         } => {
-            let name = construct_label(*construct);
+            let name = construct.label();
             let chain = format_nesting_chain(chain);
             let levels = pluralize_levels(*depth);
             (
@@ -187,11 +158,7 @@ fn format_evidence(c: &score::Contributor, path: &Path) -> Evidence {
         ),
         score::ContributorKind::Jump { keyword, label } => (
             "jump",
-            format!(
-                "'{}' to label '{label}' (+{})",
-                jump_keyword_label(*keyword),
-                c.increment
-            ),
+            format!("'{}' to label {label} (+{})", keyword.label(), c.increment),
             text("restructure to avoid labeled jump"),
         ),
     };
@@ -290,7 +257,7 @@ mod tests {
     )]
     #[test_case(
         "fn f() { for x in [1] { if true {} } }",
-        "nesting", "'if' nested 1 level: 'for > if'", Some("extract inner block into a function")
+        "nesting", "'if' nested 1 level: 'for > if' (+2)", Some("extract inner block into a function")
         ; "nesting_shows_chain_and_suggests_extraction"
     )]
     #[test_case(
@@ -299,31 +266,35 @@ mod tests {
         ; "else_suggests_guard_clause"
     )]
     #[test_case(
+        "fn f(a: bool, b: bool) -> bool { a && b }",
+        "boolean logic", "'&&' operators (+1)", Some("extract into a named boolean")
+        ; "logical_single_operator"
+    )]
+    #[test_case(
         "fn f(a: bool, b: bool, c: bool) -> bool { a && b || c }",
-        "boolean logic", "mixed '&&' and '||' operators", Some("extract into a named boolean")
-        ; "logical_shows_operators"
+        "boolean logic", "mixed '&&' and '||' operators (+2)", Some("extract into a named boolean")
+        ; "logical_mixed_operators"
     )]
     #[test_case(
         "fn go(n: u64) -> u64 { go(n - 1) }",
-        "recursion", "recursive call to 'go'", Some("consider iterative approach")
+        "recursion", "recursive call to 'go' (+1)", Some("consider iterative approach")
         ; "recursion_shows_function_name"
     )]
     #[test_case(
         "fn f() { 'outer: loop { break 'outer; } }",
-        "jump", "'break' to label ''outer'", Some("restructure to avoid labeled jump")
+        "jump", "'break' to label 'outer (+1)", Some("restructure to avoid labeled jump")
         ; "jump_shows_label"
     )]
-    fn evidence_formatting(source: &str, rule: &str, found_contains: &str, expected: Option<&str>) {
+    fn evidence_formatting(source: &str, rule: &str, expected_found: &str, expected: Option<&str>) {
         let evidence = evidence_of(source);
         let entry = evidence
             .iter()
             .find(|e| e.rule.as_deref() == Some(rule))
             .unwrap_or_else(|| panic!("no evidence with rule '{rule}'"));
 
-        assert!(
-            entry.found.contains(found_contains),
-            "expected found to contain '{found_contains}', got '{}'",
-            entry.found
+        assert_eq!(
+            entry.found, expected_found,
+            "evidence found mismatch for rule '{rule}'"
         );
         assert_eq!(entry.expected, expected.map(|s| Expected::Text(s.into())));
     }

@@ -258,22 +258,8 @@ mod code_complexity {
 
     use Interface::{Cli, Mcp};
 
-    #[test_case(Cli)]
-    #[test_case(Mcp)]
-    fn complex_rust_function_gets_flagged(interface: Interface) {
-        Scute::new(interface)
-            .scute_config(
-                r"
-checks:
-  code-complexity:
-    thresholds:
-      warn: 1
-      fail: 10
-",
-            )
-            .source_file(
-                "src/complex.rs",
-                r"
+    // for: +1, if: +2, if: +3, else: +1 → score 7, 4 contributors (1 nesting at index 1)
+    const COMPLEX_SOURCE: &str = r"
 fn process(items: &[i32]) -> i32 {
     let mut total = 0;
     for item in items {
@@ -287,9 +273,27 @@ fn process(items: &[i32]) -> i32 {
     }
     total
 }
+";
+
+    fn complex_function_check(interface: Interface) -> scute_test_utils::CheckResult {
+        Scute::new(interface)
+            .scute_config(
+                r"
+checks:
+  code-complexity:
+    thresholds:
+      warn: 1
+      fail: 10
 ",
             )
+            .source_file("src/complex.rs", COMPLEX_SOURCE)
             .check(&["code-complexity"])
+    }
+
+    #[test_case(Cli)]
+    #[test_case(Mcp)]
+    fn complex_rust_function_gets_flagged(interface: Interface) {
+        complex_function_check(interface)
             .expect_warn()
             .expect_target_contains("process");
     }
@@ -297,38 +301,10 @@ fn process(items: &[i32]) -> i32 {
     #[test_case(Cli)]
     #[test_case(Mcp)]
     fn flagged_function_includes_evidence(interface: Interface) {
-        Scute::new(interface)
-            .scute_config(
-                r"
-checks:
-  code-complexity:
-    thresholds:
-      warn: 1
-      fail: 10
-",
-            )
-            .source_file(
-                "src/complex.rs",
-                r"
-fn process(items: &[i32]) -> i32 {
-    let mut total = 0;
-    for item in items {
-        if *item > 0 {
-            if *item > 10 {
-                total += item;
-            } else {
-                total -= item;
-            }
-        }
-    }
-    total
-}
-",
-            )
-            .check(&["code-complexity"])
+        complex_function_check(interface)
             .expect_warn()
             .expect_evidence_count(4)
-            .expect_evidence_has_expected(1);
+            .expect_evidence_rule(1, "nesting");
     }
 
     #[test_case(Cli)]
