@@ -19,7 +19,6 @@ cd "$(dirname "$0")/../../website"
 
 # shellcheck disable=SC2086
 deno deploy \
-  --org=scute \
   --app=scute-website \
-  --entrypoint=main.ts \
+  --org=scute \
   $prod_flag

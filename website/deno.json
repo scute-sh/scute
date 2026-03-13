@@ -1,5 +1,11 @@
 {
   "compilerOptions": {
     "lib": ["deno.window"]
+  },
+  "deploy": {
+    "runtime": {
+      "type": "dynamic",
+      "entrypoint": "main.ts"
+    }
   }
 }
