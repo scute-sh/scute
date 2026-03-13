@@ -3,9 +3,7 @@
     "lib": ["deno.window"]
   },
   "deploy": {
-    "runtime": {
-      "type": "dynamic",
-      "entrypoint": "main.ts"
-    }
+    "app": "scute-website",
+    "org": "scute"
   }
 }

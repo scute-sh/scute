@@ -18,7 +18,4 @@ done
 cd "$(dirname "$0")/../../website"
 
 # shellcheck disable=SC2086
-deno deploy \
-  --app=scute-website \
-  --org=scute \
-  $prod_flag
+deno deploy $prod_flag
