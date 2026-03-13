@@ -148,7 +148,7 @@ fn build_tool_args(check_name: &str, args: &[&str]) -> serde_json::Value {
             let message = args.first().copied().unwrap_or("");
             serde_json::json!({ "message": message })
         }
-        "code-similarity" | "cognitive-complexity" => {
+        "code-similarity" | "code-complexity" => {
             let mut json = serde_json::Map::new();
             let mut files = Vec::new();
             let mut i = 0;

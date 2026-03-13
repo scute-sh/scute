@@ -244,7 +244,7 @@ checks:
     }
 }
 
-mod cognitive_complexity {
+mod code_complexity {
     use scute_test_utils::{Interface, Scute};
     use test_case::test_case;
 
@@ -257,7 +257,7 @@ mod cognitive_complexity {
             .scute_config(
                 r"
 checks:
-  cognitive-complexity:
+  code-complexity:
     thresholds:
       warn: 1
       fail: 10
@@ -281,7 +281,7 @@ fn process(items: &[i32]) -> i32 {
 }
 ",
             )
-            .check(&["cognitive-complexity"])
+            .check(&["code-complexity"])
             .expect_warn()
             .expect_target_contains("process");
     }
@@ -291,7 +291,7 @@ fn process(items: &[i32]) -> i32 {
     fn simple_rust_function_passes(interface: Interface) {
         Scute::new(interface)
             .source_file("src/simple.rs", "fn add(a: i32, b: i32) -> i32 { a + b }")
-            .check(&["cognitive-complexity"])
+            .check(&["code-complexity"])
             .expect_pass();
     }
 }

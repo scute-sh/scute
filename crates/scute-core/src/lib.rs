@@ -5,12 +5,13 @@
 //!
 //! # Available checks
 //!
+//! - [`code_complexity::check`] — Code complexity scoring
 //! - [`code_similarity::check`] — Code duplication detection
 //! - [`commit_message`] — Conventional Commits validation
 //! - [`dependency_freshness`] — Cargo dependency freshness
 
+pub mod code_complexity;
 pub mod code_similarity;
-pub mod cognitive_complexity;
 pub mod commit_message;
 pub mod dependency_freshness;
 pub mod files;

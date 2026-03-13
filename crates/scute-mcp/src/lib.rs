@@ -17,7 +17,7 @@ use schema::CheckReportSchema;
 use scute_config::ScuteConfig;
 use scute_core::report::CheckReport;
 use scute_core::{
-    ExecutionError, code_similarity, cognitive_complexity, commit_message, dependency_freshness,
+    ExecutionError, code_complexity, code_similarity, commit_message, dependency_freshness,
 };
 use serde::de::DeserializeOwned;
 
@@ -93,13 +93,13 @@ impl ScuteMcp {
         )
     }
 
-    /// Measure cognitive complexity of functions in your project.
+    /// Measure code complexity of functions in your project.
     ///
     /// Scores each function based on how hard it is to understand: nesting,
     /// control flow, logical operators, recursion. Flags functions that
     /// exceed the configured threshold.
     #[tool(
-        name = "check_cognitive_complexity",
+        name = "check_code_complexity",
         output_schema = schema_for_output::<CheckReportSchema>().unwrap(),
         annotations(
             read_only_hint = true,
@@ -108,7 +108,7 @@ impl ScuteMcp {
             open_world_hint = false,
         )
     )]
-    async fn check_cognitive_complexity(
+    async fn check_code_complexity(
         &self,
         peer: Peer<RoleServer>,
         Parameters(input): Parameters<CheckSourceFilesInput>,
@@ -116,8 +116,8 @@ impl ScuteMcp {
         run_source_check(
             &peer,
             input,
-            cognitive_complexity::CHECK_NAME,
-            cognitive_complexity::check,
+            code_complexity::CHECK_NAME,
+            code_complexity::check,
         )
         .await
     }

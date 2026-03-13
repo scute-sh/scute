@@ -9,7 +9,7 @@ use output::CheckReportJson;
 use scute_config::ScuteConfig;
 use scute_core::report::CheckReport;
 use scute_core::{
-    ExecutionError, code_similarity, cognitive_complexity, commit_message, dependency_freshness,
+    ExecutionError, code_complexity, code_similarity, commit_message, dependency_freshness,
 };
 use serde::Serialize;
 
@@ -51,8 +51,8 @@ enum Checks {
         /// Files to focus on (only report clones involving these). Reads from stdin if piped.
         files: Vec<PathBuf>,
     },
-    /// Measure cognitive complexity of functions
-    CognitiveComplexity {
+    /// Measure code complexity of functions
+    CodeComplexity {
         /// Directory to scan for source files (defaults to working directory)
         #[arg(long)]
         source_dir: Option<PathBuf>,
@@ -97,20 +97,20 @@ fn run(cli: Cli) -> Result<()> {
                 Checks::List => {
                     let checks = [
                         code_similarity::CHECK_NAME,
-                        cognitive_complexity::CHECK_NAME,
+                        code_complexity::CHECK_NAME,
                         commit_message::CHECK_NAME,
                         dependency_freshness::CHECK_NAME,
                     ];
                     println!("{}", serde_json::to_string(&checks)?);
                     Ok(())
                 }
-                Checks::CognitiveComplexity { source_dir, files } => run_source_check(
+                Checks::CodeComplexity { source_dir, files } => run_source_check(
                     &config,
                     &project_root,
                     source_dir,
                     files,
-                    cognitive_complexity::CHECK_NAME,
-                    cognitive_complexity::check,
+                    code_complexity::CHECK_NAME,
+                    code_complexity::check,
                 ),
                 Checks::CodeSimilarity { source_dir, files } => run_source_check(
                     &config,
@@ -155,7 +155,7 @@ fn classify_clap_error(err: &clap::Error) -> ExecutionError {
                 recovery: format!(
                     "available checks: {}, {}, {}, {}",
                     code_similarity::CHECK_NAME,
-                    cognitive_complexity::CHECK_NAME,
+                    code_complexity::CHECK_NAME,
                     commit_message::CHECK_NAME,
                     dependency_freshness::CHECK_NAME
                 ),

@@ -6,7 +6,7 @@ use super::score;
 use crate::files;
 use crate::{Evaluation, Evidence, ExecutionError, Thresholds};
 
-pub const CHECK_NAME: &str = "cognitive-complexity";
+pub const CHECK_NAME: &str = "code-complexity";
 
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
