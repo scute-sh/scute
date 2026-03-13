@@ -224,10 +224,45 @@ impl CheckResult {
         self
     }
 
+    pub fn expect_evidence_count(&self, expected: usize) -> &Self {
+        let evidence = self.first_finding()["evidence"]
+            .as_array()
+            .expect("evidence should be an array");
+        assert_eq!(
+            evidence.len(),
+            expected,
+            "expected {expected} evidence entries, got {}",
+            evidence.len()
+        );
+        self
+    }
+
+    pub fn expect_evidence_found_contains(&self, index: usize, substring: &str) -> &Self {
+        let found = self.first_finding()["evidence"][index]["found"]
+            .as_str()
+            .unwrap_or("");
+        assert!(
+            found.contains(substring),
+            "expected evidence[{index}].found to contain {substring:?}, got {found:?}"
+        );
+        self
+    }
+
     pub fn expect_evidence_has_expected(&self, index: usize) -> &Self {
         assert!(
             !self.first_finding()["evidence"][index]["expected"].is_null(),
             "expected evidence[{index}].expected to be present"
+        );
+        self
+    }
+
+    pub fn expect_evidence_expected_contains(&self, index: usize, substring: &str) -> &Self {
+        let expected = self.first_finding()["evidence"][index]["expected"]
+            .as_str()
+            .unwrap_or("");
+        assert!(
+            expected.contains(substring),
+            "expected evidence[{index}].expected to contain {substring:?}, got {expected:?}"
         );
         self
     }
