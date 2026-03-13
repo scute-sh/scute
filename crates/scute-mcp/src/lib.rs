@@ -16,7 +16,9 @@ use rmcp::{
 use schema::CheckReportSchema;
 use scute_config::ScuteConfig;
 use scute_core::report::CheckReport;
-use scute_core::{ExecutionError, code_similarity, commit_message, dependency_freshness};
+use scute_core::{
+    ExecutionError, code_similarity, cognitive_complexity, commit_message, dependency_freshness,
+};
 use serde::de::DeserializeOwned;
 
 const INSTRUCTIONS: &str = "\
@@ -39,6 +41,15 @@ struct CheckCommitMessageInput {
 struct CheckDependencyFreshnessInput {
     /// Path to the project directory. Defaults to the current working directory.
     path: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+struct CheckCognitiveComplexityInput {
+    /// Directory to scan for source files. Defaults to the project root.
+    source_dir: Option<String>,
+    /// Files to focus on. Only report complexity for functions in these files.
+    /// When empty, all discovered files are checked (full-project scan).
+    files: Option<Vec<String>>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
@@ -89,6 +100,43 @@ impl ScuteMcp {
             &project_root,
             commit_message::CHECK_NAME,
             |def: &commit_message::Definition| commit_message::check(&input.message, def),
+        )
+    }
+
+    /// Measure cognitive complexity of functions in your project.
+    ///
+    /// Scores each function based on how hard it is to understand: nesting,
+    /// control flow, logical operators, recursion. Flags functions that
+    /// exceed the configured threshold.
+    #[tool(
+        name = "check_cognitive_complexity",
+        output_schema = schema_for_output::<CheckReportSchema>().unwrap(),
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
+    )]
+    async fn check_cognitive_complexity(
+        &self,
+        peer: Peer<RoleServer>,
+        Parameters(input): Parameters<CheckCognitiveComplexityInput>,
+    ) -> Result<CallToolResult, ErrorData> {
+        let project_root = resolve_project_root(&peer).await?;
+        let source_dir = path_or_root(input.source_dir, &project_root);
+        let focus_files: Vec<PathBuf> = input
+            .files
+            .unwrap_or_default()
+            .into_iter()
+            .map(PathBuf::from)
+            .collect();
+        run_check(
+            &project_root,
+            cognitive_complexity::CHECK_NAME,
+            |def: &cognitive_complexity::Definition| {
+                cognitive_complexity::check(&source_dir, &focus_files, def)
+            },
         )
     }
 

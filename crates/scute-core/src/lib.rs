@@ -10,6 +10,7 @@
 //! - [`dependency_freshness`] — Cargo dependency freshness
 
 pub mod code_similarity;
+pub mod cognitive_complexity;
 pub mod commit_message;
 pub mod dependency_freshness;
 pub mod parser;

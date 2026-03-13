@@ -244,6 +244,58 @@ checks:
     }
 }
 
+mod cognitive_complexity {
+    use scute_test_utils::{Interface, Scute};
+    use test_case::test_case;
+
+    use Interface::{Cli, Mcp};
+
+    #[test_case(Cli)]
+    #[test_case(Mcp)]
+    fn complex_rust_function_gets_flagged(interface: Interface) {
+        Scute::new(interface)
+            .scute_config(
+                r"
+checks:
+  cognitive-complexity:
+    thresholds:
+      warn: 1
+      fail: 10
+",
+            )
+            .source_file(
+                "src/complex.rs",
+                r"
+fn process(items: &[i32]) -> i32 {
+    let mut total = 0;
+    for item in items {
+        if *item > 0 {
+            if *item > 10 {
+                total += item;
+            } else {
+                total -= item;
+            }
+        }
+    }
+    total
+}
+",
+            )
+            .check(&["cognitive-complexity"])
+            .expect_warn()
+            .expect_target_contains("process");
+    }
+
+    #[test_case(Cli)]
+    #[test_case(Mcp)]
+    fn simple_rust_function_passes(interface: Interface) {
+        Scute::new(interface)
+            .source_file("src/simple.rs", "fn add(a: i32, b: i32) -> i32 { a + b }")
+            .check(&["cognitive-complexity"])
+            .expect_pass();
+    }
+}
+
 mod config {
     use scute_test_utils::{Interface, Scute};
     use test_case::test_case;

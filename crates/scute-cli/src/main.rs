@@ -8,7 +8,9 @@ mod output;
 use output::CheckReportJson;
 use scute_config::ScuteConfig;
 use scute_core::report::CheckReport;
-use scute_core::{ExecutionError, code_similarity, commit_message, dependency_freshness};
+use scute_core::{
+    ExecutionError, code_similarity, cognitive_complexity, commit_message, dependency_freshness,
+};
 use serde::Serialize;
 
 #[derive(Debug, Parser)]
@@ -49,6 +51,14 @@ enum Checks {
         /// Files to focus on (only report clones involving these). Reads from stdin if piped.
         files: Vec<PathBuf>,
     },
+    /// Measure cognitive complexity of functions
+    CognitiveComplexity {
+        /// Directory to scan for source files (defaults to working directory)
+        #[arg(long)]
+        source_dir: Option<PathBuf>,
+        /// Files to focus on. Reads from stdin if piped.
+        files: Vec<PathBuf>,
+    },
     /// Find outdated dependencies
     DependencyFreshness {
         /// Path to the project directory (defaults to working directory)
@@ -87,11 +97,22 @@ fn run(cli: Cli) -> Result<()> {
                 Checks::List => {
                     let checks = [
                         code_similarity::CHECK_NAME,
+                        cognitive_complexity::CHECK_NAME,
                         commit_message::CHECK_NAME,
                         dependency_freshness::CHECK_NAME,
                     ];
                     println!("{}", serde_json::to_string(&checks)?);
                     Ok(())
+                }
+                Checks::CognitiveComplexity { source_dir, files } => {
+                    let source_dir = source_dir.unwrap_or_else(|| project_root.clone());
+                    let focus_files = resolve_focus_files(files);
+                    let definition: cognitive_complexity::Definition = config
+                        .definition(cognitive_complexity::CHECK_NAME)
+                        .unwrap_or_else(|e| invalid_config(&e));
+                    let result =
+                        cognitive_complexity::check(&source_dir, &focus_files, &definition);
+                    output(&CheckReport::new(cognitive_complexity::CHECK_NAME, result))
                 }
                 Checks::CodeSimilarity { source_dir, files } => {
                     let source_dir = source_dir.unwrap_or_else(|| project_root.clone());
@@ -135,8 +156,9 @@ fn classify_clap_error(err: &clap::Error) -> ExecutionError {
                 code: "unknown_check".into(),
                 message: format!("unknown check: {name}"),
                 recovery: format!(
-                    "available checks: {}, {}, {}",
+                    "available checks: {}, {}, {}, {}",
                     code_similarity::CHECK_NAME,
+                    cognitive_complexity::CHECK_NAME,
                     commit_message::CHECK_NAME,
                     dependency_freshness::CHECK_NAME
                 ),
