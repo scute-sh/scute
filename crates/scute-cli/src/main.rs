@@ -218,11 +218,7 @@ fn run_source_check<D: Default + serde::de::DeserializeOwned>(
     source_dir: Option<PathBuf>,
     files: Vec<PathBuf>,
     check_name: &str,
-    execute: impl FnOnce(
-        &Path,
-        &[PathBuf],
-        &D,
-    ) -> Result<Vec<scute_core::Evaluation>, ExecutionError>,
+    execute: impl FnOnce(&Path, &[PathBuf], &D) -> Result<Vec<scute_core::Evaluation>, ExecutionError>,
 ) -> Result<()> {
     let source_dir = source_dir.unwrap_or_else(|| project_root.to_path_buf());
     let focus_files = resolve_focus_files(files);
