@@ -143,24 +143,7 @@ fn format_evidence(c: &score::Contributor, path: &Path) -> Evidence {
     let text = |s: &str| Some(Expected::Text(s.into()));
 
     let (rule, found, expected) = match &c.kind {
-        score::ContributorKind::Structural {
-            construct,
-            nesting_depth,
-            nesting_chain,
-        } if *nesting_depth > 0 => {
-            let name = construct_label(*construct);
-            let chain = format_nesting_chain(nesting_chain);
-            let levels = pluralize_levels(*nesting_depth);
-            (
-                "nesting",
-                format!(
-                    "'{name}' nested {nesting_depth} {levels}: '{chain}' (+{})",
-                    c.increment
-                ),
-                text("extract inner block into a function"),
-            )
-        }
-        score::ContributorKind::Structural { construct, .. } => (
+        score::ContributorKind::FlowBreak { construct } => (
             "flow break",
             format!(
                 "'{}' {} (+{})",
@@ -170,6 +153,23 @@ fn format_evidence(c: &score::Contributor, path: &Path) -> Evidence {
             ),
             None,
         ),
+        score::ContributorKind::Nesting {
+            construct,
+            depth,
+            chain,
+        } => {
+            let name = construct_label(*construct);
+            let chain = format_nesting_chain(chain);
+            let levels = pluralize_levels(*depth);
+            (
+                "nesting",
+                format!(
+                    "'{name}' nested {depth} {levels}: '{chain}' (+{})",
+                    c.increment
+                ),
+                text("extract inner block into a function"),
+            )
+        }
         score::ContributorKind::Else => (
             "else",
             format!("'else' branch (+{})", c.increment),

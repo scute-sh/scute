@@ -18,10 +18,13 @@ pub enum JumpKeyword {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ContributorKind {
-    Structural {
+    FlowBreak {
         construct: Construct,
-        nesting_depth: u64,
-        nesting_chain: Vec<Construct>,
+    },
+    Nesting {
+        construct: Construct,
+        depth: u64,
+        chain: Vec<Construct>,
     },
     Else,
     Logical {
@@ -134,14 +137,19 @@ fn score_node(
         | "match_expression") => {
             let construct = parse_construct(kind).unwrap();
             let increment = 1 + nesting;
-            let mut chain = nesting_chain(node);
-            chain.push(construct);
-            contributors.push(Contributor {
-                kind: ContributorKind::Structural {
+            let contributor_kind = if nesting > 0 {
+                let mut chain = nesting_chain(node);
+                chain.push(construct);
+                ContributorKind::Nesting {
                     construct,
-                    nesting_depth: nesting,
-                    nesting_chain: chain,
-                },
+                    depth: nesting,
+                    chain,
+                }
+            } else {
+                ContributorKind::FlowBreak { construct }
+            };
+            contributors.push(Contributor {
+                kind: contributor_kind,
                 line: node.start_position().row + 1,
                 increment,
             });
@@ -490,32 +498,30 @@ mod tests {
     }
 
     #[test]
-    fn structural_at_depth_zero_has_no_nesting() {
+    fn flow_break_at_depth_zero() {
         assert_eq!(
             contributors("fn f() { if true {} }"),
             vec![Contributor {
-                kind: ContributorKind::Structural {
+                kind: ContributorKind::FlowBreak {
                     construct: Construct::If,
-                    nesting_depth: 0,
-                    nesting_chain: vec![Construct::If],
                 },
                 line: 1,
                 increment: 1,
-            },]
+            }]
         );
     }
 
     #[test]
-    fn structural_nested_tracks_depth_and_chain() {
+    fn nesting_tracks_depth_and_chain() {
         let cs = contributors("fn f() { for x in [1] { if true {} } }");
 
         assert_eq!(
             cs[1],
             Contributor {
-                kind: ContributorKind::Structural {
+                kind: ContributorKind::Nesting {
                     construct: Construct::If,
-                    nesting_depth: 1,
-                    nesting_chain: vec![Construct::For, Construct::If],
+                    depth: 1,
+                    chain: vec![Construct::For, Construct::If],
                 },
                 line: 1,
                 increment: 2,
