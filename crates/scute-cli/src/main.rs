@@ -1,5 +1,5 @@
 use std::io::{BufRead, IsTerminal, Read};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -8,7 +8,9 @@ mod output;
 use output::CheckReportJson;
 use scute_config::ScuteConfig;
 use scute_core::report::CheckReport;
-use scute_core::{ExecutionError, code_similarity, commit_message, dependency_freshness};
+use scute_core::{
+    ExecutionError, code_complexity, code_similarity, commit_message, dependency_freshness,
+};
 use serde::Serialize;
 
 #[derive(Debug, Parser)]
@@ -49,6 +51,14 @@ enum Checks {
         /// Files to focus on (only report clones involving these). Reads from stdin if piped.
         files: Vec<PathBuf>,
     },
+    /// Measure code complexity of functions
+    CodeComplexity {
+        /// Directory to scan for source files (defaults to working directory)
+        #[arg(long)]
+        source_dir: Option<PathBuf>,
+        /// Files to focus on. Reads from stdin if piped.
+        files: Vec<PathBuf>,
+    },
     /// Find outdated dependencies
     DependencyFreshness {
         /// Path to the project directory (defaults to working directory)
@@ -87,21 +97,29 @@ fn run(cli: Cli) -> Result<()> {
                 Checks::List => {
                     let checks = [
                         code_similarity::CHECK_NAME,
+                        code_complexity::CHECK_NAME,
                         commit_message::CHECK_NAME,
                         dependency_freshness::CHECK_NAME,
                     ];
                     println!("{}", serde_json::to_string(&checks)?);
                     Ok(())
                 }
-                Checks::CodeSimilarity { source_dir, files } => {
-                    let source_dir = source_dir.unwrap_or_else(|| project_root.clone());
-                    let focus_files = resolve_focus_files(files);
-                    let definition: code_similarity::Definition = config
-                        .definition(code_similarity::CHECK_NAME)
-                        .unwrap_or_else(|e| invalid_config(&e));
-                    let result = code_similarity::check(&source_dir, &focus_files, &definition);
-                    output(&CheckReport::new(code_similarity::CHECK_NAME, result))
-                }
+                Checks::CodeComplexity { source_dir, files } => run_source_check(
+                    &config,
+                    &project_root,
+                    source_dir,
+                    files,
+                    code_complexity::CHECK_NAME,
+                    code_complexity::check,
+                ),
+                Checks::CodeSimilarity { source_dir, files } => run_source_check(
+                    &config,
+                    &project_root,
+                    source_dir,
+                    files,
+                    code_similarity::CHECK_NAME,
+                    code_similarity::check,
+                ),
                 Checks::CommitMessage { message } => {
                     let message = resolve_message(message)?;
                     let definition: commit_message::Definition = config
@@ -135,8 +153,9 @@ fn classify_clap_error(err: &clap::Error) -> ExecutionError {
                 code: "unknown_check".into(),
                 message: format!("unknown check: {name}"),
                 recovery: format!(
-                    "available checks: {}, {}, {}",
+                    "available checks: {}, {}, {}, {}",
                     code_similarity::CHECK_NAME,
+                    code_complexity::CHECK_NAME,
                     commit_message::CHECK_NAME,
                     dependency_freshness::CHECK_NAME
                 ),
@@ -191,6 +210,23 @@ fn output(report: &CheckReport) -> Result<()> {
 
 fn project_root() -> PathBuf {
     std::env::current_dir().expect("working directory accessible")
+}
+
+fn run_source_check<D: Default + serde::de::DeserializeOwned>(
+    config: &ScuteConfig,
+    project_root: &Path,
+    source_dir: Option<PathBuf>,
+    files: Vec<PathBuf>,
+    check_name: &str,
+    execute: impl FnOnce(&Path, &[PathBuf], &D) -> Result<Vec<scute_core::Evaluation>, ExecutionError>,
+) -> Result<()> {
+    let source_dir = source_dir.unwrap_or_else(|| project_root.to_path_buf());
+    let focus_files = resolve_focus_files(files);
+    let definition: D = config
+        .definition(check_name)
+        .unwrap_or_else(|e| invalid_config(&e));
+    let result = execute(&source_dir, &focus_files, &definition);
+    output(&CheckReport::new(check_name, result))
 }
 
 fn resolve_target_path(path: Option<String>) -> PathBuf {

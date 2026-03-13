@@ -6,6 +6,7 @@ use super::{CloneGroup, Occurrence, SourceEntry, TreeSitterParser, find_clones};
 use crate::parser::AstParser;
 use serde::Deserialize;
 
+use crate::files;
 use crate::{Evaluation, Evidence, ExecutionError, Thresholds};
 
 pub const CHECK_NAME: &str = "code-similarity";
@@ -90,7 +91,7 @@ pub fn check(
         fail: Some(DEFAULT_FAIL),
     });
 
-    let canonical_dir = validate_source_dir(source_dir)?;
+    let canonical_dir = files::validate_source_dir(source_dir)?;
     let focus_files = match validate_focus_files(focus_files) {
         Ok(files) => files,
         Err(errors) => return Ok(errors),
@@ -156,14 +157,6 @@ fn read_sources(
             Some((path.display().to_string(), content, lang))
         })
         .collect()
-}
-
-fn validate_source_dir(source_dir: &Path) -> Result<PathBuf, ExecutionError> {
-    source_dir.canonicalize().map_err(|e| ExecutionError {
-        code: "invalid_target".into(),
-        message: format!("cannot read directory {}: {e}", source_dir.display()),
-        recovery: "check that the path exists and is a directory".into(),
-    })
 }
 
 fn validate_focus_files(files: &[PathBuf]) -> Result<Vec<PathBuf>, Vec<Evaluation>> {
@@ -269,30 +262,14 @@ fn discover_files(
     skip_ignored: bool,
     exclude: &[String],
 ) -> Vec<(PathBuf, &'static LanguageConfig)> {
-    let mut builder = ignore::WalkBuilder::new(dir);
-    builder.standard_filters(skip_ignored);
-
-    if !exclude.is_empty() {
-        let mut overrides = ignore::overrides::OverrideBuilder::new(dir);
-        for pattern in exclude {
-            overrides.add(&format!("!{pattern}")).ok();
-        }
-        if let Ok(built) = overrides.build() {
-            builder.overrides(built);
-        }
-    }
-
-    let mut files: Vec<_> = builder
-        .build()
-        .filter_map(Result::ok)
-        .filter(|e| e.file_type().is_some_and(|ft| ft.is_file()))
+    let mut result: Vec<_> = files::walk_source_files(dir, skip_ignored, exclude)
         .filter_map(|e| {
             let lang = language_for_path(e.path())?;
             Some((e.into_path(), lang))
         })
         .collect();
-    files.sort_by(|(a, _), (b, _)| a.cmp(b));
-    files
+    result.sort_by(|(a, _), (b, _)| a.cmp(b));
+    result
 }
 
 fn language_for_path(path: &Path) -> Option<&'static LanguageConfig> {

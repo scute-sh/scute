@@ -16,7 +16,9 @@ use rmcp::{
 use schema::CheckReportSchema;
 use scute_config::ScuteConfig;
 use scute_core::report::CheckReport;
-use scute_core::{ExecutionError, code_similarity, commit_message, dependency_freshness};
+use scute_core::{
+    ExecutionError, code_complexity, code_similarity, commit_message, dependency_freshness,
+};
 use serde::de::DeserializeOwned;
 
 const INSTRUCTIONS: &str = "\
@@ -42,11 +44,10 @@ struct CheckDependencyFreshnessInput {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
-struct CheckCodeSimilarityInput {
+struct CheckSourceFilesInput {
     /// Directory to scan for source files. Defaults to the project root.
     source_dir: Option<String>,
-    /// Files to focus on. Only report clones involving these files.
-    /// When empty, all discovered files are checked (full-project scan).
+    /// Files to focus on. When empty, all discovered files are checked.
     files: Option<Vec<String>>,
 }
 
@@ -92,6 +93,35 @@ impl ScuteMcp {
         )
     }
 
+    /// Measure code complexity of functions in your project.
+    ///
+    /// Scores each function based on how hard it is to understand: nesting,
+    /// control flow, logical operators, recursion. Flags functions that
+    /// exceed the configured threshold.
+    #[tool(
+        name = "check_code_complexity",
+        output_schema = schema_for_output::<CheckReportSchema>().unwrap(),
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false,
+        )
+    )]
+    async fn check_code_complexity(
+        &self,
+        peer: Peer<RoleServer>,
+        Parameters(input): Parameters<CheckSourceFilesInput>,
+    ) -> Result<CallToolResult, ErrorData> {
+        run_source_check(
+            &peer,
+            input,
+            code_complexity::CHECK_NAME,
+            code_complexity::check,
+        )
+        .await
+    }
+
     /// Find code duplication in your project.
     ///
     /// Scans source files for duplicated token sequences. Optionally focus on
@@ -109,23 +139,15 @@ impl ScuteMcp {
     async fn check_code_similarity(
         &self,
         peer: Peer<RoleServer>,
-        Parameters(input): Parameters<CheckCodeSimilarityInput>,
+        Parameters(input): Parameters<CheckSourceFilesInput>,
     ) -> Result<CallToolResult, ErrorData> {
-        let project_root = resolve_project_root(&peer).await?;
-        let source_dir = path_or_root(input.source_dir, &project_root);
-        let focus_files: Vec<PathBuf> = input
-            .files
-            .unwrap_or_default()
-            .into_iter()
-            .map(PathBuf::from)
-            .collect();
-        run_check(
-            &project_root,
+        run_source_check(
+            &peer,
+            input,
             code_similarity::CHECK_NAME,
-            |def: &code_similarity::Definition| {
-                code_similarity::check(&source_dir, &focus_files, def)
-            },
+            code_similarity::check,
         )
+        .await
     }
 
     /// Find outdated dependencies in your project.
@@ -163,6 +185,28 @@ impl ServerHandler for ScuteMcp {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
             .with_instructions(INSTRUCTIONS)
     }
+}
+
+async fn run_source_check<D: Default + DeserializeOwned>(
+    peer: &Peer<RoleServer>,
+    input: CheckSourceFilesInput,
+    check_name: &str,
+    execute: impl FnOnce(&Path, &[PathBuf], &D) -> Result<Vec<scute_core::Evaluation>, ExecutionError>,
+) -> Result<CallToolResult, ErrorData> {
+    let project_root = resolve_project_root(peer).await?;
+    let source_dir = input
+        .source_dir
+        .map(PathBuf::from)
+        .unwrap_or(project_root.clone());
+    let focus_files: Vec<PathBuf> = input
+        .files
+        .unwrap_or_default()
+        .into_iter()
+        .map(PathBuf::from)
+        .collect();
+    run_check(&project_root, check_name, |def: &D| {
+        execute(&source_dir, &focus_files, def)
+    })
 }
 
 fn path_or_root(input: Option<String>, project_root: &Path) -> PathBuf {

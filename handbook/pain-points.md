@@ -158,6 +158,10 @@ value.
   agent was actively using, instead of working within the existing worktree or
   creating a new one with `isolation: "worktree"`. The shortcut to unblock
   yourself destroys someone else's workspace.
+- **Questions treated as instructions.** (×1) User asks a question to
+  explore options or understand behavior, agent interprets it as a directive
+  and starts making changes. Questions with question marks are for discussion,
+  not action. Wait for explicit direction.
 - **Checklists skipped under momentum.** (×16) Established workflows and
   checklists exist but get bypassed when focus is on "just get the thing done."
   The process is known, the trigger is clear, but urgency wins over discipline.
