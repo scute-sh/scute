@@ -478,25 +478,70 @@ mod tests {
         assert_eq!(score_only(source), expected);
     }
 
-    #[test]
-    fn flat_function_has_no_contributors() {
-        let results = score_functions(
-            "fn add(a: i32, b: i32) -> i32 { a + b }",
-            &tree_sitter_rust::LANGUAGE.into(),
-        );
-
-        assert!(results[0].contributors.is_empty());
+    fn contributors(source: &str) -> Vec<Contributor> {
+        let results = score_functions(source, &tree_sitter_rust::LANGUAGE.into());
+        assert_eq!(results.len(), 1, "expected exactly one function");
+        results.into_iter().next().unwrap().contributors
     }
 
     #[test]
-    fn logical_sequence_appears_as_contributor() {
-        let results = score_functions(
-            "fn f(a: bool, b: bool, c: bool) -> bool { a && b || c }",
-            &tree_sitter_rust::LANGUAGE.into(),
+    fn flat_function_has_no_contributors() {
+        assert!(contributors("fn f() { 1 + 2 }").is_empty());
+    }
+
+    #[test]
+    fn structural_at_depth_zero_has_no_nesting() {
+        assert_eq!(
+            contributors("fn f() { if true {} }"),
+            vec![Contributor {
+                kind: ContributorKind::Structural {
+                    construct: Construct::If,
+                    nesting_depth: 0,
+                    nesting_chain: vec![Construct::If],
+                },
+                line: 1,
+                increment: 1,
+            },]
         );
+    }
+
+    #[test]
+    fn structural_nested_tracks_depth_and_chain() {
+        let cs = contributors("fn f() { for x in [1] { if true {} } }");
 
         assert_eq!(
-            results[0].contributors,
+            cs[1],
+            Contributor {
+                kind: ContributorKind::Structural {
+                    construct: Construct::If,
+                    nesting_depth: 1,
+                    nesting_chain: vec![Construct::For, Construct::If],
+                },
+                line: 1,
+                increment: 2,
+            }
+        );
+    }
+
+    #[test]
+    fn else_appears_as_contributor() {
+        let cs = contributors("fn f(x: bool) { if x {} else {} }");
+        let else_c = cs.iter().find(|c| c.kind == ContributorKind::Else);
+
+        assert_eq!(
+            else_c,
+            Some(&Contributor {
+                kind: ContributorKind::Else,
+                line: 1,
+                increment: 1,
+            })
+        );
+    }
+
+    #[test]
+    fn logical_contributor_captures_operators() {
+        assert_eq!(
+            contributors("fn f(a: bool, b: bool, c: bool) -> bool { a && b || c }"),
             vec![Contributor {
                 kind: ContributorKind::Logical {
                     operators: vec!["&&".into(), "||".into()],
@@ -508,75 +553,38 @@ mod tests {
     }
 
     #[test]
-    fn recursion_appears_as_contributor() {
-        let results = score_functions(
-            "fn factorial(n: u64) -> u64 {
-                if n <= 1 { 1 }
-                else { n * factorial(n - 1) }
-            }",
-            &tree_sitter_rust::LANGUAGE.into(),
-        );
+    fn recursion_contributor_captures_function_name() {
+        let cs = contributors("fn go(n: u64) -> u64 { go(n - 1) }");
 
-        let has_recursion = results[0].contributors.iter().any(
-            |c| matches!(&c.kind, ContributorKind::Recursion { fn_name } if fn_name == "factorial"),
+        assert_eq!(
+            cs,
+            vec![Contributor {
+                kind: ContributorKind::Recursion {
+                    fn_name: "go".into()
+                },
+                line: 1,
+                increment: 1,
+            }]
         );
-        assert!(has_recursion);
     }
 
     #[test]
-    fn canonical_example_returns_contributors() {
-        use Construct::*;
-
-        let results = score_functions(
-            "fn process(items: &[i32]) -> i32 {
-                let mut total = 0;
-                for item in items {
-                    if *item > 0 {
-                        if *item > 10 { total += item; }
-                        else { total -= item; }
-                    }
-                }
-                total
-            }",
-            &tree_sitter_rust::LANGUAGE.into(),
-        );
+    fn jump_contributor_captures_keyword_and_label() {
+        let cs = contributors("fn f() { 'outer: loop { break 'outer; } }");
+        let jump = cs
+            .iter()
+            .find(|c| matches!(c.kind, ContributorKind::Jump { .. }));
 
         assert_eq!(
-            results[0].contributors,
-            vec![
-                Contributor {
-                    kind: ContributorKind::Structural {
-                        construct: For,
-                        nesting_depth: 0,
-                        nesting_chain: vec![For],
-                    },
-                    line: 3,
-                    increment: 1,
+            jump,
+            Some(&Contributor {
+                kind: ContributorKind::Jump {
+                    keyword: JumpKeyword::Break,
+                    label: "'outer".into(),
                 },
-                Contributor {
-                    kind: ContributorKind::Structural {
-                        construct: If,
-                        nesting_depth: 1,
-                        nesting_chain: vec![For, If],
-                    },
-                    line: 4,
-                    increment: 2,
-                },
-                Contributor {
-                    kind: ContributorKind::Structural {
-                        construct: If,
-                        nesting_depth: 2,
-                        nesting_chain: vec![For, If, If],
-                    },
-                    line: 5,
-                    increment: 3,
-                },
-                Contributor {
-                    kind: ContributorKind::Else,
-                    line: 6,
-                    increment: 1,
-                },
-            ]
+                line: 1,
+                increment: 1,
+            })
         );
     }
 

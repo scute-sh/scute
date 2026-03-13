@@ -271,21 +271,101 @@ mod tests {
         assert!(evals[0].is_pass()); // score 1, default warn 5
     }
 
-    #[test]
-    fn evidence_shows_contributor_breakdown() {
+    fn evidence_of(source: &str) -> Vec<Evidence> {
         let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join("a.rs"), "fn hello() { if true {} }").unwrap();
+        fs::write(dir.path().join("a.rs"), source).unwrap();
 
-        let evals = check_dir(dir.path());
-        let crate::Outcome::Completed { evidence, .. } = &evals[0].outcome else {
+        let mut evals = check_dir(dir.path());
+        let crate::Outcome::Completed { evidence, .. } = evals.remove(0).outcome else {
             panic!("expected completed");
         };
+        evidence
+    }
+
+    #[test]
+    fn flow_break_evidence_has_no_suggestion() {
+        let evidence = evidence_of("fn f() { if true {} }");
 
         assert_eq!(evidence.len(), 1);
         assert_eq!(evidence[0].rule.as_deref(), Some("flow break"));
-        assert!(evidence[0].location.as_ref().unwrap().contains("a.rs:1"));
         assert!(evidence[0].found.contains("'if' conditional (+1)"));
         assert!(evidence[0].expected.is_none());
+    }
+
+    #[test]
+    fn nesting_evidence_shows_chain_and_suggests_extraction() {
+        let evidence = evidence_of("fn f() { for x in [1] { if true {} } }");
+        let nested = evidence
+            .iter()
+            .find(|e| e.rule.as_deref() == Some("nesting"))
+            .unwrap();
+
+        assert!(nested.found.contains("'if' nested 1 level: 'for > if'"));
+        assert_eq!(
+            nested.expected,
+            Some(Expected::Text("extract inner block into a function".into()))
+        );
+    }
+
+    #[test]
+    fn else_evidence_suggests_guard_clause() {
+        let evidence = evidence_of("fn f(x: bool) { if x {} else {} }");
+        let else_e = evidence
+            .iter()
+            .find(|e| e.rule.as_deref() == Some("else"))
+            .unwrap();
+
+        assert!(else_e.found.contains("'else' branch (+1)"));
+        assert_eq!(
+            else_e.expected,
+            Some(Expected::Text("use a guard clause or early return".into()))
+        );
+    }
+
+    #[test]
+    fn logical_evidence_shows_operators() {
+        let evidence = evidence_of("fn f(a: bool, b: bool, c: bool) -> bool { a && b || c }");
+
+        assert_eq!(evidence[0].rule.as_deref(), Some("boolean logic"));
+        assert!(evidence[0].found.contains("mixed '&&' and '||' operators"));
+        assert_eq!(
+            evidence[0].expected,
+            Some(Expected::Text("extract into a named boolean".into()))
+        );
+    }
+
+    #[test]
+    fn recursion_evidence_shows_function_name() {
+        let evidence = evidence_of("fn go(n: u64) -> u64 { go(n - 1) }");
+
+        assert_eq!(evidence[0].rule.as_deref(), Some("recursion"));
+        assert!(evidence[0].found.contains("recursive call to 'go'"));
+        assert_eq!(
+            evidence[0].expected,
+            Some(Expected::Text("consider iterative approach".into()))
+        );
+    }
+
+    #[test]
+    fn jump_evidence_shows_label() {
+        let evidence = evidence_of("fn f() { 'outer: loop { break 'outer; } }");
+        let jump = evidence
+            .iter()
+            .find(|e| e.rule.as_deref() == Some("jump"))
+            .unwrap();
+
+        assert!(jump.found.contains("'break' to label ''outer'"));
+        assert_eq!(
+            jump.expected,
+            Some(Expected::Text("restructure to avoid labeled jump".into()))
+        );
+    }
+
+    #[test]
+    fn evidence_includes_file_location() {
+        let evidence = evidence_of("fn f() { if true {} }");
+
+        assert!(evidence[0].location.as_ref().unwrap().contains("a.rs:1"));
     }
 
     #[test]

@@ -296,7 +296,7 @@ fn process(items: &[i32]) -> i32 {
 
     #[test_case(Cli)]
     #[test_case(Mcp)]
-    fn evidence_shows_complexity_breakdown(interface: Interface) {
+    fn flagged_function_includes_evidence(interface: Interface) {
         Scute::new(interface)
             .scute_config(
                 r"
@@ -327,20 +327,8 @@ fn process(items: &[i32]) -> i32 {
             )
             .check(&["code-complexity"])
             .expect_warn()
-            // for: +1 (flow break), if: +2 (nesting 1), if: +3 (nesting 2), else: +1
             .expect_evidence_count(4)
-            .expect_evidence_rule(0, "flow break")
-            .expect_evidence_found_contains(0, "'for' loop (+1)")
-            .expect_evidence_no_expected(0)
-            .expect_evidence_rule(1, "nesting")
-            .expect_evidence_found_contains(1, "'if' nested 1 level: 'for > if' (+2)")
-            .expect_evidence_expected_contains(1, "extract")
-            .expect_evidence_rule(2, "nesting")
-            .expect_evidence_found_contains(2, "'if' nested 2 levels: 'for > if > if' (+3)")
-            .expect_evidence_expected_contains(2, "extract")
-            .expect_evidence_rule(3, "else")
-            .expect_evidence_found_contains(3, "'else' branch (+1)")
-            .expect_evidence_expected_contains(3, "guard clause");
+            .expect_evidence_has_expected(1);
     }
 
     #[test_case(Cli)]
