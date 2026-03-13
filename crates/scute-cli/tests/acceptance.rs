@@ -315,6 +315,61 @@ checks:
             .check(&["code-complexity"])
             .expect_pass();
     }
+
+    #[test_case(Cli)]
+    #[test_case(Mcp)]
+    fn config_thresholds_override_defaults(interface: Interface) {
+        Scute::new(interface)
+            .source_file("src/complex.rs", COMPLEX_SOURCE)
+            .scute_config(
+                r"
+checks:
+  code-complexity:
+    thresholds:
+      warn: 20
+      fail: 30
+",
+            )
+            .check(&["code-complexity"])
+            .expect_pass();
+    }
+
+    #[test_case(Cli)]
+    #[test_case(Mcp)]
+    fn exclude_patterns_skip_matching_files(interface: Interface) {
+        Scute::new(interface)
+            .source_file("src/complex.rs", COMPLEX_SOURCE)
+            .scute_config(
+                r"
+checks:
+  code-complexity:
+    thresholds:
+      warn: 1
+    exclude:
+      - 'src/complex.rs'
+",
+            )
+            .check(&["code-complexity"])
+            .expect_pass();
+    }
+
+    #[test_case(Cli)]
+    #[test_case(Mcp)]
+    fn focus_file_limits_to_matching_files(interface: Interface) {
+        Scute::new(interface)
+            .source_file("src/complex.rs", COMPLEX_SOURCE)
+            .source_file("src/simple.rs", "fn add(a: i32, b: i32) -> i32 { a + b }")
+            .scute_config(
+                r"
+checks:
+  code-complexity:
+    thresholds:
+      warn: 1
+",
+            )
+            .check(&["code-complexity", "src/simple.rs"])
+            .expect_pass();
+    }
 }
 
 mod config {
