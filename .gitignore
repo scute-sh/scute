@@ -1,3 +1,4 @@
 playground/
+.claude/worktrees/
 /scute
 *.snap.new

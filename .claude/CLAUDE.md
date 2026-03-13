@@ -11,9 +11,10 @@ Don't treat CLAUDE.md checklists as exhaustive. Before any action, think about w
 
 Scute's own MCP server has check tools:
 
-- `check_commit_message`,
-- `check_dependency_freshness`
-- `check_code_similarity`
+- `check_commit_message` - Run before making a commit
+- `check_dependency_freshness` - Run after adding/editing a dependency
+- `check_code_similarity` - Run after changing a function or implementing a new one
+- `check_code_complexity` - Run after changing a function or implementing a new one
 
 Use them.
 
