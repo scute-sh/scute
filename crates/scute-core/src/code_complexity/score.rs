@@ -98,8 +98,20 @@ fn has_label(node: tree_sitter::Node) -> bool {
 
 fn is_recursive_call(node: tree_sitter::Node, fn_name: &str, src: &[u8]) -> bool {
     node.child_by_field_name("function")
-        .and_then(|f| f.utf8_text(src).ok())
+        .and_then(|f| callee_name(f, src))
         .is_some_and(|name| name == fn_name)
+}
+
+fn callee_name<'a>(node: tree_sitter::Node, src: &'a [u8]) -> Option<&'a str> {
+    match node.kind() {
+        // self.foo() → field_expression, extract the field name
+        "field_expression" => node.child_by_field_name("field"),
+        // Self::foo() or Foo::foo() → scoped_identifier, extract the name
+        "scoped_identifier" => node.child_by_field_name("name"),
+        // foo() → plain identifier
+        _ => Some(node),
+    }
+    .and_then(|n| n.utf8_text(src).ok())
 }
 
 fn score_logical_sequence(node: tree_sitter::Node, nesting: u64, fn_name: &str, src: &[u8]) -> u64 {
@@ -210,6 +222,22 @@ mod tests {
             if x > 0 { 1 } else { -1 }
         }
     }", 2 ; "scores_impl_method")]
+    // if: +1, else: +1, recursion via self.method(): +1
+    #[test_case("struct S;
+    impl S {
+        fn count(&self, n: u64) -> u64 {
+            if n <= 1 { 1 }
+            else { n * self.count(n - 1) }
+        }
+    }", 3 ; "adds_one_for_self_method_recursion")]
+    // if: +1, else: +1, recursion via Self::method(): +1
+    #[test_case("struct S;
+    impl S {
+        fn count(n: u64) -> u64 {
+            if n <= 1 { 1 }
+            else { n * Self::count(n - 1) }
+        }
+    }", 3 ; "adds_one_for_associated_function_recursion")]
     // else if with nested if inside the else-if branch (nesting underflow regression)
     #[test_case("fn f(x: i32, y: bool) -> i32 {
         if x > 0 { 1 }
