@@ -44,20 +44,10 @@ struct CheckDependencyFreshnessInput {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
-struct CheckCognitiveComplexityInput {
+struct CheckSourceFilesInput {
     /// Directory to scan for source files. Defaults to the project root.
     source_dir: Option<String>,
-    /// Files to focus on. Only report complexity for functions in these files.
-    /// When empty, all discovered files are checked (full-project scan).
-    files: Option<Vec<String>>,
-}
-
-#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
-struct CheckCodeSimilarityInput {
-    /// Directory to scan for source files. Defaults to the project root.
-    source_dir: Option<String>,
-    /// Files to focus on. Only report clones involving these files.
-    /// When empty, all discovered files are checked (full-project scan).
+    /// Files to focus on. When empty, all discovered files are checked.
     files: Option<Vec<String>>,
 }
 
@@ -121,23 +111,15 @@ impl ScuteMcp {
     async fn check_cognitive_complexity(
         &self,
         peer: Peer<RoleServer>,
-        Parameters(input): Parameters<CheckCognitiveComplexityInput>,
+        Parameters(input): Parameters<CheckSourceFilesInput>,
     ) -> Result<CallToolResult, ErrorData> {
-        let project_root = resolve_project_root(&peer).await?;
-        let source_dir = path_or_root(input.source_dir, &project_root);
-        let focus_files: Vec<PathBuf> = input
-            .files
-            .unwrap_or_default()
-            .into_iter()
-            .map(PathBuf::from)
-            .collect();
-        run_check(
-            &project_root,
+        run_source_check(
+            &peer,
+            input,
             cognitive_complexity::CHECK_NAME,
-            |def: &cognitive_complexity::Definition| {
-                cognitive_complexity::check(&source_dir, &focus_files, def)
-            },
+            cognitive_complexity::check,
         )
+        .await
     }
 
     /// Find code duplication in your project.
@@ -157,23 +139,15 @@ impl ScuteMcp {
     async fn check_code_similarity(
         &self,
         peer: Peer<RoleServer>,
-        Parameters(input): Parameters<CheckCodeSimilarityInput>,
+        Parameters(input): Parameters<CheckSourceFilesInput>,
     ) -> Result<CallToolResult, ErrorData> {
-        let project_root = resolve_project_root(&peer).await?;
-        let source_dir = path_or_root(input.source_dir, &project_root);
-        let focus_files: Vec<PathBuf> = input
-            .files
-            .unwrap_or_default()
-            .into_iter()
-            .map(PathBuf::from)
-            .collect();
-        run_check(
-            &project_root,
+        run_source_check(
+            &peer,
+            input,
             code_similarity::CHECK_NAME,
-            |def: &code_similarity::Definition| {
-                code_similarity::check(&source_dir, &focus_files, def)
-            },
+            code_similarity::check,
         )
+        .await
     }
 
     /// Find outdated dependencies in your project.
@@ -211,6 +185,28 @@ impl ServerHandler for ScuteMcp {
         ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
             .with_instructions(INSTRUCTIONS)
     }
+}
+
+async fn run_source_check<D: Default + DeserializeOwned>(
+    peer: &Peer<RoleServer>,
+    input: CheckSourceFilesInput,
+    check_name: &str,
+    execute: impl FnOnce(&Path, &[PathBuf], &D) -> Result<Vec<scute_core::Evaluation>, ExecutionError>,
+) -> Result<CallToolResult, ErrorData> {
+    let project_root = resolve_project_root(peer).await?;
+    let source_dir = input
+        .source_dir
+        .map(PathBuf::from)
+        .unwrap_or(project_root.clone());
+    let focus_files: Vec<PathBuf> = input
+        .files
+        .unwrap_or_default()
+        .into_iter()
+        .map(PathBuf::from)
+        .collect();
+    run_check(&project_root, check_name, |def: &D| {
+        execute(&source_dir, &focus_files, def)
+    })
 }
 
 fn path_or_root(input: Option<String>, project_root: &Path) -> PathBuf {

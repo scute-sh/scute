@@ -147,179 +147,75 @@ fn visit_logical_leaves(node: tree_sitter::Node, nesting: u64, fn_name: &str, sr
 #[cfg(test)]
 mod tests {
     use super::*;
+    use test_case::test_case;
 
-    fn score_rust(source: &str) -> Vec<(String, u64)> {
-        score_functions(source, &tree_sitter_rust::LANGUAGE.into())
-            .into_iter()
-            .map(|f| (f.name, f.score))
-            .collect()
+    fn score_only(source: &str) -> u64 {
+        let results = score_functions(source, &tree_sitter_rust::LANGUAGE.into());
+        assert_eq!(results.len(), 1, "expected exactly one function");
+        results[0].score
     }
 
-    #[test]
-    fn flat_function_scores_0() {
-        let source = "fn add(a: i32, b: i32) -> i32 { a + b }";
-
-        let results = score_rust(source);
-
-        assert_eq!(results, vec![("add".to_string(), 0)]);
-    }
-
-    #[test]
-    fn single_if_scores_1() {
-        let source = "fn check(x: i32) -> bool { if x > 0 { return true; } false }";
-
-        let results = score_rust(source);
-
-        assert_eq!(results, vec![("check".to_string(), 1)]);
-    }
-
-    #[test]
-    fn canonical_example_scores_7() {
-        let source = r"
-fn process(items: &[i32]) -> i32 {
-    let mut total = 0;
-    for item in items {
-        if *item > 0 {
-            if *item > 10 {
+    #[test_case("fn add(a: i32, b: i32) -> i32 { a + b }", 0 ; "flat function")]
+    #[test_case("fn f(x: i32) -> bool { if x > 0 { return true; } false }", 1 ; "single if")]
+    #[test_case("fn f(a: bool, b: bool, c: bool) -> bool { a && b && c }", 1 ; "same logical operators")]
+    #[test_case("fn f(a: bool, b: bool, c: bool) -> bool { a && b || c }", 2 ; "mixed logical operators")]
+    // if: +1, else if: +1 (flat chain), else: +1
+    #[test_case("fn f(x: i32) -> i32 {
+        if x > 0 { 1 }
+        else if x < 0 { -1 }
+        else { 0 }
+    }", 3 ; "else if chain scores flat")]
+    // if: +1, else: +1, recursion: +1
+    #[test_case("fn factorial(n: u64) -> u64 {
+        if n <= 1 { 1 }
+        else { n * factorial(n - 1) }
+    }", 3 ; "direct recursion adds 1")]
+    // closure: +0 structural, nesting becomes 1; if: +1+1, else: +1
+    #[test_case("fn f(items: &[i32]) -> Vec<i32> {
+        items.iter().filter(|x| {
+            if **x > 0 { true } else { false }
+        }).copied().collect()
+    }", 3 ; "closure increases nesting")]
+    // for+nested-if+else = 1 + (1+1) + (1+2) + 1
+    #[test_case("fn process(items: &[i32]) -> i32 {
+        let mut total = 0;
+        for item in items {
+            if *item > 0 {
+                if *item > 10 { total += item; }
+                else { total -= item; }
+            }
+        }
+        total
+    }", 7 ; "canonical example")]
+    // outer for: +1, inner for: +2, if: +3, break 'outer: +1
+    #[test_case("fn f(items: &[&[i32]]) -> i32 {
+        let mut total = 0;
+        'outer: for row in items {
+            for item in *row {
+                if *item < 0 { break 'outer; }
                 total += item;
-            } else {
-                total -= item;
             }
         }
-    }
-    total
-}
-";
-
-        let results = score_rust(source);
-
-        assert_eq!(results, vec![("process".to_string(), 7)]);
+        total
+    }", 7 ; "labeled break adds 1")]
+    fn scores(source: &str, expected: u64) {
+        assert_eq!(score_only(source), expected);
     }
 
+    // inner fn: +0 structural, nesting becomes 1
+    // if inside inner: +1 +1(nesting) = 2, if in outer: +1 = total 3
+    // inner should NOT appear as separate scored function
     #[test]
-    fn else_if_chain_scores_flat() {
-        let source = r"
-fn f(x: i32) -> i32 {
-    if x > 0 {
-        1
-    } else if x < 0 {
-        -1
-    } else {
-        0
-    }
-}
-";
-
-        let results = score_rust(source);
-
-        // if: +1 (nesting 0), else if: +1 (nesting 0, flat chain), else: +1 (hybrid) = 3
-        assert_eq!(results, vec![("f".to_string(), 3)]);
-    }
-
-    #[test]
-    fn same_logical_operators_score_1() {
-        let source = "fn f(a: bool, b: bool, c: bool) -> bool { a && b && c }";
-
-        let results = score_rust(source);
-
-        assert_eq!(results, vec![("f".to_string(), 1)]);
-    }
-
-    #[test]
-    fn mixed_logical_operators_score_per_change() {
-        let source = "fn f(a: bool, b: bool, c: bool) -> bool { a && b || c }";
-
-        let results = score_rust(source);
-
-        assert_eq!(results, vec![("f".to_string(), 2)]);
-    }
-
-    #[test]
-    fn direct_recursion_adds_1() {
-        let source = r"
-fn factorial(n: u64) -> u64 {
-    if n <= 1 {
-        1
-    } else {
-        n * factorial(n - 1)
-    }
-}
-";
-
-        let results = score_rust(source);
-
-        // if: +1, else: +1, recursion: +1 = 3
-        assert_eq!(results, vec![("factorial".to_string(), 3)]);
-    }
-
-    #[test]
-    fn closure_increases_nesting_without_structural_increment() {
-        let source = r"
-fn f(items: &[i32]) -> Vec<i32> {
-    items.iter().filter(|x| {
-        if **x > 0 {
-            true
-        } else {
-            false
-        }
-    }).copied().collect()
-}
-";
-
-        let results = score_rust(source);
-
-        // closure: +0 (no structural increment, but nesting becomes 1)
-        // if inside closure: +1 (structural) + 1 (nesting) = +2
-        // else: +1 (hybrid)
-        // total = 0 + 2 + 1 = 3
-        assert_eq!(results, vec![("f".to_string(), 3)]);
-    }
-
-    #[test]
-    fn labeled_break_adds_1() {
-        let source = r"
-fn f(items: &[&[i32]]) -> i32 {
-    let mut total = 0;
-    'outer: for row in items {
-        for item in *row {
-            if *item < 0 {
-                break 'outer;
-            }
-            total += item;
-        }
-    }
-    total
-}
-";
-
-        let results = score_rust(source);
-
-        // outer for: +1 (nesting 0)
-        // inner for: +1 +1 (nesting 1) = +2
-        // if: +1 +2 (nesting 2) = +3
-        // break 'outer: +1 (fundamental, no nesting)
-        // total = 1 + 2 + 3 + 1 = 7
-        assert_eq!(results, vec![("f".to_string(), 7)]);
-    }
-
-    #[test]
-    fn nested_function_increases_nesting_without_structural_increment() {
-        let source = r"
-fn outer() {
-    fn inner() {
-        if true {}
-    }
-    if true {}
-}
-";
-
-        let results = score_rust(source);
-
-        // inner fn: +0 (no structural increment, but nesting becomes 1)
-        // if inside inner: +1 +1 (nesting 1) = +2
-        // if in outer: +1 (nesting 0)
-        // total for outer = 0 + 2 + 1 = 3
-        // inner should NOT appear as a separate scored function
-        assert_eq!(results, vec![("outer".to_string(), 3)]);
+    fn nested_function_increases_nesting() {
+        let results = score_functions(
+            "fn outer() {
+                fn inner() { if true {} }
+                if true {}
+            }",
+            &tree_sitter_rust::LANGUAGE.into(),
+        );
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].name, "outer");
+        assert_eq!(results[0].score, 3);
     }
 }
