@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use super::score;
 use crate::files;
-use crate::{Evaluation, Evidence, ExecutionError, Thresholds};
+use crate::{Evaluation, Evidence, ExecutionError, Expected, Thresholds};
 
 pub const CHECK_NAME: &str = "code-complexity";
 
@@ -57,16 +57,16 @@ pub fn check(
 
         for func in score::score_functions(&source, &language) {
             let target = format!("{}:{}:{}", path.display(), func.line, func.name);
+            let evidence = func
+                .contributors
+                .iter()
+                .map(|c| format_evidence(c, path))
+                .collect();
             evaluations.push(Evaluation::completed(
                 target,
                 func.score,
                 thresholds.clone(),
-                vec![Evidence {
-                    rule: None,
-                    location: Some(format!("{}:{}", path.display(), func.line)),
-                    found: source_line(&source, func.line),
-                    expected: None,
-                }],
+                evidence,
             ));
         }
     }
@@ -83,6 +83,94 @@ pub fn check(
     Ok(evaluations)
 }
 
+fn format_nesting_found(c: &score::Contributor) -> String {
+    let chain = c
+        .nesting_chain
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>()
+        .join(" > ");
+    let levels = if c.nesting_depth == 1 {
+        "level"
+    } else {
+        "levels"
+    };
+    format!(
+        "'{}' nested {} {}: '{}' (+{})",
+        c.kind, c.nesting_depth, levels, chain, c.increment
+    )
+}
+
+fn flow_break_label(kind: &str) -> &str {
+    match kind {
+        "for" | "while" | "loop" => "loop",
+        "if" => "conditional",
+        "match" => "expression",
+        _ => "statement",
+    }
+}
+
+fn format_evidence(c: &score::Contributor, path: &Path) -> Evidence {
+    let location = Some(format!("{}:{}", path.display(), c.line));
+    let text = |s: &str| Some(Expected::Text(s.into()));
+
+    let (rule, found, expected) = match c.kind.as_str() {
+        "if" | "for" | "while" | "loop" | "match" if c.nesting_depth > 0 => (
+            "nesting",
+            format_nesting_found(c),
+            text("extract inner block into a function"),
+        ),
+        "if" | "for" | "while" | "loop" | "match" => (
+            "flow break",
+            format!(
+                "'{}' {} (+{})",
+                c.kind,
+                flow_break_label(&c.kind),
+                c.increment
+            ),
+            None,
+        ),
+        "else" => (
+            "else",
+            format!("'else' branch (+{})", c.increment),
+            text("use a guard clause or early return"),
+        ),
+        "logical" => {
+            let ops = c.detail.as_deref().unwrap_or("'&&' and '||'");
+            let mixed = if ops.contains("and") { "mixed " } else { "" };
+            (
+                "boolean logic",
+                format!("{mixed}{ops} operators (+{})", c.increment),
+                text("extract into a named boolean"),
+            )
+        }
+        "recursion" => {
+            let name = c.detail.as_deref().unwrap_or("?");
+            (
+                "recursion",
+                format!("recursive call to '{name}' (+{})", c.increment),
+                text("consider iterative approach"),
+            )
+        }
+        "break" | "continue" => {
+            let label = c.detail.as_deref().unwrap_or("?");
+            (
+                "jump",
+                format!("'{}' to label '{label}' (+{})", c.kind, c.increment),
+                text("restructure to avoid labeled jump"),
+            )
+        }
+        _ => (c.kind.as_str(), format!("+{}", c.increment), None),
+    };
+
+    Evidence {
+        rule: Some(rule.to_string()),
+        location,
+        found,
+        expected,
+    }
+}
+
 fn discover_rust_files(dir: &Path, exclude: &[String]) -> Vec<PathBuf> {
     let mut result: Vec<PathBuf> = files::walk_source_files(dir, true, exclude)
         .filter(|e| e.path().extension().is_some_and(|ext| ext == "rs"))
@@ -90,15 +178,6 @@ fn discover_rust_files(dir: &Path, exclude: &[String]) -> Vec<PathBuf> {
         .collect();
     result.sort();
     result
-}
-
-fn source_line(source: &str, line: usize) -> String {
-    source
-        .lines()
-        .nth(line.saturating_sub(1))
-        .unwrap_or("")
-        .trim()
-        .to_string()
 }
 
 #[cfg(test)]
@@ -160,7 +239,7 @@ mod tests {
     }
 
     #[test]
-    fn evidence_includes_location_and_source_line() {
+    fn evidence_shows_contributor_breakdown() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("a.rs"), "fn hello() { if true {} }").unwrap();
 
@@ -170,8 +249,10 @@ mod tests {
         };
 
         assert_eq!(evidence.len(), 1);
+        assert_eq!(evidence[0].rule.as_deref(), Some("flow break"));
         assert!(evidence[0].location.as_ref().unwrap().contains("a.rs:1"));
-        assert_eq!(evidence[0].found, "fn hello() { if true {} }");
+        assert!(evidence[0].found.contains("'if' conditional (+1)"));
+        assert!(evidence[0].expected.is_none());
     }
 
     #[test]
