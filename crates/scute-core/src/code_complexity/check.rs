@@ -46,29 +46,15 @@ pub fn check(
     let language: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
     let mut evaluations = Vec::new();
 
-    for path in &rust_files {
-        if !focus.is_empty() && !focus.contains(path) {
-            continue;
-        }
+    let paths = rust_files
+        .iter()
+        .filter(|p| focus.is_empty() || focus.contains(p));
 
+    for path in paths {
         let Ok(source) = std::fs::read_to_string(path) else {
             continue;
         };
-
-        for func in score::score_functions(&source, &language) {
-            let target = format!("{}:{}:{}", path.display(), func.line, func.name);
-            let evidence = func
-                .contributors
-                .iter()
-                .map(|c| format_evidence(c, path))
-                .collect();
-            evaluations.push(Evaluation::completed(
-                target,
-                func.score,
-                thresholds.clone(),
-                evidence,
-            ));
-        }
+        evaluations.extend(score_file(path, &source, &language, &thresholds));
     }
 
     if evaluations.is_empty() {
@@ -81,6 +67,26 @@ pub fn check(
     }
 
     Ok(evaluations)
+}
+
+fn score_file(
+    path: &Path,
+    source: &str,
+    language: &tree_sitter::Language,
+    thresholds: &Thresholds,
+) -> Vec<Evaluation> {
+    score::score_functions(source, language)
+        .into_iter()
+        .map(|func| {
+            let target = format!("{}:{}:{}", path.display(), func.line, func.name);
+            let evidence = func
+                .contributors
+                .iter()
+                .map(|c| format_evidence(c, path))
+                .collect();
+            Evaluation::completed(target, func.score, thresholds.clone(), evidence)
+        })
+        .collect()
 }
 
 fn construct_label(construct: score::Construct) -> &'static str {
@@ -116,19 +122,20 @@ fn format_nesting_chain(chain: &[score::Construct]) -> String {
         .join(" > ")
 }
 
-fn format_ops(operators: &[String]) -> (bool, String) {
+fn pluralize_levels(n: u64) -> &'static str {
+    if n == 1 { "level" } else { "levels" }
+}
+
+fn format_ops(operators: &[String]) -> String {
     let mut seen: Vec<&str> = vec![];
     for op in operators {
         if !seen.contains(&op.as_str()) {
             seen.push(op);
         }
     }
-    let formatted = seen
-        .iter()
-        .map(|o| format!("'{o}'"))
-        .collect::<Vec<_>>()
-        .join(" and ");
-    (seen.len() > 1, formatted)
+    let quoted: Vec<String> = seen.iter().map(|o| format!("'{o}'")).collect();
+    let prefix = if seen.len() > 1 { "mixed " } else { "" };
+    format!("{prefix}{}", quoted.join(" and "))
 }
 
 fn format_evidence(c: &score::Contributor, path: &Path) -> Evidence {
@@ -143,11 +150,7 @@ fn format_evidence(c: &score::Contributor, path: &Path) -> Evidence {
         } if *nesting_depth > 0 => {
             let name = construct_label(*construct);
             let chain = format_nesting_chain(nesting_chain);
-            let levels = if *nesting_depth == 1 {
-                "level"
-            } else {
-                "levels"
-            };
+            let levels = pluralize_levels(*nesting_depth);
             (
                 "nesting",
                 format!(
@@ -157,42 +160,40 @@ fn format_evidence(c: &score::Contributor, path: &Path) -> Evidence {
                 text("extract inner block into a function"),
             )
         }
-        score::ContributorKind::Structural { construct, .. } => {
-            let name = construct_label(*construct);
-            let label = flow_break_label(*construct);
-            (
-                "flow break",
-                format!("'{name}' {label} (+{})", c.increment),
-                None,
-            )
-        }
+        score::ContributorKind::Structural { construct, .. } => (
+            "flow break",
+            format!(
+                "'{}' {} (+{})",
+                construct_label(*construct),
+                flow_break_label(*construct),
+                c.increment
+            ),
+            None,
+        ),
         score::ContributorKind::Else => (
             "else",
             format!("'else' branch (+{})", c.increment),
             text("use a guard clause or early return"),
         ),
-        score::ContributorKind::Logical { operators } => {
-            let (mixed, ops) = format_ops(operators);
-            let prefix = if mixed { "mixed " } else { "" };
-            (
-                "boolean logic",
-                format!("{prefix}{ops} operators (+{})", c.increment),
-                text("extract into a named boolean"),
-            )
-        }
+        score::ContributorKind::Logical { operators } => (
+            "boolean logic",
+            format!("{} operators (+{})", format_ops(operators), c.increment),
+            text("extract into a named boolean"),
+        ),
         score::ContributorKind::Recursion { fn_name } => (
             "recursion",
             format!("recursive call to '{fn_name}' (+{})", c.increment),
             text("consider iterative approach"),
         ),
-        score::ContributorKind::Jump { keyword, label } => {
-            let kw = jump_keyword_label(*keyword);
-            (
-                "jump",
-                format!("'{kw}' to label '{label}' (+{})", c.increment),
-                text("restructure to avoid labeled jump"),
-            )
-        }
+        score::ContributorKind::Jump { keyword, label } => (
+            "jump",
+            format!(
+                "'{}' to label '{label}' (+{})",
+                jump_keyword_label(*keyword),
+                c.increment
+            ),
+            text("restructure to avoid labeled jump"),
+        ),
     };
 
     Evidence {

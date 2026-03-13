@@ -368,21 +368,18 @@ fn visit_logical_leaves(
     src: &[u8],
     contributors: &mut Vec<Contributor>,
 ) -> u64 {
-    let mut total = 0;
     let mut cursor = node.walk();
-
-    for child in node.children(&mut cursor) {
-        if is_operator_token(child) {
-            continue;
-        }
-        let scorer = if is_nested_logical(child) {
-            visit_logical_leaves
-        } else {
-            complexity
-        };
-        total += scorer(child, nesting, fn_name, impl_type, src, contributors);
-    }
-    total
+    node.children(&mut cursor)
+        .filter(|child| !is_operator_token(*child))
+        .map(|child| {
+            let visit = if is_nested_logical(child) {
+                visit_logical_leaves
+            } else {
+                complexity
+            };
+            visit(child, nesting, fn_name, impl_type, src, contributors)
+        })
+        .sum()
 }
 
 #[cfg(test)]
