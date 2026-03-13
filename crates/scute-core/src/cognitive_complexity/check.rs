@@ -72,27 +72,15 @@ pub fn check(
     }
 
     if evaluations.is_empty() {
-        return Ok(vec![Evaluation::completed(
+        evaluations.push(Evaluation::completed(
             source_dir.display().to_string(),
             0,
             thresholds,
             vec![],
-        )]);
+        ));
     }
 
-    // Only return functions that exceed thresholds
-    let flagged: Vec<_> = evaluations.into_iter().filter(|e| !e.is_pass()).collect();
-
-    if flagged.is_empty() {
-        Ok(vec![Evaluation::completed(
-            source_dir.display().to_string(),
-            0,
-            thresholds,
-            vec![],
-        )])
-    } else {
-        Ok(flagged)
-    }
+    Ok(evaluations)
 }
 
 fn discover_rust_files(dir: &Path, exclude: &[String]) -> Vec<PathBuf> {
