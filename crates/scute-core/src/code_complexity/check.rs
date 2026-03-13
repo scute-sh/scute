@@ -18,8 +18,8 @@ pub struct Definition {
 impl Definition {
     fn thresholds(&self) -> Thresholds {
         self.thresholds.clone().unwrap_or(Thresholds {
-            warn: Some(15),
-            fail: Some(25),
+            warn: Some(5),
+            fail: Some(10),
         })
     }
 }
@@ -156,7 +156,7 @@ mod tests {
         let evals = check_dir(dir.path());
 
         assert_eq!(evals.len(), 1);
-        assert!(evals[0].is_pass()); // score 1, default warn 15
+        assert!(evals[0].is_pass()); // score 1, default warn 5
     }
 
     #[test]
