@@ -1,5 +1,9 @@
 {
   "compilerOptions": {
     "lib": ["deno.window"]
+  },
+  "deploy": {
+    "app": "scute-website",
+    "org": "scute"
   }
 }
