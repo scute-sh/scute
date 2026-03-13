@@ -83,84 +83,116 @@ pub fn check(
     Ok(evaluations)
 }
 
-fn format_nesting_found(c: &score::Contributor) -> String {
-    let chain = c
-        .nesting_chain
-        .iter()
-        .map(String::as_str)
-        .collect::<Vec<_>>()
-        .join(" > ");
-    let levels = if c.nesting_depth == 1 {
-        "level"
-    } else {
-        "levels"
-    };
-    format!(
-        "'{}' nested {} {}: '{}' (+{})",
-        c.kind, c.nesting_depth, levels, chain, c.increment
-    )
+fn construct_label(construct: score::Construct) -> &'static str {
+    match construct {
+        score::Construct::If => "if",
+        score::Construct::For => "for",
+        score::Construct::While => "while",
+        score::Construct::Loop => "loop",
+        score::Construct::Match => "match",
+    }
 }
 
-fn flow_break_label(kind: &str) -> &str {
-    match kind {
-        "for" | "while" | "loop" => "loop",
-        "if" => "conditional",
-        "match" => "expression",
-        _ => "statement",
+fn flow_break_label(construct: score::Construct) -> &'static str {
+    match construct {
+        score::Construct::For | score::Construct::While | score::Construct::Loop => "loop",
+        score::Construct::If => "conditional",
+        score::Construct::Match => "expression",
     }
+}
+
+fn jump_keyword_label(keyword: score::JumpKeyword) -> &'static str {
+    match keyword {
+        score::JumpKeyword::Break => "break",
+        score::JumpKeyword::Continue => "continue",
+    }
+}
+
+fn format_nesting_chain(chain: &[score::Construct]) -> String {
+    chain
+        .iter()
+        .map(|c| construct_label(*c))
+        .collect::<Vec<_>>()
+        .join(" > ")
+}
+
+fn format_ops(operators: &[String]) -> (bool, String) {
+    let mut seen: Vec<&str> = vec![];
+    for op in operators {
+        if !seen.contains(&op.as_str()) {
+            seen.push(op);
+        }
+    }
+    let formatted = seen
+        .iter()
+        .map(|o| format!("'{o}'"))
+        .collect::<Vec<_>>()
+        .join(" and ");
+    (seen.len() > 1, formatted)
 }
 
 fn format_evidence(c: &score::Contributor, path: &Path) -> Evidence {
     let location = Some(format!("{}:{}", path.display(), c.line));
     let text = |s: &str| Some(Expected::Text(s.into()));
 
-    let (rule, found, expected) = match c.kind.as_str() {
-        "if" | "for" | "while" | "loop" | "match" if c.nesting_depth > 0 => (
-            "nesting",
-            format_nesting_found(c),
-            text("extract inner block into a function"),
-        ),
-        "if" | "for" | "while" | "loop" | "match" => (
-            "flow break",
-            format!(
-                "'{}' {} (+{})",
-                c.kind,
-                flow_break_label(&c.kind),
-                c.increment
-            ),
-            None,
-        ),
-        "else" => (
+    let (rule, found, expected) = match &c.kind {
+        score::ContributorKind::Structural {
+            construct,
+            nesting_depth,
+            nesting_chain,
+        } if *nesting_depth > 0 => {
+            let name = construct_label(*construct);
+            let chain = format_nesting_chain(nesting_chain);
+            let levels = if *nesting_depth == 1 {
+                "level"
+            } else {
+                "levels"
+            };
+            (
+                "nesting",
+                format!(
+                    "'{name}' nested {nesting_depth} {levels}: '{chain}' (+{})",
+                    c.increment
+                ),
+                text("extract inner block into a function"),
+            )
+        }
+        score::ContributorKind::Structural { construct, .. } => {
+            let name = construct_label(*construct);
+            let label = flow_break_label(*construct);
+            (
+                "flow break",
+                format!("'{name}' {label} (+{})", c.increment),
+                None,
+            )
+        }
+        score::ContributorKind::Else => (
             "else",
             format!("'else' branch (+{})", c.increment),
             text("use a guard clause or early return"),
         ),
-        "logical" => {
-            let ops = c.detail.as_deref().unwrap_or("'&&' and '||'");
-            let mixed = if ops.contains("and") { "mixed " } else { "" };
+        score::ContributorKind::Logical { operators } => {
+            let (mixed, ops) = format_ops(operators);
+            let prefix = if mixed { "mixed " } else { "" };
             (
                 "boolean logic",
-                format!("{mixed}{ops} operators (+{})", c.increment),
+                format!("{prefix}{ops} operators (+{})", c.increment),
                 text("extract into a named boolean"),
             )
         }
-        "recursion" => {
-            let name = c.detail.as_deref().unwrap_or("?");
-            (
-                "recursion",
-                format!("recursive call to '{name}' (+{})", c.increment),
-                text("consider iterative approach"),
-            )
-        }
-        "break" | "continue" => {
-            let label = c.detail.as_deref().unwrap_or("?");
+        score::ContributorKind::Recursion { fn_name } => (
+            "recursion",
+            format!("recursive call to '{fn_name}' (+{})", c.increment),
+            text("consider iterative approach"),
+        ),
+        score::ContributorKind::Jump { keyword, label } => {
+            let kw = jump_keyword_label(*keyword);
             (
                 "jump",
-                format!("'{}' to label '{label}' (+{})", c.kind, c.increment),
+                format!("'{kw}' to label '{label}' (+{})", c.increment),
                 text("restructure to avoid labeled jump"),
             )
         }
-        _ => (c.kind.as_str(), format!("+{}", c.increment), None),
     };
 
     Evidence {
