@@ -27,6 +27,14 @@ mod discovery {
             .list_checks()
             .expect_contains("code-similarity");
     }
+
+    #[test_case(Cli)]
+    #[test_case(Mcp)]
+    fn lists_code_complexity_check(interface: Interface) {
+        Scute::new(interface)
+            .list_checks()
+            .expect_contains("code-complexity");
+    }
 }
 
 mod commit_message {
