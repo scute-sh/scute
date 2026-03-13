@@ -13,6 +13,7 @@ pub mod code_similarity;
 pub mod cognitive_complexity;
 pub mod commit_message;
 pub mod dependency_freshness;
+pub mod files;
 pub mod parser;
 pub mod report;
 
