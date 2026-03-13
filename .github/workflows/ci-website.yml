@@ -13,4 +13,17 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: denoland/setup-deno@v2
-      - run: deno check website/main.ts
+      - run: ./scripts/website/check.sh
+
+  deploy:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: denoland/setup-deno@v2
+      - name: Install deployctl
+        run: deno install -Arf jsr:@deno/deployctl
+      - name: Deploy
+        run: ./scripts/website/deploy.sh ${{ github.ref == 'refs/heads/main' && '--prod' || '' }}
+        env:
+          DENO_DEPLOY_TOKEN: ${{ secrets.DENO_DEPLOY_TOKEN }}
