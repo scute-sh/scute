@@ -100,3 +100,96 @@ fn source_line(source: &str, line: usize) -> String {
         .trim()
         .to_string()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    fn check_dir(dir: &Path) -> Vec<Evaluation> {
+        check(dir, &[], &Definition::default()).unwrap()
+    }
+
+    #[test]
+    fn returns_one_evaluation_per_function() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("two.rs"),
+            "fn a() {} fn b(x: i32) -> i32 { if x > 0 { 1 } else { -1 } }",
+        )
+        .unwrap();
+
+        let evals = check_dir(dir.path());
+
+        assert_eq!(evals.len(), 2);
+        assert!(evals[0].target.contains('a'));
+        assert!(evals[1].target.contains('b'));
+    }
+
+    #[test]
+    fn returns_single_pass_for_empty_directory() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let evals = check_dir(dir.path());
+
+        assert_eq!(evals.len(), 1);
+        assert!(evals[0].is_pass());
+    }
+
+    #[test]
+    fn focus_files_limits_to_matching_files() {
+        let dir = tempfile::tempdir().unwrap();
+        let target = dir.path().join("target.rs");
+        fs::write(&target, "fn focused() { if true {} }").unwrap();
+        fs::write(dir.path().join("other.rs"), "fn ignored() { if true {} }").unwrap();
+
+        let evals = check(dir.path(), &[target], &Definition::default()).unwrap();
+
+        assert!(evals.iter().all(|e| e.target.contains("focused")));
+    }
+
+    #[test]
+    fn applies_default_thresholds() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("simple.rs"), "fn f() { if true {} }").unwrap();
+
+        let evals = check_dir(dir.path());
+
+        assert_eq!(evals.len(), 1);
+        assert!(evals[0].is_pass()); // score 1, default warn 15
+    }
+
+    #[test]
+    fn evidence_includes_location_and_source_line() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("a.rs"), "fn hello() { if true {} }").unwrap();
+
+        let evals = check_dir(dir.path());
+        let crate::Outcome::Completed { evidence, .. } = &evals[0].outcome else {
+            panic!("expected completed");
+        };
+
+        assert_eq!(evidence.len(), 1);
+        assert!(evidence[0].location.as_ref().unwrap().contains("a.rs:1"));
+        assert_eq!(evidence[0].found, "fn hello() { if true {} }");
+    }
+
+    #[test]
+    fn rejects_nonexistent_source_dir() {
+        let result = check(Path::new("/does/not/exist"), &[], &Definition::default());
+
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, "invalid_target");
+    }
+
+    #[test]
+    fn skips_non_rust_files() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("code.py"), "def foo(): pass").unwrap();
+
+        let evals = check_dir(dir.path());
+
+        assert_eq!(evals.len(), 1);
+        assert!(evals[0].is_pass()); // fallback pass, no rust files
+    }
+}

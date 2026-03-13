@@ -38,3 +38,56 @@ pub fn validate_source_dir(source_dir: &Path) -> Result<PathBuf, crate::Executio
             recovery: "check that the path exists and is a directory".into(),
         })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn validates_existing_directory() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let result = validate_source_dir(dir.path());
+
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), dir.path().canonicalize().unwrap());
+    }
+
+    #[test]
+    fn rejects_nonexistent_path() {
+        let result = validate_source_dir(Path::new("/does/not/exist"));
+
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, "invalid_target");
+    }
+
+    #[test]
+    fn walks_only_files() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("a.rs"), "").unwrap();
+        fs::create_dir(dir.path().join("sub")).unwrap();
+        fs::write(dir.path().join("sub/b.rs"), "").unwrap();
+
+        let files: Vec<_> = walk_source_files(dir.path(), false, &[])
+            .map(ignore::DirEntry::into_path)
+            .collect();
+
+        assert_eq!(files.len(), 2);
+    }
+
+    #[test]
+    fn excludes_matching_patterns() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(dir.path().join("keep.rs"), "").unwrap();
+        fs::create_dir(dir.path().join("vendor")).unwrap();
+        fs::write(dir.path().join("vendor/skip.rs"), "").unwrap();
+
+        let files: Vec<_> = walk_source_files(dir.path(), false, &["vendor/**".into()])
+            .map(ignore::DirEntry::into_path)
+            .collect();
+
+        assert_eq!(files.len(), 1);
+        assert!(files[0].ends_with("keep.rs"));
+    }
+}
