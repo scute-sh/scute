@@ -12,30 +12,12 @@ impl PackageManager for Cargo {
     /// Returns true for both standalone projects and workspace roots,
     /// false for workspace members (whose root is an ancestor).
     fn is_project_root(&self, target: &Path) -> bool {
-        let Ok(output) = std::process::Command::new("cargo")
-            .args(["metadata", "--no-deps", "--format-version", "1"])
-            .current_dir(target)
-            .output()
-        else {
-            return false;
-        };
-
-        if !output.status.success() {
-            return false;
-        }
-
-        let workspace_root = String::from_utf8(output.stdout)
-            .ok()
-            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-            .and_then(|v| v["workspace_root"].as_str().map(String::from));
-
-        let Some(canonical_target) = target.canonicalize().ok() else {
-            return false;
-        };
-
-        workspace_root
-            .as_deref()
-            .is_some_and(|root| Path::new(root) == canonical_target)
+        super::run_and_check_root(
+            "cargo",
+            &["metadata", "--no-deps", "--format-version", "1"],
+            target,
+            |v| v["workspace_root"].as_str().map(String::from),
+        )
     }
 
     fn fetch_outdated(&self, target: &Path) -> Result<Vec<OutdatedDependency>, FetchError> {

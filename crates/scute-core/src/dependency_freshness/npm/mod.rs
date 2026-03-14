@@ -10,36 +10,13 @@ impl PackageManager for Npm {
     /// Returns true for both standalone projects and workspace roots,
     /// false for workspace members (whose root is an ancestor).
     fn is_project_root(&self, target: &Path) -> bool {
-        let Ok(output) = std::process::Command::new("npm")
-            .args(["query", ":root"])
-            .current_dir(target)
-            .output()
-        else {
-            return false;
-        };
-
-        if !output.status.success() {
-            return false;
-        }
-
-        let root_path = String::from_utf8(output.stdout)
-            .ok()
-            .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
-            .and_then(|v| {
-                v.as_array()?
-                    .first()?
-                    .get("path")?
-                    .as_str()
-                    .map(String::from)
-            });
-
-        let Some(canonical_target) = target.canonicalize().ok() else {
-            return false;
-        };
-
-        root_path
-            .as_deref()
-            .is_some_and(|root| Path::new(root) == canonical_target)
+        super::run_and_check_root("npm", &["query", ":root"], target, |v| {
+            v.as_array()?
+                .first()?
+                .get("path")?
+                .as_str()
+                .map(String::from)
+        })
     }
 
     fn fetch_outdated(&self, target: &Path) -> Result<Vec<OutdatedDependency>, FetchError> {
