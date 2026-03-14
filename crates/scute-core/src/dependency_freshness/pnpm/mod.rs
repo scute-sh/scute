@@ -22,12 +22,7 @@ impl PackageManager for Pnpm {
             String::from_utf8(output.stdout).map_err(|e| FetchError::Failed(e.to_string()))?;
 
         if stdout.trim().is_empty() || stdout.trim() == "{}" {
-            if !output.status.success() {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                if !stderr.trim().is_empty() {
-                    return Err(FetchError::Failed(stderr.trim().to_string()));
-                }
-            }
+            check_for_silent_failure(output.status, &output.stderr)?;
             return Ok(vec![]);
         }
 
@@ -39,6 +34,22 @@ impl PackageManager for Pnpm {
 
         parse_outdated(&stdout, &root)
     }
+}
+
+/// pnpm exits non-zero with empty stdout when it genuinely fails.
+/// Distinguish that from "no outdated deps" by checking stderr.
+fn check_for_silent_failure(
+    status: std::process::ExitStatus,
+    stderr: &[u8],
+) -> Result<(), FetchError> {
+    if status.success() {
+        return Ok(());
+    }
+    let msg = String::from_utf8_lossy(stderr);
+    if !msg.trim().is_empty() {
+        return Err(FetchError::Failed(msg.trim().to_string()));
+    }
+    Ok(())
 }
 
 fn parse_outdated(json: &str, root: &Path) -> Result<Vec<OutdatedDependency>, FetchError> {

@@ -202,13 +202,9 @@ fn pop_and_record(
     min_tokens: usize,
 ) -> usize {
     let mut lb = i - 1;
-    while let Some(&(d, _)) = stack.last() {
-        if cur >= d {
-            break;
-        }
+    while stack.last().is_some_and(|&(d, _)| d > cur) {
         let (depth, left) = stack.pop().unwrap();
         lb = left;
-
         if depth >= min_tokens && i - 1 > left {
             intervals.push((depth, left, i - 1));
         }
@@ -232,13 +228,17 @@ fn extract_lcp_intervals(
     // the algorithm.
     #[allow(clippy::needless_range_loop)]
     for i in 1..=n {
-        let cur = if i < n { lcp[i] } else { 0 };
+        let cur = lcp.get(i).copied().unwrap_or(0);
         let lb = pop_and_record(&mut stack, &mut intervals, cur, i, min_tokens);
 
-        if cur >= min_tokens && (stack.is_empty() || cur > stack.last().unwrap().0) {
+        if should_push_interval(cur, min_tokens, &stack) {
             stack.push((cur, lb));
         }
     }
 
     intervals
+}
+
+fn should_push_interval(cur: usize, min_tokens: usize, stack: &[(usize, usize)]) -> bool {
+    cur >= min_tokens && stack.last().is_none_or(|&(d, _)| cur > d)
 }
