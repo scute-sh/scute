@@ -148,30 +148,40 @@ fn build_tool_args(check_name: &str, args: &[&str]) -> serde_json::Value {
             let message = args.first().copied().unwrap_or("");
             serde_json::json!({ "message": message })
         }
-        "code-similarity" | "code-complexity" => {
-            let mut json = serde_json::Map::new();
-            let mut files = Vec::new();
-            let mut i = 0;
-            while i < args.len() {
-                if args[i] == "--source-dir"
-                    && let Some(val) = args.get(i + 1)
-                {
-                    json.insert("source_dir".into(), serde_json::json!(val));
-                    i += 2;
-                    continue;
-                }
-                files.push(args[i]);
-                i += 1;
-            }
-            if !files.is_empty() {
-                json.insert("files".into(), serde_json::json!(files));
-            }
-            serde_json::Value::Object(json)
-        }
+        "code-complexity" => positional_paths_args("paths", args),
+        "code-similarity" => source_files_args(args),
         "dependency-freshness" => match args.first() {
             Some(path) => serde_json::json!({ "path": path }),
             None => serde_json::json!({}),
         },
         _ => serde_json::json!({}),
     }
+}
+
+fn positional_paths_args(key: &str, args: &[&str]) -> serde_json::Value {
+    match args.first() {
+        Some(_) => serde_json::json!({ key: args }),
+        None => serde_json::json!({}),
+    }
+}
+
+fn source_files_args(args: &[&str]) -> serde_json::Value {
+    let mut json = serde_json::Map::new();
+    let mut files = Vec::new();
+    let mut i = 0;
+    while i < args.len() {
+        if args[i] == "--source-dir"
+            && let Some(val) = args.get(i + 1)
+        {
+            json.insert("source_dir".into(), serde_json::json!(val));
+            i += 2;
+            continue;
+        }
+        files.push(args[i]);
+        i += 1;
+    }
+    if !files.is_empty() {
+        json.insert("files".into(), serde_json::json!(files));
+    }
+    serde_json::Value::Object(json)
 }

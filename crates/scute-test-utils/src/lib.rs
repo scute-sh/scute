@@ -15,6 +15,48 @@ use mcp::McpBackend;
 pub use project::TestProject;
 use tempfile::TempDir;
 
+/// Lightweight temp directory builder for unit tests that just need files on disk.
+///
+/// ```
+/// use scute_test_utils::TestDir;
+///
+/// let t = TestDir::new()
+///     .file("src/main.rs")    // creates parent dirs automatically
+///     .file("lib.rs");
+///
+/// let root = t.root();        // path to the temp directory
+/// let file = t.path("lib.rs"); // path to a specific file
+/// ```
+pub struct TestDir {
+    dir: TempDir,
+}
+
+#[allow(clippy::new_without_default)]
+impl TestDir {
+    pub fn new() -> Self {
+        Self {
+            dir: tempfile::tempdir().unwrap(),
+        }
+    }
+
+    pub fn file(self, name: &str) -> Self {
+        let path = self.dir.path().join(name);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(path, "").unwrap();
+        self
+    }
+
+    pub fn path(&self, name: &str) -> PathBuf {
+        self.dir.path().join(name)
+    }
+
+    pub fn root(&self) -> PathBuf {
+        self.dir.path().to_path_buf()
+    }
+}
+
 /// How the check process terminated, from the interface's perspective.
 ///
 /// CLI maps exit codes: 0 → Success, 1 → Failure, 2 → Error.

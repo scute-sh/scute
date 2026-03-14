@@ -355,15 +355,15 @@ checks:
 
     #[test_case(Cli)]
     #[test_case(Mcp)]
-    fn nonexistent_source_dir_produces_error(interface: Interface) {
+    fn nonexistent_path_produces_error(interface: Interface) {
         Scute::new(interface)
-            .check(&["code-complexity", "--source-dir", "/nonexistent/path"])
+            .check(&["code-complexity", "/nonexistent/path"])
             .expect_error("invalid_target");
     }
 
     #[test_case(Cli)]
     #[test_case(Mcp)]
-    fn focus_file_limits_to_matching_files(interface: Interface) {
+    fn scores_only_specified_file(interface: Interface) {
         Scute::new(interface)
             .source_file("src/complex.rs", COMPLEX_SOURCE)
             .source_file("src/simple.rs", "fn add(a: i32, b: i32) -> i32 { a + b }")

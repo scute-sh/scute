@@ -44,6 +44,12 @@ struct CheckDependencyFreshnessInput {
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
+struct CheckCodeComplexityInput {
+    /// Files or directories to check. Defaults to the project root.
+    paths: Option<Vec<String>>,
+}
+
+#[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 struct CheckSourceFilesInput {
     /// Directory to scan for source files. Defaults to the project root.
     source_dir: Option<String>,
@@ -111,15 +117,21 @@ impl ScuteMcp {
     async fn check_code_complexity(
         &self,
         peer: Peer<RoleServer>,
-        Parameters(input): Parameters<CheckSourceFilesInput>,
+        Parameters(input): Parameters<CheckCodeComplexityInput>,
     ) -> Result<CallToolResult, ErrorData> {
-        run_source_check(
-            &peer,
-            input,
+        let project_root = resolve_project_root(&peer).await?;
+        let paths: Vec<PathBuf> = input
+            .paths
+            .unwrap_or_default()
+            .into_iter()
+            .map(PathBuf::from)
+            .collect();
+        let paths = scute_core::files::paths_or_default(paths, &project_root);
+        run_check(
+            &project_root,
             code_complexity::CHECK_NAME,
-            code_complexity::check,
+            |def: &code_complexity::Definition| code_complexity::check(&paths, def),
         )
-        .await
     }
 
     /// Find code duplication in your project.

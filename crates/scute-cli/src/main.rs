@@ -53,11 +53,8 @@ enum Checks {
     },
     /// Measure code complexity of functions
     CodeComplexity {
-        /// Directory to scan for source files (defaults to working directory)
-        #[arg(long)]
-        source_dir: Option<PathBuf>,
-        /// Files to focus on. Reads from stdin if piped.
-        files: Vec<PathBuf>,
+        /// Files or directories to check. Reads from stdin if piped. Defaults to working directory.
+        paths: Vec<PathBuf>,
     },
     /// Find outdated dependencies
     DependencyFreshness {
@@ -104,14 +101,14 @@ fn run(cli: Cli) -> Result<()> {
                     println!("{}", serde_json::to_string(&checks)?);
                     Ok(())
                 }
-                Checks::CodeComplexity { source_dir, files } => run_source_check(
-                    &config,
-                    &project_root,
-                    source_dir,
-                    files,
-                    code_complexity::CHECK_NAME,
-                    code_complexity::check,
-                ),
+                Checks::CodeComplexity { paths } => {
+                    let paths = resolve_paths(paths, &project_root);
+                    let definition: code_complexity::Definition = config
+                        .definition(code_complexity::CHECK_NAME)
+                        .unwrap_or_else(|e| invalid_config(&e));
+                    let result = code_complexity::check(&paths, &definition);
+                    output(&CheckReport::new(code_complexity::CHECK_NAME, result))
+                }
                 Checks::CodeSimilarity { source_dir, files } => run_source_check(
                     &config,
                     &project_root,
@@ -233,9 +230,18 @@ fn resolve_target_path(path: Option<String>) -> PathBuf {
     path.map_or_else(project_root, PathBuf::from)
 }
 
+fn resolve_paths(paths: Vec<PathBuf>, default_dir: &Path) -> Vec<PathBuf> {
+    let paths = read_from_stdin_if_empty(paths);
+    scute_core::files::paths_or_default(paths, default_dir)
+}
+
 fn resolve_focus_files(files: Vec<PathBuf>) -> Vec<PathBuf> {
-    if !files.is_empty() {
-        return files;
+    read_from_stdin_if_empty(files)
+}
+
+fn read_from_stdin_if_empty(paths: Vec<PathBuf>) -> Vec<PathBuf> {
+    if !paths.is_empty() {
+        return paths;
     }
     let stdin = std::io::stdin();
     if stdin.is_terminal() {
