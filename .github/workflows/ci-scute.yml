@@ -20,6 +20,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  SCUTE: cargo run -q --
 
 jobs:
   ci:
@@ -58,6 +59,28 @@ jobs:
           workspaces: crates
 
       - name: Check for duplication
-        run: |
-          cd crates
-          cargo run -q -- check code-similarity
+        run: $SCUTE check code-similarity
+        working-directory: crates
+
+  code-complexity:
+    name: Code complexity
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Install Rust toolchain
+        run: rustup show
+        working-directory: crates
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: crates
+
+      - name: Check complexity of changed files
+        env:
+          BASE: origin/${{ github.base_ref }}
+        run: git diff --name-only $BASE...HEAD -- '*.rs' | $SCUTE check code-complexity
+        working-directory: crates
