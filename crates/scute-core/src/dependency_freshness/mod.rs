@@ -11,6 +11,56 @@ use serde::Deserialize;
 
 use crate::{Evaluation, Evidence, ExecutionError, Expected, Outcome, Status, Thresholds};
 
+/// Shared root-detection logic for package managers that shell out to a CLI,
+/// parse JSON, extract a root path, and compare it to `target`.
+///
+/// `extract_root_path` receives the parsed JSON and should return the root
+/// directory as a string, or `None` if the field is missing.
+#[doc(hidden)]
+pub fn run_and_check_root(
+    cmd: &str,
+    args: &[&str],
+    target: &Path,
+    extract_root_path: impl FnOnce(serde_json::Value) -> Option<String>,
+) -> bool {
+    let Ok(output) = std::process::Command::new(cmd)
+        .args(args)
+        .current_dir(target)
+        .output()
+    else {
+        return false;
+    };
+
+    if !output.status.success() {
+        return false;
+    }
+
+    let root_path = String::from_utf8(output.stdout)
+        .ok()
+        .and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok())
+        .and_then(extract_root_path);
+
+    let Some(canonical_target) = target.canonicalize().ok() else {
+        return false;
+    };
+
+    root_path
+        .as_deref()
+        .is_some_and(|root| Path::new(root) == canonical_target)
+}
+
+fn prefix_locations(deps: &mut [OutdatedDependency], prefix: &Path) {
+    if prefix.as_os_str().is_empty() {
+        return;
+    }
+    for dep in deps {
+        dep.location = dep
+            .location
+            .as_ref()
+            .map(|loc| format!("{}/{loc}", prefix.display()));
+    }
+}
+
 pub const CHECK_NAME: &str = "dependency-freshness";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
@@ -263,16 +313,7 @@ pub fn fetch_outdated(target: &Path) -> Result<Vec<OutdatedDependency>, FetchErr
     for project in &projects {
         let mut deps = project.fetch_outdated()?;
         let prefix = project.dir.strip_prefix(target).unwrap_or(&project.dir);
-
-        if !prefix.as_os_str().is_empty() {
-            for dep in &mut deps {
-                dep.location = dep
-                    .location
-                    .as_ref()
-                    .map(|loc| format!("{}/{loc}", prefix.display()));
-            }
-        }
-
+        prefix_locations(&mut deps, prefix);
         all_outdated.extend(deps);
     }
 

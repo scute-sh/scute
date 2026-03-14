@@ -115,6 +115,20 @@ fn intervals_to_groups(
     groups
 }
 
+/// Check if every occurrence in `candidate` is spatially contained within
+/// some occurrence of `accepted`.
+fn is_subsumed_by(candidate: &CloneGroup, accepted: &[CloneGroup]) -> bool {
+    accepted.iter().any(|prev| {
+        candidate.occurrences.iter().all(|occ| {
+            prev.occurrences.iter().any(|p| {
+                p.source_id == occ.source_id
+                    && p.start_line <= occ.start_line
+                    && p.end_line >= occ.end_line
+            })
+        })
+    })
+}
+
 /// Keep only maximal matches: discard groups where every occurrence is
 /// spatially contained within an already-accepted longer group.
 fn filter_maximal_groups(mut groups: Vec<CloneGroup>) -> Vec<CloneGroup> {
@@ -126,20 +140,10 @@ fn filter_maximal_groups(mut groups: Vec<CloneGroup>) -> Vec<CloneGroup> {
     });
 
     let mut accepted: Vec<CloneGroup> = Vec::new();
-    'outer: for group in groups {
-        for prev in &accepted {
-            let all_contained = group.occurrences.iter().all(|occ| {
-                prev.occurrences.iter().any(|p| {
-                    p.source_id == occ.source_id
-                        && p.start_line <= occ.start_line
-                        && p.end_line >= occ.end_line
-                })
-            });
-            if all_contained {
-                continue 'outer;
-            }
+    for group in groups {
+        if !is_subsumed_by(&group, &accepted) {
+            accepted.push(group);
         }
-        accepted.push(group);
     }
 
     accepted
@@ -149,6 +153,19 @@ fn build_suffix_array(text: &[usize]) -> Vec<usize> {
     let mut sa: Vec<usize> = (0..text.len()).collect();
     sa.sort_by(|&a, &b| text[a..].cmp(&text[b..]));
     sa
+}
+
+/// Count how many tokens match between `text[i+start..]` and `text[j+start..]`.
+fn count_common_prefix(text: &[usize], i: usize, j: usize, start: usize) -> usize {
+    let n = text.len();
+    let mut len = 0;
+    while i + start + len < n
+        && j + start + len < n
+        && text[i + start + len] == text[j + start + len]
+    {
+        len += 1;
+    }
+    len
 }
 
 fn build_lcp_array(text: &[usize], sa: &[usize]) -> Vec<usize> {
@@ -167,14 +184,36 @@ fn build_lcp_array(text: &[usize], sa: &[usize]) -> Vec<usize> {
             continue;
         }
         let j = sa[rank[i] - 1];
-        while i + h < n && j + h < n && text[i + h] == text[j + h] {
-            h += 1;
-        }
+        h += count_common_prefix(text, i, j, h);
         lcp[rank[i]] = h;
         h = h.saturating_sub(1);
     }
 
     lcp
+}
+
+/// Pop stack entries with depth > `cur`, recording valid intervals.
+/// Returns the leftmost bound seen during popping.
+fn pop_and_record(
+    stack: &mut Vec<(usize, usize)>,
+    intervals: &mut Vec<(usize, usize, usize)>,
+    cur: usize,
+    i: usize,
+    min_tokens: usize,
+) -> usize {
+    let mut lb = i - 1;
+    while let Some(&(d, _)) = stack.last() {
+        if cur >= d {
+            break;
+        }
+        let (depth, left) = stack.pop().unwrap();
+        lb = left;
+
+        if depth >= min_tokens && i - 1 > left {
+            intervals.push((depth, left, i - 1));
+        }
+    }
+    lb
 }
 
 /// Enumerate all maximal LCP intervals with depth >= `min_tokens`.
@@ -194,19 +233,7 @@ fn extract_lcp_intervals(
     #[allow(clippy::needless_range_loop)]
     for i in 1..=n {
         let cur = if i < n { lcp[i] } else { 0 };
-        let mut lb = i - 1;
-
-        while let Some(&(d, _)) = stack.last() {
-            if cur >= d {
-                break;
-            }
-            let (depth, left) = stack.pop().unwrap();
-            lb = left;
-
-            if depth >= min_tokens && i - 1 > left {
-                intervals.push((depth, left, i - 1));
-            }
-        }
+        let lb = pop_and_record(&mut stack, &mut intervals, cur, i, min_tokens);
 
         if cur >= min_tokens && (stack.is_empty() || cur > stack.last().unwrap().0) {
             stack.push((cur, lb));
