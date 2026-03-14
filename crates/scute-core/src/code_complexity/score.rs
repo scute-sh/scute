@@ -129,17 +129,11 @@ fn collect_functions(node: tree_sitter::Node, src: &[u8], results: &mut Vec<Func
 }
 
 fn enclosing_impl_type(node: tree_sitter::Node, src: &[u8]) -> Option<String> {
-    let mut current = node;
-    while let Some(parent) = current.parent() {
-        if parent.kind() == "impl_item" {
-            return parent
-                .child_by_field_name("type")
-                .and_then(|t| t.utf8_text(src).ok())
-                .map(String::from);
-        }
-        current = parent;
-    }
-    None
+    std::iter::successors(node.parent(), tree_sitter::Node::parent)
+        .find(|n| n.kind() == "impl_item")
+        .and_then(|n| n.child_by_field_name("type"))
+        .and_then(|t| t.utf8_text(src).ok())
+        .map(String::from)
 }
 
 fn complexity(
@@ -224,20 +218,17 @@ fn score_node(
 }
 
 fn nesting_chain(node: tree_sitter::Node) -> Vec<Construct> {
-    let mut chain = vec![];
-    let mut current = node;
-    while let Some(parent) = current.parent() {
-        if parent.kind() == "function_item" {
-            break;
+    let ancestors = std::iter::successors(node.parent(), tree_sitter::Node::parent);
+    let mut chain = Vec::new();
+    for parent in ancestors {
+        match parent.kind() {
+            "function_item" => break,
+            "closure_expression" => {
+                chain.push(Construct::Closure);
+                break;
+            }
+            kind => chain.extend(parse_construct(kind)),
         }
-        if parent.kind() == "closure_expression" {
-            chain.push(Construct::Closure);
-            break;
-        }
-        if let Some(construct) = parse_construct(parent.kind()) {
-            chain.push(construct);
-        }
-        current = parent;
     }
     chain.reverse();
     chain
@@ -659,6 +650,19 @@ mod tests {
                 increment: 3,
             })
         );
+    }
+
+    #[test]
+    fn empty_source_returns_no_functions() {
+        let results = score_functions("", &tree_sitter_rust::LANGUAGE.into());
+        assert!(results.is_empty());
+    }
+
+    #[test]
+    fn broken_syntax_does_not_panic() {
+        let results = score_functions("fn f(x: i32 -> { x + }", &tree_sitter_rust::LANGUAGE.into());
+        // tree-sitter recovers from errors — should not panic
+        let _ = results;
     }
 
     // outer: inner fn bumps nesting to 1, if inside inner at nesting 1 = +2, if in outer = +1 → 3

@@ -355,6 +355,14 @@ checks:
 
     #[test_case(Cli)]
     #[test_case(Mcp)]
+    fn nonexistent_source_dir_produces_error(interface: Interface) {
+        Scute::new(interface)
+            .check(&["code-complexity", "--source-dir", "/nonexistent/path"])
+            .expect_error("invalid_target");
+    }
+
+    #[test_case(Cli)]
+    #[test_case(Mcp)]
     fn focus_file_limits_to_matching_files(interface: Interface) {
         Scute::new(interface)
             .source_file("src/complex.rs", COMPLEX_SOURCE)

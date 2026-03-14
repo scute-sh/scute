@@ -38,10 +38,11 @@ pub fn check(
     let exclude = definition.exclude.as_deref().unwrap_or_default();
     let rust_files = discover_rust_files(&canonical_dir, exclude);
 
-    let focus: Vec<PathBuf> = focus_files
-        .iter()
-        .filter_map(|p| p.canonicalize().ok())
-        .collect();
+    let focus =
+        match files::validate_focus_files(focus_files, &["rs"], "only Rust files are supported") {
+            Ok(files) => files,
+            Err(errors) => return Ok(errors),
+        };
 
     let language: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
     let mut evaluations = Vec::new();
@@ -323,5 +324,32 @@ mod tests {
 
         assert_eq!(evals.len(), 1);
         assert!(evals[0].is_pass()); // fallback pass, no rust files
+    }
+
+    #[test]
+    fn nonexistent_focus_file_produces_error() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let evals = check(
+            dir.path(),
+            &[PathBuf::from("/nonexistent/file.rs")],
+            &Definition::default(),
+        )
+        .unwrap();
+
+        assert_eq!(evals.len(), 1);
+        assert!(evals[0].is_error());
+    }
+
+    #[test]
+    fn unsupported_focus_file_extension_produces_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let py_file = dir.path().join("code.py");
+        fs::write(&py_file, "def foo(): pass").unwrap();
+
+        let evals = check(dir.path(), &[py_file], &Definition::default()).unwrap();
+
+        assert_eq!(evals.len(), 1);
+        assert!(evals[0].is_error());
     }
 }
