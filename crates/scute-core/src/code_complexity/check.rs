@@ -37,21 +37,22 @@ impl Definition {
     }
 }
 
-/// Score cognitive complexity for every Rust function in a directory.
+/// Score cognitive complexity for every function in the given paths.
 ///
-/// Discovers `.rs` files, parses each one with tree-sitter, and returns
-/// one [`Evaluation`] per function found. When no Rust files exist,
-/// returns a single passing evaluation.
+/// Accepts a mix of files and directories. Directories are walked to
+/// discover supported files (respecting `exclude` patterns).
 ///
-/// When `focus_files` is non-empty, only functions from those files are
-/// reported. An empty slice means full-project scan. Focus files with
-/// unsupported extensions or that don't exist produce errored evaluations.
+/// Returns one [`Evaluation`] per function found. When no supported files
+/// exist, returns a single passing evaluation.
 ///
 /// ```no_run
-/// use std::path::Path;
+/// use std::path::PathBuf;
 /// use scute_core::code_complexity::{self, Definition};
 ///
-/// let evals = code_complexity::check(Path::new("."), &[], &Definition::default()).unwrap();
+/// let evals = code_complexity::check(
+///     &[PathBuf::from("src/")],
+///     &Definition::default(),
+/// ).unwrap();
 /// for eval in &evals {
 ///     if eval.is_fail() {
 ///         eprintln!("complex function: {}", eval.target);
@@ -61,32 +62,24 @@ impl Definition {
 ///
 /// # Errors
 ///
-/// Returns `ExecutionError` if `source_dir` is not a valid directory.
+/// Returns `ExecutionError` if any path is invalid.
 pub fn check(
-    source_dir: &Path,
-    focus_files: &[PathBuf],
+    paths: &[PathBuf],
     definition: &Definition,
 ) -> Result<Vec<Evaluation>, ExecutionError> {
-    let canonical_dir = files::validate_source_dir(source_dir)?;
-
     let thresholds = definition.thresholds();
     let exclude = definition.exclude.as_deref().unwrap_or_default();
-    let rust_files = discover_rust_files(&canonical_dir, exclude);
 
-    let focus =
-        match files::validate_focus_files(focus_files, &["rs"], "only Rust files are supported") {
-            Ok(files) => files,
-            Err(errors) => return Ok(errors),
-        };
+    let files = files::resolve_paths(paths, &["rs"], exclude).map_err(|e| ExecutionError {
+        code: "invalid_target".into(),
+        message: e.to_string(),
+        recovery: "check that the path exists and is readable".into(),
+    })?;
 
     let language: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
     let mut evaluations = Vec::new();
 
-    let paths = rust_files
-        .iter()
-        .filter(|p| focus.is_empty() || focus.contains(p));
-
-    for path in paths {
+    for path in &files {
         let Ok(source) = std::fs::read_to_string(path) else {
             continue;
         };
@@ -94,12 +87,10 @@ pub fn check(
     }
 
     if evaluations.is_empty() {
-        evaluations.push(Evaluation::completed(
-            source_dir.display().to_string(),
-            0,
-            thresholds,
-            vec![],
-        ));
+        let label = paths
+            .first()
+            .map_or_else(|| ".".into(), |p| p.display().to_string());
+        evaluations.push(Evaluation::completed(label, 0, thresholds, vec![]));
     }
 
     Ok(evaluations)
@@ -207,15 +198,6 @@ fn format_evidence(c: &score::Contributor, path: &Path) -> Evidence {
     }
 }
 
-fn discover_rust_files(dir: &Path, exclude: &[String]) -> Vec<PathBuf> {
-    let mut result: Vec<PathBuf> = files::walk_source_files(dir, true, exclude)
-        .filter(|e| e.path().extension().is_some_and(|ext| ext == "rs"))
-        .map(ignore::DirEntry::into_path)
-        .collect();
-    result.sort();
-    result
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -223,7 +205,7 @@ mod tests {
     use test_case::test_case;
 
     fn check_dir(dir: &Path) -> Vec<Evaluation> {
-        check(dir, &[], &Definition::default()).unwrap()
+        check(&[dir.to_path_buf()], &Definition::default()).unwrap()
     }
 
     #[test]
@@ -253,13 +235,13 @@ mod tests {
     }
 
     #[test]
-    fn focus_files_limits_to_matching_files() {
+    fn scores_only_functions_in_specified_file() {
         let dir = tempfile::tempdir().unwrap();
         let target = dir.path().join("target.rs");
         fs::write(&target, "fn focused() { if true {} }").unwrap();
         fs::write(dir.path().join("other.rs"), "fn ignored() { if true {} }").unwrap();
 
-        let evals = check(dir.path(), &[target], &Definition::default()).unwrap();
+        let evals = check(&[target], &Definition::default()).unwrap();
 
         assert!(evals.iter().all(|e| e.target.contains("focused")));
     }
@@ -343,8 +325,8 @@ mod tests {
     }
 
     #[test]
-    fn rejects_nonexistent_source_dir() {
-        let result = check(Path::new("/does/not/exist"), &[], &Definition::default());
+    fn rejects_nonexistent_path() {
+        let result = check(&[PathBuf::from("/does/not/exist")], &Definition::default());
 
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().code, "invalid_target");
@@ -362,29 +344,25 @@ mod tests {
     }
 
     #[test]
-    fn nonexistent_focus_file_produces_error() {
-        let dir = tempfile::tempdir().unwrap();
-
-        let evals = check(
-            dir.path(),
+    fn rejects_nonexistent_file() {
+        let result = check(
             &[PathBuf::from("/nonexistent/file.rs")],
             &Definition::default(),
-        )
-        .unwrap();
+        );
 
-        assert_eq!(evals.len(), 1);
-        assert!(evals[0].is_error());
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, "invalid_target");
     }
 
     #[test]
-    fn unsupported_focus_file_extension_produces_error() {
+    fn rejects_unsupported_file_extension() {
         let dir = tempfile::tempdir().unwrap();
         let py_file = dir.path().join("code.py");
         fs::write(&py_file, "def foo(): pass").unwrap();
 
-        let evals = check(dir.path(), &[py_file], &Definition::default()).unwrap();
+        let result = check(&[py_file], &Definition::default());
 
-        assert_eq!(evals.len(), 1);
-        assert!(evals[0].is_error());
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err().code, "invalid_target");
     }
 }

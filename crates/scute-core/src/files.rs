@@ -1,3 +1,4 @@
+use std::fmt;
 use std::path::{Path, PathBuf};
 
 use ignore::WalkBuilder;
@@ -86,22 +87,107 @@ fn validate_focus_file(
     })
 }
 
+/// Validate and canonicalize a directory path.
+///
 /// # Errors
 ///
-/// Returns `ExecutionError` if the path cannot be canonicalized.
-pub fn validate_source_dir(source_dir: &Path) -> Result<PathBuf, crate::ExecutionError> {
-    source_dir
-        .canonicalize()
-        .map_err(|e| crate::ExecutionError {
-            code: "invalid_target".into(),
-            message: format!("cannot read directory {}: {e}", source_dir.display()),
-            recovery: "check that the path exists and is a directory".into(),
-        })
+/// Returns `InvalidPath` if the path cannot be canonicalized.
+pub fn validate_source_dir(source_dir: &Path) -> Result<PathBuf, InvalidPath> {
+    source_dir.canonicalize().map_err(|e| InvalidPath {
+        path: source_dir.display().to_string(),
+        kind: InvalidPathKind::InvalidDirectory(format!(
+            "cannot read directory {}: {e}",
+            source_dir.display()
+        )),
+    })
+}
+
+/// A path that couldn't be resolved.
+#[derive(Debug)]
+pub struct InvalidPath {
+    pub path: String,
+    pub kind: InvalidPathKind,
+}
+
+impl fmt::Display for InvalidPath {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.kind {
+            InvalidPathKind::UnsupportedExtension => {
+                write!(f, "unsupported file type: {}", self.path)
+            }
+            InvalidPathKind::Unreadable => write!(f, "cannot read file: {}", self.path),
+            InvalidPathKind::InvalidDirectory(msg) => write!(f, "{msg}"),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum InvalidPathKind {
+    UnsupportedExtension,
+    Unreadable,
+    InvalidDirectory(String),
+}
+
+/// Resolve mixed file/directory paths into a flat list of source files.
+///
+/// Each path is classified: files are validated individually (extension +
+/// readability), directories are walked to discover matching files.
+///
+/// Fails fast on the first invalid path.
+///
+/// # Errors
+///
+/// Returns `InvalidPath` if any path has an unsupported extension,
+/// doesn't exist, or is an unreadable directory.
+pub fn resolve_paths(
+    paths: &[PathBuf],
+    supported_extensions: &[&str],
+    exclude: &[String],
+) -> Result<Vec<PathBuf>, InvalidPath> {
+    let mut resolved = Vec::new();
+    for path in paths {
+        if path.is_dir() {
+            let dir = validate_source_dir(path)?;
+            resolved.extend(discover_files(&dir, supported_extensions, exclude));
+        } else {
+            resolved.push(resolve_file(path, supported_extensions)?);
+        }
+    }
+    Ok(resolved)
+}
+
+fn discover_files(dir: &Path, extensions: &[&str], exclude: &[String]) -> Vec<PathBuf> {
+    let mut files: Vec<PathBuf> = walk_source_files(dir, true, exclude)
+        .filter(|e| has_extension(e.path(), extensions))
+        .map(ignore::DirEntry::into_path)
+        .collect();
+    files.sort();
+    files
+}
+
+fn resolve_file(path: &Path, supported_extensions: &[&str]) -> Result<PathBuf, InvalidPath> {
+    if !has_extension(path, supported_extensions) {
+        return Err(InvalidPath {
+            path: path.display().to_string(),
+            kind: InvalidPathKind::UnsupportedExtension,
+        });
+    }
+    path.canonicalize().map_err(|_| InvalidPath {
+        path: path.display().to_string(),
+        kind: InvalidPathKind::Unreadable,
+    })
+}
+
+fn has_extension(path: &Path, extensions: &[&str]) -> bool {
+    path.extension()
+        .and_then(|e| e.to_str())
+        .is_some_and(|ext| extensions.contains(&ext))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use googletest::prelude::*;
     use std::fs;
 
     #[test]
@@ -115,11 +201,16 @@ mod tests {
     }
 
     #[test]
-    fn rejects_nonexistent_path() {
+    fn rejects_nonexistent_directory() {
         let result = validate_source_dir(Path::new("/does/not/exist"));
 
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err().code, "invalid_target");
+        assert_that!(
+            result,
+            err(field!(
+                InvalidPath.kind,
+                pat!(InvalidPathKind::InvalidDirectory(_))
+            ))
+        );
     }
 
     fn walk(dir: &Path, exclude: &[String]) -> Vec<PathBuf> {
@@ -182,10 +273,9 @@ mod tests {
 
     #[test]
     fn focus_files_returns_empty_for_no_files() {
-        let result: Result<Vec<PathBuf>, _> =
-            validate_focus_files(&[], &["rs"], "only Rust files are supported");
+        let result = validate_focus_files(&[], &["rs"], "only Rust files are supported");
 
-        assert!(result.unwrap().is_empty());
+        assert_that!(result, ok(is_empty()));
     }
 
     #[test]

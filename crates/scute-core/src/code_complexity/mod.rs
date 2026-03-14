@@ -12,12 +12,11 @@
 //! # Usage
 //!
 //! ```no_run
-//! use std::path::Path;
+//! use std::path::PathBuf;
 //! use scute_core::code_complexity::{self, Definition};
 //!
 //! let results = code_complexity::check(
-//!     Path::new("."),
-//!     &[],                       // no focus files — score everything
+//!     &[PathBuf::from("src/")],  // files or directories to check
 //!     &Definition::default(),    // warn: 5, fail: 10
 //! );
 //! ```

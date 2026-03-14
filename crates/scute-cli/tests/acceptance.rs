@@ -355,9 +355,9 @@ checks:
 
     #[test_case(Cli)]
     #[test_case(Mcp)]
-    fn nonexistent_source_dir_produces_error(interface: Interface) {
+    fn nonexistent_path_produces_error(interface: Interface) {
         Scute::new(interface)
-            .check(&["code-complexity", "--source-dir", "/nonexistent/path"])
+            .check(&["code-complexity", "/nonexistent/path"])
             .expect_error("invalid_target");
     }
 

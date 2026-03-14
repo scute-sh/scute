@@ -42,13 +42,12 @@ Key behaviors:
 ### CLI
 
 ```sh
-scute check code-complexity [OPTIONS] [FILES]...
+scute check code-complexity [PATHS]...
 ```
 
-| Argument/Option      | Description                                                                       |
-| -------------------- | --------------------------------------------------------------------------------- |
-| `[FILES]...`         | Focus files. Only report findings for functions in these files. Reads from stdin if piped. |
-| `--source-dir <DIR>` | Directory to scan for source files. Defaults to the working directory.             |
+| Argument    | Description                                                                                  |
+| ----------- | -------------------------------------------------------------------------------------------- |
+| `[PATHS]..` | Files or directories to check. Directories are walked for supported files. Reads from stdin if piped. Defaults to the working directory. |
 
 Scan the full project:
 
@@ -56,10 +55,16 @@ Scan the full project:
 scute check code-complexity
 ```
 
-Focus on specific files:
+Check specific files:
 
 ```sh
 scute check code-complexity src/parser.rs src/engine.rs
+```
+
+Check a directory:
+
+```sh
+scute check code-complexity src/
 ```
 
 Pipe changed files from git:
@@ -72,10 +77,9 @@ git diff --name-only HEAD~1 | scute check code-complexity
 
 Tool name: `check_code_complexity`
 
-| Parameter    | Type            | Required | Description                                                       |
-| ------------ | --------------- | -------- | ----------------------------------------------------------------- |
-| `files`      | array\<string\> | no       | Focus files. Only report findings for functions in these files.    |
-| `source_dir` | string          | no       | Directory to scan for source files. Defaults to the project root. |
+| Parameter | Type            | Required | Description                                                                      |
+| --------- | --------------- | -------- | -------------------------------------------------------------------------------- |
+| `paths`   | array\<string\> | no       | Files or directories to check. Defaults to the project root. |
 
 ## Configuration
 
@@ -199,5 +203,5 @@ All functions score within thresholds. Nothing to fix.
 - **Supported languages:** Rust. TypeScript and JavaScript support is planned.
 - **Per-function, not per-file.** Each function is evaluated and reported independently. The `target` includes the function name and line number.
 - **Structural, not semantic.** Measures control flow structure. Two functions that are equally hard to understand but use different constructs may score differently.
-- **Focus vs. scan.** The `files` parameter focuses the *results* (only report functions from those files), but the full project is always scanned. You're filtering the report, not the search.
+- **Scoped analysis.** Only the files and directories you pass are analyzed. Pass nothing to scan the whole project.
 - **Graceful with syntax errors.** Tree-sitter recovers from parse errors. Malformed code won't crash the check.

@@ -91,7 +91,11 @@ pub fn check(
         fail: Some(DEFAULT_FAIL),
     });
 
-    let canonical_dir = files::validate_source_dir(source_dir)?;
+    let canonical_dir = files::validate_source_dir(source_dir).map_err(|e| ExecutionError {
+        code: "invalid_target".into(),
+        message: e.to_string(),
+        recovery: "check that the path exists and is a directory".into(),
+    })?;
     let focus_files = match files::validate_focus_files(
         focus_files,
         &["rs", "js", "jsx", "mjs", "cjs", "ts", "tsx"],
