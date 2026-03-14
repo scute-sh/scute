@@ -108,23 +108,25 @@ fn collect_test_ranges(parent: tree_sitter::Node, src: &[u8], ranges: &mut Vec<(
     for node in parent.children(&mut cursor) {
         match node.kind() {
             "mod_item" if has_preceding_attr(&node, src, is_cfg_test_attr) => {
-                let start = first_preceding_attr_row(&node).unwrap_or(node.start_position().row);
-                ranges.push((start + 1, node.end_position().row + 1));
+                push_range_with_attrs(&node, ranges);
             }
-            "mod_item" => {
-                let mut inner = node.walk();
-                for child in node.children(&mut inner) {
-                    if child.kind() == "declaration_list" {
-                        collect_test_ranges(child, src, ranges);
-                    }
-                }
-            }
+            "mod_item" => recurse_into_mod_body(node, src, ranges),
             "function_item" if has_preceding_attr(&node, src, |t| t == "#[test]") => {
-                let start = first_preceding_attr_row(&node).unwrap_or(node.start_position().row);
-                ranges.push((start + 1, node.end_position().row + 1));
+                push_range_with_attrs(&node, ranges);
             }
             _ => {}
         }
+    }
+}
+
+fn push_range_with_attrs(node: &tree_sitter::Node, ranges: &mut Vec<(usize, usize)>) {
+    let start = first_preceding_attr_row(node).unwrap_or(node.start_position().row);
+    ranges.push((start + 1, node.end_position().row + 1));
+}
+
+fn recurse_into_mod_body(node: tree_sitter::Node, src: &[u8], ranges: &mut Vec<(usize, usize)>) {
+    if let Some(body) = node.child_by_field_name("body") {
+        collect_test_ranges(body, src, ranges);
     }
 }
 
