@@ -47,7 +47,7 @@ scute check code-complexity [PATHS]...
 
 | Argument    | Description                                                                                  |
 | ----------- | -------------------------------------------------------------------------------------------- |
-| `[PATHS]..` | Files or directories to check. Directories are walked for supported files. Reads from stdin if piped. Defaults to the working directory. |
+| `[PATHS]...` | Files or directories to check. Directories are walked for supported files. Reads from stdin if piped. Defaults to the working directory. |
 
 Scan the full project:
 

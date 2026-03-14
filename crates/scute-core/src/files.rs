@@ -1,5 +1,5 @@
-use std::fmt;
 use std::path::{Path, PathBuf};
+use std::{fmt, io};
 
 use ignore::WalkBuilder;
 
@@ -91,15 +91,20 @@ fn validate_focus_file(
 ///
 /// # Errors
 ///
-/// Returns `InvalidPath` if the path cannot be canonicalized.
+/// Returns `InvalidPath` if the path doesn't exist, isn't a directory,
+/// or cannot be canonicalized.
 pub fn validate_source_dir(source_dir: &Path) -> Result<PathBuf, InvalidPath> {
-    source_dir.canonicalize().map_err(|e| InvalidPath {
+    let canonical = source_dir.canonicalize().map_err(|e| InvalidPath {
         path: source_dir.display().to_string(),
-        kind: InvalidPathKind::InvalidDirectory(format!(
-            "cannot read directory {}: {e}",
-            source_dir.display()
-        )),
-    })
+        kind: InvalidPathKind::InvalidDirectory(e),
+    })?;
+    if !canonical.is_dir() {
+        return Err(InvalidPath {
+            path: source_dir.display().to_string(),
+            kind: InvalidPathKind::ExpectedDirectory,
+        });
+    }
+    Ok(canonical)
 }
 
 /// A path that couldn't be resolved.
@@ -115,17 +120,36 @@ impl fmt::Display for InvalidPath {
             InvalidPathKind::UnsupportedExtension => {
                 write!(f, "unsupported file type: {}", self.path)
             }
-            InvalidPathKind::Unreadable => write!(f, "cannot read file: {}", self.path),
-            InvalidPathKind::InvalidDirectory(msg) => write!(f, "{msg}"),
+            InvalidPathKind::Unreadable(e) => write!(f, "cannot read {}: {e}", self.path),
+            InvalidPathKind::ExpectedDirectory => {
+                write!(f, "not a directory: {}", self.path)
+            }
+            InvalidPathKind::InvalidDirectory(e) => {
+                write!(f, "cannot read directory {}: {e}", self.path)
+            }
         }
     }
 }
 
+impl std::error::Error for InvalidPath {}
+
 #[derive(Debug)]
 pub enum InvalidPathKind {
     UnsupportedExtension,
-    Unreadable,
-    InvalidDirectory(String),
+    Unreadable(io::Error),
+    ExpectedDirectory,
+    InvalidDirectory(io::Error),
+}
+
+/// Returns `paths` as-is if non-empty, otherwise a single-element vec
+/// containing `default`.
+#[must_use]
+pub fn paths_or_default(paths: Vec<PathBuf>, default: &Path) -> Vec<PathBuf> {
+    if paths.is_empty() {
+        vec![default.to_path_buf()]
+    } else {
+        paths
+    }
 }
 
 /// Resolve mixed file/directory paths into a flat list of source files.
@@ -172,9 +196,9 @@ fn resolve_file(path: &Path, supported_extensions: &[&str]) -> Result<PathBuf, I
             kind: InvalidPathKind::UnsupportedExtension,
         });
     }
-    path.canonicalize().map_err(|_| InvalidPath {
+    path.canonicalize().map_err(|e| InvalidPath {
         path: path.display().to_string(),
-        kind: InvalidPathKind::Unreadable,
+        kind: InvalidPathKind::Unreadable(e),
     })
 }
 
@@ -289,5 +313,111 @@ mod tests {
 
         assert_eq!(files.len(), 1);
         assert!(files[0].ends_with("keep.rs"));
+    }
+
+    #[test]
+    fn rejects_file_passed_as_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("not_a_dir.rs");
+        fs::write(&file, "").unwrap();
+
+        let result = validate_source_dir(&file);
+
+        assert_that!(
+            result,
+            err(field!(
+                InvalidPath.kind,
+                pat!(InvalidPathKind::ExpectedDirectory)
+            ))
+        );
+    }
+
+    mod resolve_paths_tests {
+        use super::*;
+        use scute_test_utils::TestDir;
+
+        #[test]
+        fn resolves_single_file() {
+            let t = TestDir::new().file("main.rs");
+
+            let result = resolve_paths(&[t.path("main.rs")], &["rs"], &[]);
+
+            assert_that!(result, ok(len(eq(1))));
+        }
+
+        #[test]
+        fn resolves_directory() {
+            let t = TestDir::new().file("a.rs").file("b.rs");
+
+            let result = resolve_paths(&[t.root()], &["rs"], &[]);
+
+            assert_that!(result, ok(len(eq(2))));
+        }
+
+        #[test]
+        fn resolves_mixed_files_and_directories() {
+            let t = TestDir::new().file("main.rs").file("src/lib.rs");
+
+            let result = resolve_paths(&[t.path("main.rs"), t.path("src")], &["rs"], &[]);
+
+            assert_that!(result, ok(len(eq(2))));
+        }
+
+        #[test]
+        fn returns_empty_for_empty_input() {
+            let result = resolve_paths(&[], &["rs"], &[]);
+
+            assert_that!(result, ok(is_empty()));
+        }
+
+        #[test]
+        fn fails_fast_on_first_invalid_path() {
+            let t = TestDir::new().file("good.rs");
+            let bad = PathBuf::from("/nonexistent/file.rs");
+
+            let result = resolve_paths(&[bad.clone(), t.path("good.rs")], &["rs"], &[]);
+
+            let err = result.unwrap_err();
+            assert_eq!(err.path, bad.display().to_string());
+        }
+
+        #[test]
+        fn forwards_exclude_patterns_to_directory_walk() {
+            let t = TestDir::new().file("keep.rs").file("gen/skip.rs");
+
+            let result = resolve_paths(&[t.root()], &["rs"], &["gen/**".into()]);
+
+            let files = result.unwrap();
+            assert_eq!(files.len(), 1);
+            assert!(files[0].ends_with("keep.rs"));
+        }
+
+        #[test]
+        fn rejects_unsupported_extension() {
+            let t = TestDir::new().file("script.py");
+
+            let result = resolve_paths(&[t.path("script.py")], &["rs"], &[]);
+
+            assert_that!(
+                result,
+                err(field!(
+                    InvalidPath.kind,
+                    pat!(InvalidPathKind::UnsupportedExtension)
+                ))
+            );
+        }
+
+        #[test]
+        fn preserves_os_error_for_unreadable_file() {
+            let result = resolve_paths(&[PathBuf::from("/nonexistent/file.rs")], &["rs"], &[]);
+
+            assert_that!(
+                result,
+                err(field!(
+                    InvalidPath.kind,
+                    pat!(InvalidPathKind::Unreadable(_))
+                ))
+            );
+        }
     }
 }

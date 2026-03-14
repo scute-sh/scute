@@ -363,7 +363,7 @@ checks:
 
     #[test_case(Cli)]
     #[test_case(Mcp)]
-    fn focus_file_limits_to_matching_files(interface: Interface) {
+    fn scores_only_specified_file(interface: Interface) {
         Scute::new(interface)
             .source_file("src/complex.rs", COMPLEX_SOURCE)
             .source_file("src/simple.rs", "fn add(a: i32, b: i32) -> i32 { a + b }")

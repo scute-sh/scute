@@ -232,11 +232,7 @@ fn resolve_target_path(path: Option<String>) -> PathBuf {
 
 fn resolve_paths(paths: Vec<PathBuf>, default_dir: &Path) -> Vec<PathBuf> {
     let paths = read_from_stdin_if_empty(paths);
-    if paths.is_empty() {
-        vec![default_dir.to_path_buf()]
-    } else {
-        paths
-    }
+    scute_core::files::paths_or_default(paths, default_dir)
 }
 
 fn resolve_focus_files(files: Vec<PathBuf>) -> Vec<PathBuf> {

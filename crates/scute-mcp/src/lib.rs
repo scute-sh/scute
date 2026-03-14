@@ -126,11 +126,7 @@ impl ScuteMcp {
             .into_iter()
             .map(PathBuf::from)
             .collect();
-        let paths = if paths.is_empty() {
-            vec![project_root.clone()]
-        } else {
-            paths
-        };
+        let paths = scute_core::files::paths_or_default(paths, &project_root);
         run_check(
             &project_root,
             code_complexity::CHECK_NAME,
