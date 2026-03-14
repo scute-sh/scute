@@ -48,6 +48,20 @@ pub struct Summary {
     pub errored: u64,
 }
 
+impl Summary {
+    fn tally(&mut self, eval: &Evaluation) {
+        self.evaluated += 1;
+        match &eval.outcome {
+            Outcome::Completed { status, .. } => match status {
+                Status::Pass => self.passed += 1,
+                Status::Warn => self.warned += 1,
+                Status::Fail => self.failed += 1,
+            },
+            Outcome::Errored(_) => self.errored += 1,
+        }
+    }
+}
+
 impl CheckReport {
     /// Create a report from raw check output, computing the [`Summary`].
     #[must_use]
@@ -91,15 +105,7 @@ fn summarize(evaluations: &[Evaluation]) -> Summary {
             errored: 0,
         },
         |mut s, eval| {
-            s.evaluated += 1;
-            match &eval.outcome {
-                Outcome::Completed { status, .. } => match status {
-                    Status::Pass => s.passed += 1,
-                    Status::Warn => s.warned += 1,
-                    Status::Fail => s.failed += 1,
-                },
-                Outcome::Errored(_) => s.errored += 1,
-            }
+            s.tally(eval);
             s
         },
     )
