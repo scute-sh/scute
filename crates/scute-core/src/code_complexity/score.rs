@@ -109,14 +109,13 @@ fn collect_functions(node: tree_sitter::Node, src: &[u8], results: &mut Vec<Func
             let line = child.start_position().row + 1;
             let impl_type = enclosing_impl_type(child, src);
             let mut contributors = vec![];
-            let score = complexity(
-                child,
-                0,
-                &name,
-                impl_type.as_deref(),
+            let score = ScoringContext {
+                fn_name: &name,
+                impl_type: impl_type.as_deref(),
                 src,
-                &mut contributors,
-            );
+                contributors: &mut contributors,
+            }
+            .complexity(child, 0);
             results.push(FunctionScore {
                 name,
                 line,
@@ -136,84 +135,147 @@ fn enclosing_impl_type(node: tree_sitter::Node, src: &[u8]) -> Option<String> {
         .map(String::from)
 }
 
-fn complexity(
-    node: tree_sitter::Node,
-    nesting: u64,
-    fn_name: &str,
-    impl_type: Option<&str>,
-    src: &[u8],
-    contributors: &mut Vec<Contributor>,
-) -> u64 {
-    let mut cursor = node.walk();
-    node.children(&mut cursor)
-        .map(|child| score_node(child, nesting, fn_name, impl_type, src, contributors))
-        .sum()
+struct ScoringContext<'a> {
+    fn_name: &'a str,
+    impl_type: Option<&'a str>,
+    src: &'a [u8],
+    contributors: &'a mut Vec<Contributor>,
 }
 
-fn score_node(
-    node: tree_sitter::Node,
-    nesting: u64,
-    fn_name: &str,
-    impl_type: Option<&str>,
-    src: &[u8],
-    contributors: &mut Vec<Contributor>,
-) -> u64 {
-    match node.kind() {
-        kind @ ("if_expression" | "for_expression" | "while_expression" | "loop_expression"
-        | "match_expression") => {
-            let construct = parse_construct(kind).unwrap();
-            let increment = 1 + nesting;
-            let contributor_kind = if nesting > 0 {
-                let mut chain = nesting_chain(node);
-                chain.push(construct);
-                ContributorKind::Nesting {
-                    construct,
-                    depth: nesting,
-                    chain,
+impl ScoringContext<'_> {
+    fn complexity(&mut self, node: tree_sitter::Node, nesting: u64) -> u64 {
+        let mut cursor = node.walk();
+        node.children(&mut cursor)
+            .map(|child| self.score_node(child, nesting))
+            .sum()
+    }
+
+    fn score_node(&mut self, node: tree_sitter::Node, nesting: u64) -> u64 {
+        match node.kind() {
+            kind @ ("if_expression" | "for_expression" | "while_expression" | "loop_expression"
+            | "match_expression") => {
+                self.score_flow_break(node, nesting, parse_construct(kind).unwrap())
+            }
+
+            "closure_expression" | "function_item" => self.complexity(node, nesting + 1),
+
+            "else_clause" => self.score_else(node, nesting),
+
+            "binary_expression" if is_logical_op(node) => {
+                self.score_logical_sequence(node, nesting)
+            }
+
+            kind @ ("break_expression" | "continue_expression") if has_label(node) => {
+                self.score_jump(node, nesting, parse_jump_keyword(kind).unwrap())
+            }
+
+            "call_expression" => {
+                if is_recursive_call(node, self.fn_name, self.impl_type, self.src) {
+                    self.score_recursion(node, nesting)
+                } else {
+                    self.complexity(node, nesting)
                 }
-            } else {
-                ContributorKind::FlowBreak { construct }
-            };
-            contributors.push(Contributor {
-                kind: contributor_kind,
-                line: node.start_position().row + 1,
-                increment,
-            });
-            increment + complexity(node, nesting + 1, fn_name, impl_type, src, contributors)
-        }
+            }
 
-        "closure_expression" | "function_item" => {
-            complexity(node, nesting + 1, fn_name, impl_type, src, contributors)
+            _ => self.complexity(node, nesting),
         }
+    }
 
-        "else_clause" => score_else(node, nesting, fn_name, impl_type, src, contributors),
+    fn push(&mut self, kind: ContributorKind, node: tree_sitter::Node, increment: u64) {
+        self.contributors.push(Contributor {
+            kind,
+            line: node.start_position().row + 1,
+            increment,
+        });
+    }
 
-        "binary_expression" if is_logical_op(node) => {
-            score_logical_sequence(node, nesting, fn_name, impl_type, src, contributors)
+    fn score_flow_break(
+        &mut self,
+        node: tree_sitter::Node,
+        nesting: u64,
+        construct: Construct,
+    ) -> u64 {
+        let increment = 1 + nesting;
+        let kind = if nesting > 0 {
+            let mut chain = nesting_chain(node);
+            chain.push(construct);
+            ContributorKind::Nesting {
+                construct,
+                depth: nesting,
+                chain,
+            }
+        } else {
+            ContributorKind::FlowBreak { construct }
+        };
+        self.push(kind, node, increment);
+        increment + self.complexity(node, nesting + 1)
+    }
+
+    fn score_else(&mut self, node: tree_sitter::Node, nesting: u64) -> u64 {
+        let is_else_if = node
+            .children(&mut node.walk())
+            .any(|c| c.kind() == "if_expression");
+
+        if is_else_if {
+            self.complexity(node, nesting.saturating_sub(1))
+        } else {
+            self.push(ContributorKind::Else, node, 1);
+            1 + self.complexity(node, nesting)
         }
+    }
 
-        kind @ ("break_expression" | "continue_expression") if has_label(node) => {
-            let label = label_text(node, src).unwrap_or_default().to_string();
-            let keyword = parse_jump_keyword(kind).unwrap();
-            contributors.push(Contributor {
-                kind: ContributorKind::Jump { keyword, label },
-                line: node.start_position().row + 1,
-                increment: 1,
-            });
-            1 + complexity(node, nesting, fn_name, impl_type, src, contributors)
-        }
-        "call_expression" if is_recursive_call(node, fn_name, impl_type, src) => {
-            contributors.push(Contributor {
-                kind: ContributorKind::Recursion {
-                    fn_name: fn_name.to_string(),
+    fn score_jump(&mut self, node: tree_sitter::Node, nesting: u64, keyword: JumpKeyword) -> u64 {
+        let label = label_text(node, self.src).unwrap_or_default().to_string();
+        self.push(ContributorKind::Jump { keyword, label }, node, 1);
+        1 + self.complexity(node, nesting)
+    }
+
+    fn score_recursion(&mut self, node: tree_sitter::Node, nesting: u64) -> u64 {
+        self.push(
+            ContributorKind::Recursion {
+                fn_name: self.fn_name.to_string(),
+            },
+            node,
+            1,
+        );
+        1 + self.complexity(node, nesting)
+    }
+
+    fn score_logical_sequence(&mut self, node: tree_sitter::Node, nesting: u64) -> u64 {
+        let mut operators = vec![];
+        collect_logical_operators(node, &mut operators);
+
+        let score = count_operator_sequences(&operators);
+        if score > 0 {
+            self.push(
+                ContributorKind::Logical {
+                    operators: operators.iter().map(|&s| s.to_string()).collect(),
                 },
-                line: node.start_position().row + 1,
-                increment: 1,
-            });
-            1 + complexity(node, nesting, fn_name, impl_type, src, contributors)
+                node,
+                score,
+            );
         }
 
-        _ => complexity(node, nesting, fn_name, impl_type, src, contributors),
+        score + self.visit_logical_leaves(node, nesting)
+    }
+
+    fn visit_logical_leaves(&mut self, node: tree_sitter::Node, nesting: u64) -> u64 {
+        let mut cursor = node.walk();
+        let children: Vec<_> = node
+            .children(&mut cursor)
+            .filter(|child| !is_operator_token(*child))
+            .collect();
+
+        children
+            .into_iter()
+            .map(|child| {
+                if is_nested_logical(child) {
+                    self.visit_logical_leaves(child, nesting)
+                } else {
+                    self.complexity(child, nesting)
+                }
+            })
+            .sum()
     }
 }
 
@@ -250,37 +312,6 @@ fn parse_jump_keyword(tree_sitter_kind: &str) -> Option<JumpKeyword> {
         "break_expression" => Some(JumpKeyword::Break),
         "continue_expression" => Some(JumpKeyword::Continue),
         _ => None,
-    }
-}
-
-fn score_else(
-    node: tree_sitter::Node,
-    nesting: u64,
-    fn_name: &str,
-    impl_type: Option<&str>,
-    src: &[u8],
-    contributors: &mut Vec<Contributor>,
-) -> u64 {
-    let is_else_if = node
-        .children(&mut node.walk())
-        .any(|c| c.kind() == "if_expression");
-
-    if is_else_if {
-        complexity(
-            node,
-            nesting.saturating_sub(1),
-            fn_name,
-            impl_type,
-            src,
-            contributors,
-        )
-    } else {
-        contributors.push(Contributor {
-            kind: ContributorKind::Else,
-            line: node.start_position().row + 1,
-            increment: 1,
-        });
-        1 + complexity(node, nesting, fn_name, impl_type, src, contributors)
     }
 }
 
@@ -345,31 +376,6 @@ fn count_operator_sequences(operators: &[&str]) -> u64 {
         + u64::from(!operators.is_empty())
 }
 
-fn score_logical_sequence(
-    node: tree_sitter::Node,
-    nesting: u64,
-    fn_name: &str,
-    impl_type: Option<&str>,
-    src: &[u8],
-    contributors: &mut Vec<Contributor>,
-) -> u64 {
-    let mut operators = vec![];
-    collect_logical_operators(node, &mut operators);
-
-    let score = count_operator_sequences(&operators);
-    if score > 0 {
-        contributors.push(Contributor {
-            kind: ContributorKind::Logical {
-                operators: operators.iter().map(|&s| s.to_string()).collect(),
-            },
-            line: node.start_position().row + 1,
-            increment: score,
-        });
-    }
-
-    score + visit_logical_leaves(node, nesting, fn_name, impl_type, src, contributors)
-}
-
 fn collect_logical_operators(node: tree_sitter::Node, operators: &mut Vec<&'static str>) {
     if node.kind() != "binary_expression" {
         return;
@@ -393,28 +399,6 @@ fn is_nested_logical(node: tree_sitter::Node) -> bool {
 
 fn is_operator_token(node: tree_sitter::Node) -> bool {
     node.kind() == "&&" || node.kind() == "||"
-}
-
-fn visit_logical_leaves(
-    node: tree_sitter::Node,
-    nesting: u64,
-    fn_name: &str,
-    impl_type: Option<&str>,
-    src: &[u8],
-    contributors: &mut Vec<Contributor>,
-) -> u64 {
-    let mut cursor = node.walk();
-    node.children(&mut cursor)
-        .filter(|child| !is_operator_token(*child))
-        .map(|child| {
-            let visit = if is_nested_logical(child) {
-                visit_logical_leaves
-            } else {
-                complexity
-            };
-            visit(child, nesting, fn_name, impl_type, src, contributors)
-        })
-        .sum()
 }
 
 #[cfg(test)]
