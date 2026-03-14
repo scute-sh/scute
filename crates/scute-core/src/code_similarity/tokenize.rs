@@ -68,13 +68,25 @@ fn classify_node(node: &tree_sitter::Node, source: &[u8], config: &LanguageConfi
     }
 
     if !node.is_named() {
-        return if node.child_count() == 0 {
-            TokenAction::Emit(Token::new(node.kind(), node))
-        } else {
-            TokenAction::Recurse
-        };
+        return classify_unnamed(node);
     }
 
+    classify_by_role(node, source, config)
+}
+
+fn classify_unnamed(node: &tree_sitter::Node) -> TokenAction {
+    if node.child_count() == 0 {
+        TokenAction::Emit(Token::new(node.kind(), node))
+    } else {
+        TokenAction::Recurse
+    }
+}
+
+fn classify_by_role(
+    node: &tree_sitter::Node,
+    source: &[u8],
+    config: &LanguageConfig,
+) -> TokenAction {
     match config.classify(node.kind()) {
         NodeRole::Identifier => TokenAction::Emit(Token::new("$ID", node)),
         NodeRole::Literal => TokenAction::Emit(Token::new("$LIT", node)),

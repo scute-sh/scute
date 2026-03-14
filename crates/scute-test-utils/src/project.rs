@@ -340,12 +340,13 @@ fn append_cargo_deps(
     for (section, deps) in [
         ("[dependencies]", dependencies),
         ("[dev-dependencies]", dev_dependencies),
-    ] {
-        if !deps.is_empty() {
-            writeln!(toml, "\n{section}").unwrap();
-            for (name, version) in deps {
-                writeln!(toml, "{name} = \"{version}\"").unwrap();
-            }
+    ]
+    .into_iter()
+    .filter(|(_, deps)| !deps.is_empty())
+    {
+        writeln!(toml, "\n{section}").unwrap();
+        for (name, version) in deps {
+            writeln!(toml, "{name} = \"{version}\"").unwrap();
         }
     }
 }

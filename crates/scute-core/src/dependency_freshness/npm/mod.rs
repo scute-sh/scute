@@ -62,11 +62,7 @@ fn parse_outdated(
             _ => continue,
         };
 
-        for entry in entries {
-            if let Some(dependency) = parse_entry(name, entry, layout) {
-                outdated.push(dependency);
-            }
-        }
+        outdated.extend(entries.iter().filter_map(|e| parse_entry(name, e, layout)));
     }
 
     Ok(outdated)
