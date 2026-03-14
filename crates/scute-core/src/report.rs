@@ -39,7 +39,7 @@ impl CheckRun {
 }
 
 /// Counts of evaluation outcomes.
-#[derive(Debug)]
+#[derive(Debug, Default)]
 pub struct Summary {
     pub evaluated: u64,
     pub passed: u64,
@@ -49,7 +49,7 @@ pub struct Summary {
 }
 
 impl Summary {
-    fn tally(&mut self, eval: &Evaluation) {
+    fn tally(mut self, eval: &Evaluation) -> Self {
         self.evaluated += 1;
         match &eval.outcome {
             Outcome::Completed { status, .. } => match status {
@@ -59,6 +59,7 @@ impl Summary {
             },
             Outcome::Errored(_) => self.errored += 1,
         }
+        self
     }
 }
 
@@ -96,19 +97,7 @@ impl CheckReport {
 }
 
 fn summarize(evaluations: &[Evaluation]) -> Summary {
-    evaluations.iter().fold(
-        Summary {
-            evaluated: 0,
-            passed: 0,
-            warned: 0,
-            failed: 0,
-            errored: 0,
-        },
-        |mut s, eval| {
-            s.tally(eval);
-            s
-        },
-    )
+    evaluations.iter().fold(Summary::default(), Summary::tally)
 }
 
 #[cfg(test)]
