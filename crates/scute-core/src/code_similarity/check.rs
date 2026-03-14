@@ -92,7 +92,11 @@ pub fn check(
     });
 
     let canonical_dir = files::validate_source_dir(source_dir)?;
-    let focus_files = match validate_focus_files(focus_files) {
+    let focus_files = match files::validate_focus_files(
+        focus_files,
+        &["rs", "js", "jsx", "mjs", "cjs", "ts", "tsx"],
+        "only Rust, JavaScript, and TypeScript files are supported",
+    ) {
         Ok(files) => files,
         Err(errors) => return Ok(errors),
     };
@@ -157,45 +161,6 @@ fn read_sources(
             Some((path.display().to_string(), content, lang))
         })
         .collect()
-}
-
-fn validate_focus_files(files: &[PathBuf]) -> Result<Vec<PathBuf>, Vec<Evaluation>> {
-    let mut canonical = Vec::new();
-    let mut errors = Vec::new();
-    for path in files {
-        match validate_focus_file(path) {
-            Ok(p) => canonical.push(p),
-            Err(e) => errors.push(e),
-        }
-    }
-    if errors.is_empty() {
-        Ok(canonical)
-    } else {
-        Err(errors)
-    }
-}
-
-fn validate_focus_file(path: &Path) -> Result<PathBuf, Evaluation> {
-    if language_for_path(path).is_none() {
-        return Err(Evaluation::errored(
-            path.display().to_string(),
-            ExecutionError {
-                code: "unsupported_language".into(),
-                message: format!("unsupported file type: {}", path.display()),
-                recovery: "only Rust, JavaScript, and TypeScript files are supported".into(),
-            },
-        ));
-    }
-    path.canonicalize().map_err(|_| {
-        Evaluation::errored(
-            path.display().to_string(),
-            ExecutionError {
-                code: "unreadable_file".into(),
-                message: format!("cannot read file: {}", path.display()),
-                recovery: "check that the file exists and is readable".into(),
-            },
-        )
-    })
 }
 
 fn detect_clones(
@@ -656,28 +621,6 @@ mod tests {
         let evidence = unwrap_evidence(&evals[0]);
         assert_location_contains(evidence, "a.rs");
         assert_location_contains(evidence, "b.rs");
-    }
-
-    #[test]
-    fn unsupported_focus_file_produces_errored_evaluation() {
-        let dir = make_dir(&[("script.py", "def foo(): pass")]);
-
-        let evals = check_focused(dir.path(), &[dir.path().join("script.py")]);
-
-        assert_that!(evals, len(eq(1)));
-        assert!(evals[0].is_error());
-        assert_that!(evals[0].target, contains_substring("script.py"));
-    }
-
-    #[test]
-    fn unreadable_focus_file_produces_errored_evaluation() {
-        let dir = TempDir::new().unwrap();
-
-        let evals = check_focused(dir.path(), &[dir.path().join("missing.rs")]);
-
-        assert_that!(evals, len(eq(1)));
-        assert!(evals[0].is_error());
-        assert_that!(evals[0].target, contains_substring("missing.rs"));
     }
 
     #[test]
