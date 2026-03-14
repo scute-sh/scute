@@ -150,13 +150,7 @@ impl TestProject {
             ),
             ProjectKind::Empty => {}
         }
-        for (name, content) in &self.source_files {
-            let path = root.join(name);
-            if let Some(parent) = path.parent() {
-                std::fs::create_dir_all(parent).unwrap();
-            }
-            std::fs::write(path, content).unwrap();
-        }
+        write_source_files(root, &self.source_files);
         if let Some(yaml) = &self.scute_config {
             std::fs::write(root.join(".scute.yml"), yaml).unwrap();
         }
@@ -318,6 +312,16 @@ fn append_js_deps(
                 .collect();
             pkg.insert(key.into(), map.into());
         }
+    }
+}
+
+fn write_source_files(root: &Path, files: &[(String, String)]) {
+    for (name, content) in files {
+        let path = root.join(name);
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).unwrap();
+        }
+        std::fs::write(path, content).unwrap();
     }
 }
 
