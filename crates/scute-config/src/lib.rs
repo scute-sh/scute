@@ -58,21 +58,22 @@ impl ScuteConfig {
     }
 }
 
+fn is_search_boundary(dir: &Path, home: Option<&Path>) -> bool {
+    dir.join(".git").exists() || home == Some(dir)
+}
+
 fn find_config_file(start: &Path) -> Option<PathBuf> {
     let home = dirs::home_dir();
-    for dir in start.ancestors() {
-        let candidate = dir.join(CONFIG_FILE);
-        if candidate.exists() {
-            return Some(candidate);
-        }
-        if dir.join(".git").exists() {
-            return None;
-        }
-        if home.as_deref() == Some(dir) {
-            return None;
-        }
-    }
-    None
+    let mut searching = true;
+    start
+        .ancestors()
+        .take_while(move |dir| {
+            let allowed = searching;
+            searching = !is_search_boundary(dir, home.as_deref());
+            allowed
+        })
+        .map(|dir| dir.join(CONFIG_FILE))
+        .find(|candidate| candidate.exists())
 }
 
 fn format_config_error(err: &serde_yml::Error) -> String {
