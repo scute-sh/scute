@@ -106,8 +106,9 @@ result. Agents and CI consume it the same way.
 
 | Check                                                         | What it catches                 | Scope                        |
 | ------------------------------------------------------------- | ------------------------------- | ---------------------------- |
-| [`commit-message`](docs/checks/commit-message.md)             | Conventional Commits violations | Any project                  |
+| [`code-complexity`](docs/checks/code-complexity.md)            | Cognitive complexity per function | Rust                         |
 | [`code-similarity`](docs/checks/code-similarity.md)           | Structural code duplication     | Rust, JavaScript, TypeScript |
+| [`commit-message`](docs/checks/commit-message.md)             | Conventional Commits violations | Any project                  |
 | [`dependency-freshness`](docs/checks/dependency-freshness.md) | Outdated dependencies           | Cargo, npm, pnpm             |
 
 ## Quickstart
@@ -261,18 +262,14 @@ rules, etc.) telling the agent to use Scute checks proactively. Here's what
 Scute's own config looks like:
 
 ```markdown
-## MCP Tools Are Part of the Workflow
+# MCP Tools Are Part of the Workflow
 
-Before any action, think about which MCP tools are relevant to what you're
-about to do.
+Scute's MCP server has check tools. Use them proactively:
 
-Scute's MCP server has check tools to help you work more efficiently:
-
-- `check_commit_message`
-- `check_dependency_freshness`
-- `check_code_similarity`
-
-Use them.
+- `check_commit_message` — before making a commit
+- `check_code_complexity` — after changing a function or implementing a new one
+- `check_code_similarity` — after changing a function or implementing a new one
+- `check_dependency_freshness` — after adding or updating a dependency
 ```
 
 ### 3. The agent self-corrects
@@ -294,23 +291,27 @@ The same contract will support checks like:
 
 ```yaml
 checks:
-  # Keep functions simple
-  cognitive-complexity:
+  # Detect hidden dependencies from change patterns
+  change-coupling:
+    window: 90d
+    min-commits: 10
     thresholds:
-      warn: 10
-      fail: 20
+      warn: 30    # coupling degree %
+      fail: 60
 
-  # Don't let coverage erode
-  test-coverage-delta:
+  # Don't let coverage drift, ...
+  test-coverage-drift:
     thresholds:
       warn: -5
       fail: -15
 
-  # Respect the error budget
-  error-budget:
+  # Catch latency regressions
+  service-latency:
+    percentile: p99
+    window: 7d
     thresholds:
-      warn: 20
-      fail: 0
+      warn: 150   # ms
+      fail: 300
 ```
 
 Think of it like OpenTelemetry for fitness checks. OTel standardized
@@ -383,14 +384,14 @@ vision, principles, roadmap, and architecture decisions.
 
 **What's done:**
 
-- 3 checks: `commit-message`, `code-similarity`, `dependency-freshness`
+- 4 checks: `code-complexity`, `code-similarity`, `commit-message`, `dependency-freshness`
 - CLI with structured JSON output
 - MCP server for coding agent integration
 - Agent self-correction workflow (fail → read evidence → fix → pass)
 
 **What's next:**
 
-- More checks (cognitive complexity, circular dependencies, layer dependency)
+- More checks (circular dependencies, layer dependency)
 - Broader ecosystem support (deno, node, java, etc.)
 - Trend tracking (delta-from-baseline, direction over time)
 

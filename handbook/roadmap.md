@@ -5,11 +5,11 @@
 - Check engine, CLI, structured JSON output
 - MCP server as a first-class interface
 - Agent workflow integration (fail → evidence → self-correct → pass)
-- 3 checks: commit-message, code-similarity, dependency-freshness
+- 4 checks: code-complexity, code-similarity, commit-message, dependency-freshness
 
 ## Phase 2: Expand
 
-- More checks: cognitive complexity, circular dependencies, layer dependency
+- More checks: circular dependencies, layer dependency, change coupling
 - Broader ecosystem: deno/pnpm support for existing checks, npm
   dependency-freshness
 - Scope resolution (standardized approach for changed-files, staged, PR diff,
