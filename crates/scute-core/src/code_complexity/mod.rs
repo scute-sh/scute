@@ -1,3 +1,30 @@
+//! Cognitive complexity scoring for Rust functions.
+//!
+//! Scores each function based on how hard it is to understand, following
+//! [G. Ann Campbell's cognitive complexity spec](https://www.sonarsource.com/docs/CognitiveComplexity.pdf).
+//! Six cognitive drivers contribute to the score: flow breaks, nesting,
+//! else branches, boolean logic sequences, recursion, and labeled jumps.
+//!
+//! Nesting is the main multiplier: an `if` inside a `for` inside a `match`
+//! costs `1 + depth`, not just 1. Else-if chains are scored flat. Closures
+//! inherit the parent's nesting level.
+//!
+//! # Usage
+//!
+//! ```no_run
+//! use std::path::Path;
+//! use scute_core::code_complexity::{self, Definition};
+//!
+//! let results = code_complexity::check(
+//!     Path::new("."),
+//!     &[],                       // no focus files — score everything
+//!     &Definition::default(),    // warn: 5, fail: 10
+//! );
+//! ```
+//!
+//! Each function produces one [`Evaluation`](crate::Evaluation) with per-line
+//! [`Evidence`](crate::Evidence) entries explaining what drives the score.
+
 mod check;
 mod score;
 

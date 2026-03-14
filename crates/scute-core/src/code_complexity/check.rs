@@ -8,10 +8,23 @@ use crate::{Evaluation, Evidence, ExecutionError, Expected, Thresholds};
 
 pub const CHECK_NAME: &str = "code-complexity";
 
+/// Configuration for the code complexity check.
+///
+/// All fields are optional and fall back to sensible defaults when absent.
+///
+/// ```
+/// use scute_core::code_complexity::Definition;
+///
+/// // Zero-config: warn at 5, fail at 10
+/// let default = Definition::default();
+/// ```
 #[derive(Debug, Default, Deserialize)]
 #[serde(deny_unknown_fields, rename_all = "kebab-case")]
 pub struct Definition {
+    /// Warn/fail boundaries for per-function complexity scores.
+    /// Defaults to warn: 5, fail: 10.
     pub thresholds: Option<Thresholds>,
+    /// Glob patterns for files to exclude from scanning.
     pub exclude: Option<Vec<String>>,
 }
 
@@ -24,6 +37,28 @@ impl Definition {
     }
 }
 
+/// Score cognitive complexity for every Rust function in a directory.
+///
+/// Discovers `.rs` files, parses each one with tree-sitter, and returns
+/// one [`Evaluation`] per function found. When no Rust files exist,
+/// returns a single passing evaluation.
+///
+/// When `focus_files` is non-empty, only functions from those files are
+/// reported. An empty slice means full-project scan. Focus files with
+/// unsupported extensions or that don't exist produce errored evaluations.
+///
+/// ```no_run
+/// use std::path::Path;
+/// use scute_core::code_complexity::{self, Definition};
+///
+/// let evals = code_complexity::check(Path::new("."), &[], &Definition::default()).unwrap();
+/// for eval in &evals {
+///     if eval.is_fail() {
+///         eprintln!("complex function: {}", eval.target);
+///     }
+/// }
+/// ```
+///
 /// # Errors
 ///
 /// Returns `ExecutionError` if `source_dir` is not a valid directory.
