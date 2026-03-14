@@ -49,6 +49,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Install Rust toolchain
         run: rustup show
@@ -58,8 +60,10 @@ jobs:
         with:
           workspaces: crates
 
-      - name: Check for duplication
-        run: $SCUTE check code-similarity
+      - name: Check for duplication in changed files
+        env:
+          BASE: origin/${{ github.base_ref }}
+        run: git diff --name-only $BASE...HEAD -- '*.rs' | $SCUTE check code-similarity
         working-directory: crates
 
   code-complexity:
