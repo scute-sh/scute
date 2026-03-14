@@ -53,44 +53,54 @@ pub fn tokenize(
     Ok(tokens)
 }
 
+enum TokenAction {
+    /// Emit this token and stop recursing.
+    Emit(Token),
+    /// Skip this node entirely (comments, decorations).
+    Skip,
+    /// Recurse into children.
+    Recurse,
+}
+
+fn classify_node(node: &tree_sitter::Node, source: &[u8], config: &LanguageConfig) -> TokenAction {
+    if node.is_error() || node.is_missing() {
+        return TokenAction::Skip;
+    }
+
+    if !node.is_named() {
+        return if node.child_count() == 0 {
+            TokenAction::Emit(Token::new(node.kind(), node))
+        } else {
+            TokenAction::Recurse
+        };
+    }
+
+    match config.classify(node.kind()) {
+        NodeRole::Identifier => TokenAction::Emit(Token::new("$ID", node)),
+        NodeRole::Literal => TokenAction::Emit(Token::new("$LIT", node)),
+        NodeRole::Comment | NodeRole::Decoration => TokenAction::Skip,
+        NodeRole::Other if node.child_count() == 0 => {
+            let text = node.utf8_text(source).unwrap_or("");
+            TokenAction::Emit(Token::new(text, node))
+        }
+        NodeRole::Other => TokenAction::Recurse,
+    }
+}
+
 fn collect_tokens(
     node: tree_sitter::Node,
     source: &[u8],
     config: &LanguageConfig,
     tokens: &mut Vec<Token>,
 ) {
-    if node.is_error() || node.is_missing() {
-        return;
-    }
-
-    if node.is_named() {
-        match config.classify(node.kind()) {
-            NodeRole::Identifier => {
-                tokens.push(Token::new("$ID", &node));
-                return;
-            }
-            NodeRole::Literal => {
-                tokens.push(Token::new("$LIT", &node));
-                return;
-            }
-            NodeRole::Comment | NodeRole::Decoration => return,
-            NodeRole::Other => {
-                if node.child_count() == 0 {
-                    let text = node.utf8_text(source).unwrap_or("");
-                    tokens.push(Token::new(text, &node));
-                    return;
-                }
+    match classify_node(&node, source, config) {
+        TokenAction::Emit(token) => tokens.push(token),
+        TokenAction::Skip => {}
+        TokenAction::Recurse => {
+            let mut cursor = node.walk();
+            for child in node.children(&mut cursor) {
+                collect_tokens(child, source, config, tokens);
             }
         }
-    }
-
-    if node.child_count() == 0 {
-        tokens.push(Token::new(node.kind(), &node));
-        return;
-    }
-
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        collect_tokens(child, source, config, tokens);
     }
 }
