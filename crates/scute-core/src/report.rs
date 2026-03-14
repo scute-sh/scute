@@ -82,29 +82,27 @@ impl CheckReport {
 }
 
 fn summarize(evaluations: &[Evaluation]) -> Summary {
-    let mut passed = 0u64;
-    let mut warned = 0u64;
-    let mut failed = 0u64;
-    let mut errored = 0u64;
-
-    for eval in evaluations {
-        match &eval.outcome {
-            Outcome::Completed { status, .. } => match status {
-                Status::Pass => passed += 1,
-                Status::Warn => warned += 1,
-                Status::Fail => failed += 1,
-            },
-            Outcome::Errored(_) => errored += 1,
-        }
-    }
-
-    Summary {
-        evaluated: passed + warned + failed + errored,
-        passed,
-        warned,
-        failed,
-        errored,
-    }
+    evaluations.iter().fold(
+        Summary {
+            evaluated: 0,
+            passed: 0,
+            warned: 0,
+            failed: 0,
+            errored: 0,
+        },
+        |mut s, eval| {
+            s.evaluated += 1;
+            match &eval.outcome {
+                Outcome::Completed { status, .. } => match status {
+                    Status::Pass => s.passed += 1,
+                    Status::Warn => s.warned += 1,
+                    Status::Fail => s.failed += 1,
+                },
+                Outcome::Errored(_) => s.errored += 1,
+            }
+            s
+        },
+    )
 }
 
 #[cfg(test)]
