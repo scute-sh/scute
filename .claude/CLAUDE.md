@@ -9,14 +9,14 @@
 
 Don't treat CLAUDE.md checklists as exhaustive. Before any action, think about which MCP tools are relevant to what you're about to do.
 
-Scute's own MCP server has check tools:
+Scute's own MCP server has check tools. Run them at the right moment:
 
-- `check_commit_message` - Run before making a commit
-- `check_dependency_freshness` - Run after adding/editing a dependency
-- `check_code_similarity` - Run after changing a function or implementing a new one
-- `check_code_complexity` - Run after changing a function or implementing a new one
-
-Use them.
+| Tool                         | When to run                                         |
+| ---------------------------- | --------------------------------------------------- |
+| `check_code_complexity`      | After changing a function or implementing a new one  |
+| `check_code_similarity`      | After changing a function or implementing a new one  |
+| `check_commit_message`       | Before making a commit                               |
+| `check_dependency_freshness` | After adding/editing a dependency                    |
 
 ## 🛑 When course-corrected
 
