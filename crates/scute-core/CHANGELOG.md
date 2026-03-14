@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.6](https://github.com/scute-sh/scute/compare/scute-core-v0.0.5...scute-core-v0.0.6) - 2026-03-14
+
+### Added
+
+- *(code-complexity)* actionable evidence with cognitive drivers ([#52](https://github.com/scute-sh/scute/pull/52))
+- *(code-complexity)* check for cognitive complexity in Rust functions ([#50](https://github.com/scute-sh/scute/pull/50))
+
+### Fixed
+
+- *(code-complexity)* accept paths directly instead of source-dir + focus files ([#59](https://github.com/scute-sh/scute/pull/59))
+
+### Other
+
+- *(code-complexity)* public documentation ([#57](https://github.com/scute-sh/scute/pull/57))
+- *(code-complexity)* harden with shared validation and edge cases ([#56](https://github.com/scute-sh/scute/pull/56))
+- *(core)* extract shared tree-sitter parser ([#48](https://github.com/scute-sh/scute/pull/48))
+
 ## [0.0.5](https://github.com/scute-sh/scute/compare/scute-core-v0.0.4...scute-core-v0.0.5) - 2026-03-12
 
 ### Added
