@@ -1,5 +1,6 @@
 use crate::parser::{AstParser, TreeSitterParser};
-use tree_sitter::Language;
+
+use super::rules::{LanguageRules, NestingKind, NodeRole, ScoringUnit};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Construct {
@@ -48,6 +49,31 @@ impl JumpKeyword {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum LogicalOp {
+    And(&'static str),
+    Or(&'static str),
+}
+
+impl LogicalOp {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::And(s) | Self::Or(s) => s,
+        }
+    }
+}
+
+impl PartialEq for LogicalOp {
+    fn eq(&self, other: &Self) -> bool {
+        matches!(
+            (self, other),
+            (Self::And(_), Self::And(_)) | (Self::Or(_), Self::Or(_))
+        )
+    }
+}
+
+impl Eq for LogicalOp {}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum ContributorKind {
     FlowBreak {
@@ -60,7 +86,7 @@ pub enum ContributorKind {
     },
     Else,
     Logical {
-        operators: Vec<String>,
+        operators: Vec<LogicalOp>,
     },
     Recursion {
         fn_name: String,
@@ -85,57 +111,92 @@ pub struct FunctionScore {
     pub contributors: Vec<Contributor>,
 }
 
-pub fn score_functions(source: &str, language: &Language) -> Vec<FunctionScore> {
+pub fn score_functions(source: &str, rules: &dyn LanguageRules) -> Vec<FunctionScore> {
     let mut parser = TreeSitterParser::new();
-    let Ok(tree) = parser.parse(source, language) else {
+    let Ok(tree) = parser.parse(source, &rules.language()) else {
         return vec![];
     };
 
     let src = source.as_bytes();
     let mut results = vec![];
-    collect_functions(tree.root_node(), src, &mut results);
+    collect_functions(tree.root_node(), src, rules, &mut results);
     results
 }
 
-fn collect_functions(node: tree_sitter::Node, src: &[u8], results: &mut Vec<FunctionScore>) {
+fn collect_functions(
+    node: tree_sitter::Node,
+    src: &[u8],
+    rules: &dyn LanguageRules,
+    results: &mut Vec<FunctionScore>,
+) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if child.kind() == "function_item" {
-            let name = child
-                .child_by_field_name("name")
-                .and_then(|n| n.utf8_text(src).ok())
-                .unwrap_or("")
-                .to_string();
-            let line = child.start_position().row + 1;
-            let impl_type = enclosing_impl_type(child, src);
+        if let Some(unit) = rules.scoring_unit(child, src) {
             let mut contributors = vec![];
             let score = ScoringContext {
-                fn_name: &name,
-                impl_type: impl_type.as_deref(),
+                rules,
+                fn_name: &unit.name,
+                impl_type: unit.receiver_type.as_deref(),
                 src,
                 contributors: &mut contributors,
             }
-            .complexity(child, 0);
+            .complexity(unit.node, 0);
             results.push(FunctionScore {
-                name,
-                line,
+                name: unit.name,
+                line: unit.line,
                 score,
                 contributors,
             });
         }
-        collect_functions(child, src, results);
+        collect_functions(child, src, rules, results);
     }
 }
 
-fn enclosing_impl_type(node: tree_sitter::Node, src: &[u8]) -> Option<String> {
-    std::iter::successors(node.parent(), tree_sitter::Node::parent)
-        .find(|n| n.kind() == "impl_item")
-        .and_then(|n| n.child_by_field_name("type"))
-        .and_then(|t| t.utf8_text(src).ok())
-        .map(String::from)
+fn classify(
+    rules: &dyn LanguageRules,
+    node: tree_sitter::Node,
+    fn_name: &str,
+    receiver_type: Option<&str>,
+    src: &[u8],
+) -> Option<NodeRole> {
+    classify_structural(rules, node)
+        .or_else(|| classify_contextual(rules, node, fn_name, receiver_type, src))
+}
+
+fn classify_structural(rules: &dyn LanguageRules, node: tree_sitter::Node) -> Option<NodeRole> {
+    if let Some(construct) = rules.flow_construct(node) {
+        return Some(NodeRole::FlowConstruct(construct));
+    }
+    if rules.is_else_clause(node) {
+        return Some(NodeRole::ElseClause);
+    }
+    if rules.nesting_kind(node).is_some() {
+        return Some(NodeRole::NestingBoundary);
+    }
+    if rules.logical_operator(node).is_some() {
+        return Some(NodeRole::LogicalExpression);
+    }
+    None
+}
+
+fn classify_contextual(
+    rules: &dyn LanguageRules,
+    node: tree_sitter::Node,
+    fn_name: &str,
+    receiver_type: Option<&str>,
+    src: &[u8],
+) -> Option<NodeRole> {
+    if let Some((keyword, label)) = rules.jump_label(node, src) {
+        return Some(NodeRole::LabeledJump(keyword, label));
+    }
+    if rules.is_recursive_call(node, fn_name, receiver_type, src) {
+        return Some(NodeRole::RecursiveCall);
+    }
+    None
 }
 
 struct ScoringContext<'a> {
+    rules: &'a dyn LanguageRules,
     fn_name: &'a str,
     impl_type: Option<&'a str>,
     src: &'a [u8],
@@ -151,33 +212,16 @@ impl ScoringContext<'_> {
     }
 
     fn score_node(&mut self, node: tree_sitter::Node, nesting: u64) -> u64 {
-        match node.kind() {
-            kind @ ("if_expression" | "for_expression" | "while_expression" | "loop_expression"
-            | "match_expression") => {
-                self.score_flow_break(node, nesting, parse_construct(kind).unwrap())
-            }
-
-            "closure_expression" | "function_item" => self.complexity(node, nesting + 1),
-
-            "else_clause" => self.score_else(node, nesting),
-
-            "binary_expression" if is_logical_op(node) => {
-                self.score_logical_sequence(node, nesting)
-            }
-
-            kind @ ("break_expression" | "continue_expression") if has_label(node) => {
-                self.score_jump(node, nesting, parse_jump_keyword(kind).unwrap())
-            }
-
-            "call_expression" => {
-                if is_recursive_call(node, self.fn_name, self.impl_type, self.src) {
-                    self.score_recursion(node, nesting)
-                } else {
-                    self.complexity(node, nesting)
-                }
-            }
-
-            _ => self.complexity(node, nesting),
+        let Some(role) = classify(self.rules, node, self.fn_name, self.impl_type, self.src) else {
+            return self.complexity(node, nesting);
+        };
+        match role {
+            NodeRole::FlowConstruct(construct) => self.score_flow_break(node, nesting, construct),
+            NodeRole::ElseClause => self.score_else(node, nesting),
+            NodeRole::NestingBoundary => self.complexity(node, nesting + 1),
+            NodeRole::LogicalExpression => self.score_logical_sequence(node, nesting),
+            NodeRole::LabeledJump(keyword, label) => self.score_jump(node, nesting, keyword, label),
+            NodeRole::RecursiveCall => self.score_recursion(node, nesting),
         }
     }
 
@@ -197,7 +241,7 @@ impl ScoringContext<'_> {
     ) -> u64 {
         let increment = 1 + nesting;
         let kind = if nesting > 0 {
-            let mut chain = nesting_chain(node);
+            let mut chain = nesting_chain(node, self.rules);
             chain.push(construct);
             ContributorKind::Nesting {
                 construct,
@@ -212,11 +256,7 @@ impl ScoringContext<'_> {
     }
 
     fn score_else(&mut self, node: tree_sitter::Node, nesting: u64) -> u64 {
-        let is_else_if = node
-            .children(&mut node.walk())
-            .any(|c| c.kind() == "if_expression");
-
-        if is_else_if {
+        if self.rules.is_else_if(node) {
             self.complexity(node, nesting.saturating_sub(1))
         } else {
             self.push(ContributorKind::Else, node, 1);
@@ -224,8 +264,13 @@ impl ScoringContext<'_> {
         }
     }
 
-    fn score_jump(&mut self, node: tree_sitter::Node, nesting: u64, keyword: JumpKeyword) -> u64 {
-        let label = label_text(node, self.src).unwrap_or_default().to_string();
+    fn score_jump(
+        &mut self,
+        node: tree_sitter::Node,
+        nesting: u64,
+        keyword: JumpKeyword,
+        label: String,
+    ) -> u64 {
         self.push(ContributorKind::Jump { keyword, label }, node, 1);
         1 + self.complexity(node, nesting)
     }
@@ -243,17 +288,11 @@ impl ScoringContext<'_> {
 
     fn score_logical_sequence(&mut self, node: tree_sitter::Node, nesting: u64) -> u64 {
         let mut operators = vec![];
-        collect_logical_operators(node, &mut operators);
+        collect_logical_operators(node, self.rules, &mut operators);
 
         let score = count_operator_sequences(&operators);
         if score > 0 {
-            self.push(
-                ContributorKind::Logical {
-                    operators: operators.iter().map(|&s| s.to_string()).collect(),
-                },
-                node,
-                score,
-            );
+            self.push(ContributorKind::Logical { operators }, node, score);
         }
 
         score + self.visit_logical_leaves(node, nesting)
@@ -263,13 +302,13 @@ impl ScoringContext<'_> {
         let mut cursor = node.walk();
         let children: Vec<_> = node
             .children(&mut cursor)
-            .filter(|child| !is_operator_token(*child))
+            .filter(|child| !self.rules.is_logical_operator_token(*child))
             .collect();
 
         children
             .into_iter()
             .map(|child| {
-                if is_nested_logical(child) {
+                if self.rules.logical_operator(child).is_some() {
                     self.visit_logical_leaves(child, nesting)
                 } else {
                     self.complexity(child, nesting)
@@ -279,96 +318,28 @@ impl ScoringContext<'_> {
     }
 }
 
-fn nesting_chain(node: tree_sitter::Node) -> Vec<Construct> {
+fn nesting_chain(node: tree_sitter::Node, rules: &dyn LanguageRules) -> Vec<Construct> {
     let ancestors = std::iter::successors(node.parent(), tree_sitter::Node::parent);
     let mut chain = Vec::new();
-    for parent in ancestors {
-        match parent.kind() {
-            "function_item" => break,
-            "closure_expression" => {
-                chain.push(Construct::Closure);
+    for ancestor in ancestors {
+        if let Some(construct) = rules.flow_construct(ancestor) {
+            chain.push(construct);
+            continue;
+        }
+        match rules.nesting_kind(ancestor) {
+            Some(NestingKind::Inline(construct)) => {
+                chain.push(construct);
                 break;
             }
-            kind => chain.extend(parse_construct(kind)),
+            Some(NestingKind::Separate) => break,
+            None => {}
         }
     }
     chain.reverse();
     chain
 }
 
-fn parse_construct(tree_sitter_kind: &str) -> Option<Construct> {
-    match tree_sitter_kind {
-        "if_expression" => Some(Construct::If),
-        "for_expression" => Some(Construct::For),
-        "while_expression" => Some(Construct::While),
-        "loop_expression" => Some(Construct::Loop),
-        "match_expression" => Some(Construct::Match),
-        _ => None,
-    }
-}
-
-fn parse_jump_keyword(tree_sitter_kind: &str) -> Option<JumpKeyword> {
-    match tree_sitter_kind {
-        "break_expression" => Some(JumpKeyword::Break),
-        "continue_expression" => Some(JumpKeyword::Continue),
-        _ => None,
-    }
-}
-
-fn is_logical_op(node: tree_sitter::Node) -> bool {
-    node.children(&mut node.walk())
-        .any(|c| c.kind() == "&&" || c.kind() == "||")
-}
-
-fn logical_operator(node: tree_sitter::Node) -> Option<&'static str> {
-    node.children(&mut node.walk())
-        .find(|c| c.kind() == "&&" || c.kind() == "||")
-        .map(|c| c.kind())
-}
-
-fn has_label(node: tree_sitter::Node) -> bool {
-    node.children(&mut node.walk()).any(|c| c.kind() == "label")
-}
-
-fn label_text<'a>(node: tree_sitter::Node, src: &'a [u8]) -> Option<&'a str> {
-    node.children(&mut node.walk())
-        .find(|c| c.kind() == "label")
-        .and_then(|l| l.utf8_text(src).ok())
-}
-
-fn is_recursive_call(
-    node: tree_sitter::Node,
-    fn_name: &str,
-    impl_type: Option<&str>,
-    src: &[u8],
-) -> bool {
-    let Some(target) = node.child_by_field_name("function") else {
-        return false;
-    };
-    callee_name(target, src) == Some(fn_name) && scope_is_self(target, impl_type, src)
-}
-
-fn callee_name<'a>(target: tree_sitter::Node, src: &'a [u8]) -> Option<&'a str> {
-    match target.kind() {
-        "field_expression" => field_text(target, "field", src), // self.foo()
-        "scoped_identifier" => field_text(target, "name", src), // Self::foo()
-        _ => target.utf8_text(src).ok(),                        // foo()
-    }
-}
-
-fn scope_is_self(target: tree_sitter::Node, impl_type: Option<&str>, src: &[u8]) -> bool {
-    if target.kind() != "scoped_identifier" {
-        return true;
-    }
-    field_text(target, "path", src).is_some_and(|scope| scope == "Self" || impl_type == Some(scope))
-}
-
-fn field_text<'a>(node: tree_sitter::Node, field: &str, src: &'a [u8]) -> Option<&'a str> {
-    node.child_by_field_name(field)
-        .and_then(|n| n.utf8_text(src).ok())
-}
-
-fn count_operator_sequences(operators: &[&str]) -> u64 {
+fn count_operator_sequences(operators: &[LogicalOp]) -> u64 {
     operators
         .windows(2)
         .filter(|pair| pair[0] != pair[1])
@@ -376,38 +347,32 @@ fn count_operator_sequences(operators: &[&str]) -> u64 {
         + u64::from(!operators.is_empty())
 }
 
-fn collect_logical_operators(node: tree_sitter::Node, operators: &mut Vec<&'static str>) {
-    if node.kind() != "binary_expression" {
-        return;
-    }
-    let Some(op) = logical_operator(node) else {
+fn collect_logical_operators(
+    node: tree_sitter::Node,
+    rules: &dyn LanguageRules,
+    operators: &mut Vec<LogicalOp>,
+) {
+    let Some(op) = rules.logical_operator(node) else {
         return;
     };
 
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if is_nested_logical(child) {
-            collect_logical_operators(child, operators);
+        if rules.logical_operator(child).is_some() {
+            collect_logical_operators(child, rules, operators);
         }
     }
     operators.push(op);
 }
 
-fn is_nested_logical(node: tree_sitter::Node) -> bool {
-    node.kind() == "binary_expression" && is_logical_op(node)
-}
-
-fn is_operator_token(node: tree_sitter::Node) -> bool {
-    node.kind() == "&&" || node.kind() == "||"
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::code_complexity::rust::Rust;
     use test_case::test_case;
 
     fn score_only(source: &str) -> u64 {
-        let results = score_functions(source, &tree_sitter_rust::LANGUAGE.into());
+        let results = score_functions(source, &Rust);
         assert_eq!(results.len(), 1, "expected exactly one function");
         results[0].score
     }
@@ -498,7 +463,7 @@ mod tests {
     }
 
     fn contributors(source: &str) -> Vec<Contributor> {
-        let results = score_functions(source, &tree_sitter_rust::LANGUAGE.into());
+        let results = score_functions(source, &Rust);
         assert_eq!(results.len(), 1, "expected exactly one function");
         results.into_iter().next().unwrap().contributors
     }
@@ -561,7 +526,7 @@ mod tests {
             contributors("fn f(a: bool, b: bool, c: bool) -> bool { a && b || c }"),
             vec![Contributor {
                 kind: ContributorKind::Logical {
-                    operators: vec!["&&".into(), "||".into()],
+                    operators: vec![LogicalOp::And("&&"), LogicalOp::Or("||")],
                 },
                 line: 1,
                 increment: 2,
@@ -638,13 +603,13 @@ mod tests {
 
     #[test]
     fn empty_source_returns_no_functions() {
-        let results = score_functions("", &tree_sitter_rust::LANGUAGE.into());
+        let results = score_functions("", &Rust);
         assert!(results.is_empty());
     }
 
     #[test]
     fn broken_syntax_does_not_panic() {
-        let results = score_functions("fn f(x: i32 -> { x + }", &tree_sitter_rust::LANGUAGE.into());
+        let results = score_functions("fn f(x: i32 -> { x + }", &Rust);
         // tree-sitter recovers from errors — should not panic
         let _ = results;
     }
@@ -658,7 +623,7 @@ mod tests {
                 fn inner() { if true {} }
                 if true {}
             }",
-            &tree_sitter_rust::LANGUAGE.into(),
+            &Rust,
         );
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].name, "outer");

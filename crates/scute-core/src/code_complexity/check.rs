@@ -2,7 +2,8 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use super::score;
+use super::rules::LanguageRules;
+use super::{rust, score};
 use crate::files;
 use crate::{Evaluation, Evidence, ExecutionError, Expected, Thresholds};
 
@@ -76,14 +77,14 @@ pub fn check(
         recovery: "check that the path exists and is readable".into(),
     })?;
 
-    let language: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
+    let rules = rust::Rust;
     let mut evaluations = Vec::new();
 
     for path in &files {
         let Ok(source) = std::fs::read_to_string(path) else {
             continue;
         };
-        evaluations.extend(score_file(path, &source, &language, &thresholds));
+        evaluations.extend(score_file(path, &source, &rules, &thresholds));
     }
 
     if evaluations.is_empty() {
@@ -99,10 +100,10 @@ pub fn check(
 fn score_file(
     path: &Path,
     source: &str,
-    language: &tree_sitter::Language,
+    rules: &dyn LanguageRules,
     thresholds: &Thresholds,
 ) -> Vec<Evaluation> {
-    score::score_functions(source, language)
+    score::score_functions(source, rules)
         .into_iter()
         .map(|func| {
             let target = format!("{}:{}:{}", path.display(), func.line, func.name);
@@ -128,8 +129,8 @@ fn pluralize_levels(n: u64) -> &'static str {
     if n == 1 { "level" } else { "levels" }
 }
 
-fn format_ops(operators: &[String]) -> String {
-    let mut unique: Vec<&str> = operators.iter().map(String::as_str).collect();
+fn format_ops(operators: &[score::LogicalOp]) -> String {
+    let mut unique: Vec<&str> = operators.iter().map(|o| o.label()).collect();
     unique.dedup();
     let quoted: Vec<String> = unique.iter().map(|o| format!("'{o}'")).collect();
     let prefix = if unique.len() > 1 { "mixed " } else { "" };

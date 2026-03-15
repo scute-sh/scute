@@ -1,4 +1,4 @@
-//! Cognitive complexity scoring for Rust functions.
+//! Cognitive complexity scoring for source code functions.
 //!
 //! Scores each function based on how hard it is to understand, following
 //! [G. Ann Campbell's cognitive complexity spec](https://www.sonarsource.com/docs/CognitiveComplexity.pdf).
@@ -25,6 +25,8 @@
 //! [`Evidence`](crate::Evidence) entries explaining what drives the score.
 
 mod check;
+mod rules;
+mod rust;
 mod score;
 
 pub use check::{CHECK_NAME, Definition, check};
