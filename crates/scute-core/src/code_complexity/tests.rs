@@ -14,15 +14,11 @@ fn expect_score(source: &str, rules: &dyn LanguageRules, expected: u64) {
     assert_eq!(results[0].score, expected);
 }
 
-// --- flat function ---
-
 #[test_case(&Rust, "fn f(a: i32, b: i32) -> i32 { a + b }" ; "rust")]
 #[test_case(&ts(), "function f(a: number, b: number) { return a + b }" ; "typescript")]
 fn flat_function_scores_zero(rules: &dyn LanguageRules, source: &str) {
     expect_score(source, rules, 0);
 }
-
-// --- structural increments: conditionals ---
 
 #[test_case(&Rust, "fn f(x: i32) { if x > 0 { return; } }" ; "rust")]
 #[test_case(&ts(), "function f(x: number) { if (x > 0) { return; } }" ; "typescript")]
@@ -41,8 +37,6 @@ fn scores_ternary() {
     expect_score("function f(x: boolean) { return x ? 1 : 0; }", &ts(), 1);
 }
 
-// --- structural increments: loops ---
-
 #[test_case(&Rust, "fn f(items: &[i32]) { for _ in items {} }" ; "rust_for")]
 #[test_case(&Rust, "fn f() { while true {} }" ; "rust_while")]
 #[test_case(&Rust, "fn f() { loop {} }" ; "rust_loop")]
@@ -59,8 +53,6 @@ fn scores_loop(rules: &dyn LanguageRules, source: &str) {
 fn scores_catch() {
     expect_score("function f() { try {} catch (e) {} }", &ts(), 1);
 }
-
-// --- hybrid increments: else ---
 
 #[test_case(&Rust, "fn f(x: bool) { if x {} else {} }" ; "rust")]
 #[test_case(&ts(), "function f(x: number) { if (x > 0) { return 1; } else { return -1; } }" ; "typescript")]
@@ -83,8 +75,6 @@ fn scores_else_if_chain_flat(rules: &dyn LanguageRules, source: &str) {
     expect_score(source, rules, 3);
 }
 
-// --- logical operator sequences ---
-
 #[test_case(&Rust, "fn f(a: bool, b: bool, c: bool) -> bool { a && b && c }", 1 ; "rust_same_ops")]
 #[test_case(&Rust, "fn f(a: bool, b: bool, c: bool) -> bool { a && b || c }", 2 ; "rust_mixed_ops")]
 #[test_case(&ts(), "function f(a: boolean, b: boolean, c: boolean) { return a && b && c; }", 1 ; "typescript_same_ops")]
@@ -97,8 +87,6 @@ fn scores_logical_operators(rules: &dyn LanguageRules, source: &str, expected: u
 fn ignores_nullish_coalescing() {
     expect_score("function f(a: any, b: any) { return a ?? b; }", &ts(), 0);
 }
-
-// --- recursion ---
 
 // if: +1, else: +1, recursion: +1
 #[test_case(&Rust, "fn factorial(n: u64) -> u64 {
@@ -140,8 +128,6 @@ fn scores_rust_qualified_recursion(source: &str, expected: u64) {
     expect_score(source, &Rust, expected);
 }
 
-// --- labeled jumps ---
-
 // outer loop: +1, inner loop: +2, if: +3, labeled break: +1
 #[test_case(&Rust, "fn f(items: &[&[i32]]) -> i32 {
     let mut total = 0;
@@ -167,8 +153,6 @@ fn scores_labeled_break(rules: &dyn LanguageRules, source: &str) {
     expect_score(source, rules, 7);
 }
 
-// --- nesting: inline boundaries (closures / arrow functions) ---
-
 // closure/arrow: nesting +1, if: +1+1, else: +1
 #[test_case(&Rust, "fn f(items: &[i32]) -> Vec<i32> {
     items.iter().filter(|x| {
@@ -184,8 +168,6 @@ fn scores_labeled_break(rules: &dyn LanguageRules, source: &str) {
 fn scores_inline_nesting(rules: &dyn LanguageRules, source: &str) {
     expect_score(source, rules, 3);
 }
-
-// --- nesting: separate scoring units ---
 
 #[test_case(&Rust,
     "fn outer() { fn inner() { if true {} } if true {} }",
@@ -212,8 +194,6 @@ fn scores_nested_function_independently(
     assert_eq!(results[1].name, inner_name);
     assert_eq!(results[1].score, inner_score);
 }
-
-// --- scoring unit discovery ---
 
 #[test_case(&Rust, "struct S;
 impl S {
