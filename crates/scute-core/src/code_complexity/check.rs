@@ -69,33 +69,14 @@ pub fn check(
     definition: &Definition,
 ) -> Result<Vec<Evaluation>, ExecutionError> {
     let thresholds = definition.thresholds();
-    let exclude = definition.exclude.as_deref().unwrap_or_default();
+    let files = resolve_files(paths, definition)?;
+    let languages = Languages::new();
 
-    let extensions = &["rs", "ts", "tsx"];
-    let files = files::resolve_paths(paths, extensions, exclude).map_err(|e| ExecutionError {
-        code: "invalid_target".into(),
-        message: e.to_string(),
-        recovery: "check that the path exists and is readable".into(),
-    })?;
-
-    let rust = rust::Rust;
-    let typescript =
-        typescript::TypeScript::new(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into());
-    let tsx = typescript::TypeScript::new(tree_sitter_typescript::LANGUAGE_TSX.into());
-
-    let mut evaluations = Vec::new();
-
-    for path in &files {
-        let Ok(source) = std::fs::read_to_string(path) else {
-            continue;
-        };
-        let rules: &dyn LanguageRules = match path.extension().and_then(|e| e.to_str()) {
-            Some("ts") => &typescript,
-            Some("tsx") => &tsx,
-            _ => &rust,
-        };
-        evaluations.extend(score_file(path, &source, rules, &thresholds));
-    }
+    let mut evaluations: Vec<Evaluation> = files
+        .iter()
+        .filter_map(|path| std::fs::read_to_string(path).ok().map(|src| (path, src)))
+        .flat_map(|(path, source)| score_file(path, &source, languages.for_path(path), &thresholds))
+        .collect();
 
     if evaluations.is_empty() {
         let label = paths
@@ -105,6 +86,46 @@ pub fn check(
     }
 
     Ok(evaluations)
+}
+
+const SUPPORTED_EXTENSIONS: &[&str] = &["rs", "ts", "tsx"];
+
+fn resolve_files(
+    paths: &[PathBuf],
+    definition: &Definition,
+) -> Result<Vec<PathBuf>, ExecutionError> {
+    let exclude = definition.exclude.as_deref().unwrap_or_default();
+    files::resolve_paths(paths, SUPPORTED_EXTENSIONS, exclude).map_err(|e| ExecutionError {
+        code: "invalid_target".into(),
+        message: e.to_string(),
+        recovery: "check that the path exists and is readable".into(),
+    })
+}
+
+struct Languages {
+    rust: rust::Rust,
+    typescript: typescript::TypeScript,
+    tsx: typescript::TypeScript,
+}
+
+impl Languages {
+    fn new() -> Self {
+        Self {
+            rust: rust::Rust,
+            typescript: typescript::TypeScript::new(
+                tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+            ),
+            tsx: typescript::TypeScript::new(tree_sitter_typescript::LANGUAGE_TSX.into()),
+        }
+    }
+
+    fn for_path(&self, path: &Path) -> &dyn LanguageRules {
+        match path.extension().and_then(|e| e.to_str()) {
+            Some("ts") => &self.typescript,
+            Some("tsx") => &self.tsx,
+            _ => &self.rust,
+        }
+    }
 }
 
 fn score_file(
