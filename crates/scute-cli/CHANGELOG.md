@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.7](https://github.com/scute-sh/scute/compare/scute-v0.0.6...scute-v0.0.7) - 2026-03-15
+
+### Other
+
+- *(test-utils)* add TestDir::source_file ([#72](https://github.com/scute-sh/scute/pull/72))
+- eliminate all remaining complexity warnings ([#71](https://github.com/scute-sh/scute/pull/71))
+- *(code-similarity)* reduce complexity of collect_test_ranges ([#70](https://github.com/scute-sh/scute/pull/70))
+- *(code-similarity)* flatten collect_tokens complexity ([#69](https://github.com/scute-sh/scute/pull/69))
+- *(code-complexity)* introduce ScoringContext to reduce complexity and duplication ([#67](https://github.com/scute-sh/scute/pull/67))
+- *(report)* replace mutable counters with fold in summarize ([#65](https://github.com/scute-sh/scute/pull/65))
+- *(code-similarity)* extract helpers from algorithmic functions ([#63](https://github.com/scute-sh/scute/pull/63))
+- *(dependency-freshness)* DRY root detection and location prefixing ([#62](https://github.com/scute-sh/scute/pull/62))
+- *(config)* simplify find_config_file with search boundary helper ([#64](https://github.com/scute-sh/scute/pull/64))
+
 ## [0.0.6](https://github.com/scute-sh/scute/compare/scute-v0.0.5...scute-v0.0.6) - 2026-03-14
 
 ### Added

@@ -1,6 +1,6 @@
 [package]
 name = "scute-mcp"
-version = "0.0.6"
+version = "0.0.7"
 edition = "2024"
 description = "MCP server for Scute fitness checks"
 repository = "https://github.com/scute-sh/scute"
@@ -15,8 +15,8 @@ path = "src/lib.rs"
 
 [dependencies]
 rmcp = { workspace = true, features = ["server", "transport-io"] }
-scute-config = { path = "../scute-config", version = "0.0.6" }
-scute-core = { path = "../scute-core", version = "0.0.6" }
+scute-config = { path = "../scute-config", version = "0.0.7" }
+scute-core = { path = "../scute-core", version = "0.0.7" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { version = "1", features = ["rt"] }
