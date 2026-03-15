@@ -194,8 +194,9 @@ fn pluralize_levels(n: u64) -> &'static str {
     if n == 1 { "level" } else { "levels" }
 }
 
-fn format_ops(operators: &[score::LogicalOp]) -> String {
+fn format_operators(operators: &[score::LogicalOp]) -> String {
     let mut unique: Vec<&str> = operators.iter().map(|o| o.label()).collect();
+    unique.sort_unstable();
     unique.dedup();
     let quoted: Vec<String> = unique.iter().map(|o| format!("'{o}'")).collect();
     let prefix = if unique.len() > 1 { "mixed " } else { "" };
@@ -241,7 +242,7 @@ fn format_evidence(c: &score::Contributor, path: &Path) -> Evidence {
         ),
         score::ContributorKind::Logical { operators } => (
             "boolean logic",
-            format!("{} operators (+{})", format_ops(operators), c.increment),
+            format!("{} operators (+{})", format_operators(operators), c.increment),
             text("extract into a named boolean"),
         ),
         score::ContributorKind::Recursion { fn_name } => (
