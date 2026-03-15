@@ -1,4 +1,4 @@
-use crate::parser::{AstParser, TreeSitterParser};
+use crate::parser::TreeSitterParser;
 use tree_sitter::Language;
 
 pub enum NestingKind {
@@ -34,6 +34,7 @@ pub trait LanguageRules {
         node: tree_sitter::Node<'a>,
         src: &'a [u8],
     ) -> Option<ScoringUnit<'a>>;
+    fn is_logical_operator_token(&self, node: tree_sitter::Node) -> bool;
 }
 
 pub struct ScoringUnit<'a> {
@@ -136,6 +137,10 @@ impl LanguageRules for Rust {
             node,
             receiver_type,
         })
+    }
+
+    fn is_logical_operator_token(&self, node: tree_sitter::Node) -> bool {
+        node.kind() == "&&" || node.kind() == "||"
     }
 }
 
@@ -299,7 +304,10 @@ impl ScoringContext<'_> {
             self.score_logical_sequence(node, nesting)
         } else if let Some((keyword, label)) = self.rules.jump_label(node, self.src) {
             self.score_jump(node, nesting, keyword, label)
-        } else if self.rules.is_recursive_call(node, self.fn_name, self.impl_type, self.src) {
+        } else if self
+            .rules
+            .is_recursive_call(node, self.fn_name, self.impl_type, self.src)
+        {
             self.score_recursion(node, nesting)
         } else {
             self.complexity(node, nesting)
@@ -389,7 +397,7 @@ impl ScoringContext<'_> {
         let mut cursor = node.walk();
         let children: Vec<_> = node
             .children(&mut cursor)
-            .filter(|child| !is_operator_token(*child))
+            .filter(|child| !self.rules.is_logical_operator_token(*child))
             .collect();
 
         children
@@ -470,10 +478,6 @@ fn collect_logical_operators(
         }
     }
     operators.push(op);
-}
-
-fn is_operator_token(node: tree_sitter::Node) -> bool {
-    node.kind() == "&&" || node.kind() == "||"
 }
 
 #[cfg(test)]
