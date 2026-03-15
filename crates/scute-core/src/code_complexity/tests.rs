@@ -169,6 +169,40 @@ fn scores_inline_nesting(rules: &dyn LanguageRules, source: &str) {
     expect_score(source, rules, 3);
 }
 
+// function expression: const f = function() {...}
+// nesting +1, if: +1+1, else: +1
+#[test_case(&ts(), "function f() {
+    const g = function() {
+        if (true) { return 1; }
+        else { return 0; }
+    };
+}" ; "typescript_function_expression")]
+fn scores_function_expression_as_inline_nesting(rules: &dyn LanguageRules, source: &str) {
+    expect_score(source, rules, 3);
+}
+
+// generator declaration: behaves like nested named function (Separate)
+#[test_case(&ts(),
+    "function outer() { function* gen() { if (true) {} } if (true) {} }",
+    "outer", 3, "gen", 1
+    ; "typescript_generator"
+)]
+fn scores_generator_declaration_independently(
+    rules: &dyn LanguageRules,
+    source: &str,
+    outer_name: &str,
+    outer_score: u64,
+    inner_name: &str,
+    inner_score: u64,
+) {
+    let results = score_functions(source, rules);
+    assert_eq!(results.len(), 2);
+    assert_eq!(results[0].name, outer_name);
+    assert_eq!(results[0].score, outer_score);
+    assert_eq!(results[1].name, inner_name);
+    assert_eq!(results[1].score, inner_score);
+}
+
 #[test_case(&Rust,
     "fn outer() { fn inner() { if true {} } if true {} }",
     "outer", 3, "inner", 1

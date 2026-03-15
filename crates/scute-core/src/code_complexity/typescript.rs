@@ -24,7 +24,7 @@ impl LanguageRules for TypeScript {
         src: &'a [u8],
     ) -> Option<ScoringUnit<'a>> {
         match node.kind() {
-            "function_declaration" | "method_definition" => {}
+            "function_declaration" | "generator_function_declaration" | "method_definition" => {}
             _ => return None,
         }
         let name = node
@@ -116,7 +116,17 @@ impl LanguageRules for TypeScript {
                 role: Construct::InlineNesting,
                 label: "arrow",
             })),
-            "function_declaration" => Some(NestingKind::Separate),
+            "function_expression" => Some(NestingKind::Inline(FlowConstruct {
+                role: Construct::InlineNesting,
+                label: "function",
+            })),
+            "generator_function" => Some(NestingKind::Inline(FlowConstruct {
+                role: Construct::InlineNesting,
+                label: "generator",
+            })),
+            "function_declaration" | "generator_function_declaration" => {
+                Some(NestingKind::Separate)
+            }
             _ => None,
         }
     }
