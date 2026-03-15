@@ -29,6 +29,18 @@ pub trait LanguageRules {
         receiver_type: Option<&str>,
         src: &[u8],
     ) -> bool;
+    fn scoring_unit<'a>(
+        &self,
+        node: tree_sitter::Node<'a>,
+        src: &'a [u8],
+    ) -> Option<ScoringUnit<'a>>;
+}
+
+pub struct ScoringUnit<'a> {
+    pub name: String,
+    pub line: usize,
+    pub node: tree_sitter::Node<'a>,
+    pub receiver_type: Option<String>,
 }
 
 pub struct Rust;
@@ -102,6 +114,28 @@ impl LanguageRules for Rust {
             return false;
         };
         callee_name(target, src) == Some(fn_name) && scope_is_self(target, receiver_type, src)
+    }
+
+    fn scoring_unit<'a>(
+        &self,
+        node: tree_sitter::Node<'a>,
+        src: &'a [u8],
+    ) -> Option<ScoringUnit<'a>> {
+        if node.kind() != "function_item" {
+            return None;
+        }
+        let name = node
+            .child_by_field_name("name")
+            .and_then(|n| n.utf8_text(src).ok())
+            .unwrap_or("")
+            .to_string();
+        let receiver_type = enclosing_impl_type(node, src);
+        Some(ScoringUnit {
+            name,
+            line: node.start_position().row + 1,
+            node,
+            receiver_type,
+        })
     }
 }
 
@@ -209,26 +243,19 @@ fn collect_functions(
 ) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if child.kind() == "function_item" {
-            let name = child
-                .child_by_field_name("name")
-                .and_then(|n| n.utf8_text(src).ok())
-                .unwrap_or("")
-                .to_string();
-            let line = child.start_position().row + 1;
-            let impl_type = enclosing_impl_type(child, src);
+        if let Some(unit) = rules.scoring_unit(child, src) {
             let mut contributors = vec![];
             let score = ScoringContext {
                 rules,
-                fn_name: &name,
-                impl_type: impl_type.as_deref(),
+                fn_name: &unit.name,
+                impl_type: unit.receiver_type.as_deref(),
                 src,
                 contributors: &mut contributors,
             }
-            .complexity(child, 0);
+            .complexity(unit.node, 0);
             results.push(FunctionScore {
-                name,
-                line,
+                name: unit.name,
+                line: unit.line,
                 score,
                 contributors,
             });
