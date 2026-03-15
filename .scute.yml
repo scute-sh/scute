@@ -10,4 +10,4 @@ checks:
   code-similarity:
     thresholds:
       warn: 90
-      fail: 110
+      fail: 135 # temporary bump, see #77

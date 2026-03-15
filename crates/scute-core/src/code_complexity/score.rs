@@ -651,4 +651,139 @@ mod tests {
         assert_eq!(results[1].name, "inner");
         assert_eq!(results[1].score, 1);
     }
+
+    mod typescript {
+        use super::*;
+        use crate::code_complexity::typescript::TypeScript;
+        use test_case::test_case;
+
+        fn ts_rules() -> TypeScript {
+            TypeScript::new(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into())
+        }
+
+        fn ts_score(source: &str) -> u64 {
+            let results = score_functions(source, &ts_rules());
+            assert_eq!(results.len(), 1, "expected exactly one function");
+            results[0].score
+        }
+
+        #[test_case("function f(x: number) { if (x > 0) { return x; } }", 1 ; "scores_if")]
+        #[test_case("function f(items: number[]) { for (let i = 0; i < items.length; i++) {} }", 1 ; "scores_for")]
+        #[test_case("function f(obj: any) { for (const k in obj) {} }", 1 ; "scores_for_in")]
+        #[test_case("function f(items: number[]) { for (const x of items) {} }", 1 ; "scores_for_of")]
+        #[test_case("function f(x: number) { while (x > 0) { x--; } }", 1 ; "scores_while")]
+        #[test_case("function f(x: number) { do { x--; } while (x > 0); }", 1 ; "scores_do_while")]
+        #[test_case("function f(x: number) { switch (x) { case 1: break; } }", 1 ; "scores_switch")]
+        #[test_case("function f() { try {} catch (e) {} }", 1 ; "scores_catch")]
+        #[test_case("function f(x: boolean) { return x ? 1 : 0; }", 1 ; "scores_ternary")]
+        fn structural_increments(source: &str, expected: u64) {
+            assert_eq!(ts_score(source), expected);
+        }
+
+        // if: +1, else: +1
+        #[test_case("function f(x: number) {
+            if (x > 0) { return 1; }
+            else { return -1; }
+        }", 2 ; "scores_else_branch")]
+        // if: +1, else if: +1 (flat), else: +1
+        #[test_case("function f(x: number) {
+            if (x > 0) { return 1; }
+            else if (x < 0) { return -1; }
+            else { return 0; }
+        }", 3 ; "scores_else_if_chain_flat")]
+        fn else_and_else_if(source: &str, expected: u64) {
+            assert_eq!(ts_score(source), expected);
+        }
+
+        #[test_case("function f(a: boolean, b: boolean, c: boolean) { return a && b && c; }", 1 ; "scores_same_logical_operators")]
+        #[test_case("function f(a: boolean, b: boolean, c: boolean) { return a && b || c; }", 2 ; "scores_mixed_logical_operators")]
+        #[test_case("function f(a: any, b: any) { return a ?? b; }", 0 ; "ignores_nullish_coalescing")]
+        fn logical_operators(source: &str, expected: u64) {
+            assert_eq!(ts_score(source), expected);
+        }
+
+        // outer for: +1, inner for: +2, if: +3, break outer: +1
+        #[test]
+        fn adds_one_for_labeled_break() {
+            assert_eq!(
+                ts_score(
+                    "function f(matrix: number[][]) {
+                        let total = 0;
+                        outer: for (const row of matrix) {
+                            for (const item of row) {
+                                if (item < 0) { break outer; }
+                                total += item;
+                            }
+                        }
+                        return total;
+                    }"
+                ),
+                7
+            );
+        }
+
+        // arrow: nesting +1, if: +1+1, else: +1
+        #[test]
+        fn arrow_function_increases_nesting() {
+            assert_eq!(
+                ts_score(
+                    "function f(items: number[]) {
+                        return items.filter((x) => {
+                            if (x > 0) { return true; }
+                            else { return false; }
+                        });
+                    }"
+                ),
+                3
+            );
+        }
+
+        // if: +1, else: +1, recursion: +1
+        #[test]
+        fn adds_one_for_direct_recursion() {
+            assert_eq!(
+                ts_score(
+                    "function factorial(n: number): number {
+                        if (n <= 1) { return 1; }
+                        else { return n * factorial(n - 1); }
+                    }"
+                ),
+                3
+            );
+        }
+
+        // outer: nested fn bumps nesting to 1, if at nesting 1 = +2, if in outer = +1 → 3
+        // inner: scored independently, if at nesting 0 = +1 → 1
+        #[test]
+        fn scores_nested_named_function_independently() {
+            let results = score_functions(
+                "function outer() {
+                    function inner() { if (true) {} }
+                    if (true) {}
+                }",
+                &ts_rules(),
+            );
+            assert_eq!(results.len(), 2);
+            assert_eq!(results[0].name, "outer");
+            assert_eq!(results[0].score, 3);
+            assert_eq!(results[1].name, "inner");
+            assert_eq!(results[1].score, 1);
+        }
+
+        #[test]
+        fn scores_class_methods_independently() {
+            let results = score_functions(
+                "class Calc {
+                    add(a: number, b: number) { return a + b; }
+                    check(x: number) { if (x > 0) { return true; } return false; }
+                }",
+                &ts_rules(),
+            );
+            assert_eq!(results.len(), 2);
+            assert_eq!(results[0].name, "add");
+            assert_eq!(results[0].score, 0);
+            assert_eq!(results[1].name, "check");
+            assert_eq!(results[1].score, 1);
+        }
+    }
 }

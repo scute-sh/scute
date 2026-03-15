@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 use super::rules::LanguageRules;
-use super::{rust, score};
+use super::{rust, score, typescript};
 use crate::files;
 use crate::{Evaluation, Evidence, ExecutionError, Expected, Thresholds};
 
@@ -71,20 +71,30 @@ pub fn check(
     let thresholds = definition.thresholds();
     let exclude = definition.exclude.as_deref().unwrap_or_default();
 
-    let files = files::resolve_paths(paths, &["rs"], exclude).map_err(|e| ExecutionError {
+    let extensions = &["rs", "ts", "tsx"];
+    let files = files::resolve_paths(paths, extensions, exclude).map_err(|e| ExecutionError {
         code: "invalid_target".into(),
         message: e.to_string(),
         recovery: "check that the path exists and is readable".into(),
     })?;
 
-    let rules = rust::Rust;
+    let rust = rust::Rust;
+    let typescript =
+        typescript::TypeScript::new(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into());
+    let tsx = typescript::TypeScript::new(tree_sitter_typescript::LANGUAGE_TSX.into());
+
     let mut evaluations = Vec::new();
 
     for path in &files {
         let Ok(source) = std::fs::read_to_string(path) else {
             continue;
         };
-        evaluations.extend(score_file(path, &source, &rules, &thresholds));
+        let rules: &dyn LanguageRules = match path.extension().and_then(|e| e.to_str()) {
+            Some("ts") => &typescript,
+            Some("tsx") => &tsx,
+            _ => &rust,
+        };
+        evaluations.extend(score_file(path, &source, rules, &thresholds));
     }
 
     if evaluations.is_empty() {
@@ -357,5 +367,44 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().code, "invalid_target");
+    }
+
+    #[test]
+    fn scores_typescript_function() {
+        let dir = TestDir::new().source_file(
+            "simple.ts",
+            "function add(a: number, b: number): number { return a + b }",
+        );
+
+        let evals = check_dir(&dir.root());
+
+        assert_eq!(evals.len(), 1);
+        assert!(evals[0].target.contains("add"));
+        assert!(evals[0].is_pass());
+    }
+
+    #[test]
+    fn scores_tsx_file() {
+        let dir =
+            TestDir::new().source_file("component.tsx", "function Greeting() { return 'hello' }");
+
+        let evals = check_dir(&dir.root());
+
+        assert_eq!(evals.len(), 1);
+        assert!(evals[0].target.contains("Greeting"));
+    }
+
+    #[test]
+    fn scores_mixed_language_project() {
+        let dir = TestDir::new()
+            .source_file("lib.rs", "fn rust_fn() { if true {} }")
+            .source_file("app.ts", "function ts_fn() { return 1 }");
+
+        let evals = check_dir(&dir.root());
+
+        assert_eq!(evals.len(), 2);
+        let names: Vec<&str> = evals.iter().map(|e| e.target.as_str()).collect();
+        assert!(names.iter().any(|t| t.contains("rust_fn")));
+        assert!(names.iter().any(|t| t.contains("ts_fn")));
     }
 }
