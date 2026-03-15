@@ -1,5 +1,15 @@
-use crate::parser::TreeSitterParser;
+use crate::parser::{AstParser, TreeSitterParser};
 use tree_sitter::Language;
+
+pub enum NodeRole {
+    FlowConstruct(Construct),
+    ElseClause,
+    NestingBoundary,
+    LogicalExpression,
+    LabeledJump(JumpKeyword, String),
+    RecursiveCall,
+    Other,
+}
 
 pub enum NestingKind {
     /// Increases nesting, part of enclosing function (closures, arrow functions).
@@ -35,6 +45,30 @@ pub trait LanguageRules {
         src: &'a [u8],
     ) -> Option<ScoringUnit<'a>>;
     fn is_logical_operator_token(&self, node: tree_sitter::Node) -> bool;
+
+    fn classify(
+        &self,
+        node: tree_sitter::Node,
+        fn_name: &str,
+        receiver_type: Option<&str>,
+        src: &[u8],
+    ) -> NodeRole {
+        if let Some(construct) = self.flow_construct(node) {
+            NodeRole::FlowConstruct(construct)
+        } else if self.is_else_clause(node) {
+            NodeRole::ElseClause
+        } else if self.nesting_kind(node).is_some() {
+            NodeRole::NestingBoundary
+        } else if self.logical_operator(node).is_some() {
+            NodeRole::LogicalExpression
+        } else if let Some((keyword, label)) = self.jump_label(node, src) {
+            NodeRole::LabeledJump(keyword, label)
+        } else if self.is_recursive_call(node, fn_name, receiver_type, src) {
+            NodeRole::RecursiveCall
+        } else {
+            NodeRole::Other
+        }
+    }
 }
 
 pub struct ScoringUnit<'a> {
@@ -294,23 +328,17 @@ impl ScoringContext<'_> {
     }
 
     fn score_node(&mut self, node: tree_sitter::Node, nesting: u64) -> u64 {
-        if let Some(construct) = self.rules.flow_construct(node) {
-            self.score_flow_break(node, nesting, construct)
-        } else if self.rules.is_else_clause(node) {
-            self.score_else(node, nesting)
-        } else if self.rules.nesting_kind(node).is_some() {
-            self.complexity(node, nesting + 1)
-        } else if self.rules.logical_operator(node).is_some() {
-            self.score_logical_sequence(node, nesting)
-        } else if let Some((keyword, label)) = self.rules.jump_label(node, self.src) {
-            self.score_jump(node, nesting, keyword, label)
-        } else if self
+        match self
             .rules
-            .is_recursive_call(node, self.fn_name, self.impl_type, self.src)
+            .classify(node, self.fn_name, self.impl_type, self.src)
         {
-            self.score_recursion(node, nesting)
-        } else {
-            self.complexity(node, nesting)
+            NodeRole::FlowConstruct(construct) => self.score_flow_break(node, nesting, construct),
+            NodeRole::ElseClause => self.score_else(node, nesting),
+            NodeRole::NestingBoundary => self.complexity(node, nesting + 1),
+            NodeRole::LogicalExpression => self.score_logical_sequence(node, nesting),
+            NodeRole::LabeledJump(keyword, label) => self.score_jump(node, nesting, keyword, label),
+            NodeRole::RecursiveCall => self.score_recursion(node, nesting),
+            NodeRole::Other => self.complexity(node, nesting),
         }
     }
 
@@ -419,15 +447,15 @@ fn nesting_chain(node: tree_sitter::Node, rules: &dyn LanguageRules) -> Vec<Cons
     for ancestor in ancestors {
         if let Some(construct) = rules.flow_construct(ancestor) {
             chain.push(construct);
-        } else {
-            match rules.nesting_kind(ancestor) {
-                Some(NestingKind::Inline(construct)) => {
-                    chain.push(construct);
-                    break;
-                }
-                Some(NestingKind::Separate) => break,
-                None => {}
+            continue;
+        }
+        match rules.nesting_kind(ancestor) {
+            Some(NestingKind::Inline(construct)) => {
+                chain.push(construct);
+                break;
             }
+            Some(NestingKind::Separate) => break,
+            None => {}
         }
     }
     chain.reverse();
