@@ -1,6 +1,6 @@
 [package]
 name = "scute-core"
-version = "0.0.7"
+version = "0.0.8"
 edition = "2024"
 description = "Core check engine for Scute fitness checks"
 repository = "https://github.com/scute-sh/scute"
