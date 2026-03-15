@@ -69,13 +69,17 @@ pub fn check(
     definition: &Definition,
 ) -> Result<Vec<Evaluation>, ExecutionError> {
     let thresholds = definition.thresholds();
-    let files = resolve_files(paths, definition)?;
     let languages = Languages::new();
+    let files = resolve_files(paths, definition, &languages)?;
 
     let evaluations: Vec<Evaluation> = files
         .iter()
-        .filter_map(|path| std::fs::read_to_string(path).ok().map(|src| (path, src)))
-        .flat_map(|(path, source)| score_file(path, &source, languages.for_path(path), &thresholds))
+        .filter_map(|path| {
+            let source = std::fs::read_to_string(path).ok()?;
+            let rules = languages.for_path(path)?;
+            Some(score_file(path, &source, rules, &thresholds))
+        })
+        .flatten()
         .collect();
 
     Ok(with_fallback(evaluations, paths, thresholds))
@@ -95,43 +99,66 @@ fn with_fallback(
     vec![Evaluation::completed(label, 0, thresholds, vec![])]
 }
 
-const SUPPORTED_EXTENSIONS: &[&str] = &["rs", "ts", "tsx"];
-
 fn resolve_files(
     paths: &[PathBuf],
     definition: &Definition,
+    languages: &Languages,
 ) -> Result<Vec<PathBuf>, ExecutionError> {
     let exclude = definition.exclude.as_deref().unwrap_or_default();
-    files::resolve_paths(paths, SUPPORTED_EXTENSIONS, exclude).map_err(|e| ExecutionError {
+    let extensions = languages.supported_extensions();
+    files::resolve_paths(paths, &extensions, exclude).map_err(|e| ExecutionError {
         code: "invalid_target".into(),
         message: e.to_string(),
         recovery: "check that the path exists and is readable".into(),
     })
 }
 
+struct LanguageEntry {
+    extensions: &'static [&'static str],
+    rules: Box<dyn LanguageRules>,
+}
+
 struct Languages {
-    rust: rust::Rust,
-    typescript: typescript::TypeScript,
-    tsx: typescript::TypeScript,
+    entries: Vec<LanguageEntry>,
 }
 
 impl Languages {
     fn new() -> Self {
         Self {
-            rust: rust::Rust,
-            typescript: typescript::TypeScript::new(
-                tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-            ),
-            tsx: typescript::TypeScript::new(tree_sitter_typescript::LANGUAGE_TSX.into()),
+            entries: vec![
+                LanguageEntry {
+                    extensions: &["rs"],
+                    rules: Box::new(rust::Rust),
+                },
+                LanguageEntry {
+                    extensions: &["ts"],
+                    rules: Box::new(typescript::TypeScript::new(
+                        tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+                    )),
+                },
+                LanguageEntry {
+                    extensions: &["tsx"],
+                    rules: Box::new(typescript::TypeScript::new(
+                        tree_sitter_typescript::LANGUAGE_TSX.into(),
+                    )),
+                },
+            ],
         }
     }
 
-    fn for_path(&self, path: &Path) -> &dyn LanguageRules {
-        match path.extension().and_then(|e| e.to_str()) {
-            Some("ts") => &self.typescript,
-            Some("tsx") => &self.tsx,
-            _ => &self.rust,
-        }
+    fn for_path(&self, path: &Path) -> Option<&dyn LanguageRules> {
+        let ext = path.extension()?.to_str()?;
+        self.entries
+            .iter()
+            .find(|e| e.extensions.contains(&ext))
+            .map(|e| e.rules.as_ref())
+    }
+
+    fn supported_extensions(&self) -> Vec<&str> {
+        self.entries
+            .iter()
+            .flat_map(|e| e.extensions.iter().copied())
+            .collect()
     }
 }
 
@@ -167,8 +194,9 @@ fn pluralize_levels(n: u64) -> &'static str {
     if n == 1 { "level" } else { "levels" }
 }
 
-fn format_ops(operators: &[score::LogicalOp]) -> String {
+fn format_operators(operators: &[score::LogicalOp]) -> String {
     let mut unique: Vec<&str> = operators.iter().map(|o| o.label()).collect();
+    unique.sort_unstable();
     unique.dedup();
     let quoted: Vec<String> = unique.iter().map(|o| format!("'{o}'")).collect();
     let prefix = if unique.len() > 1 { "mixed " } else { "" };
@@ -214,7 +242,11 @@ fn format_evidence(c: &score::Contributor, path: &Path) -> Evidence {
         ),
         score::ContributorKind::Logical { operators } => (
             "boolean logic",
-            format!("{} operators (+{})", format_ops(operators), c.increment),
+            format!(
+                "{} operators (+{})",
+                format_operators(operators),
+                c.increment
+            ),
             text("extract into a named boolean"),
         ),
         score::ContributorKind::Recursion { fn_name } => (
@@ -293,7 +325,11 @@ mod tests {
     }
 
     fn evidence_of(source: &str) -> Vec<Evidence> {
-        let dir = TestDir::new().source_file("a.rs", source);
+        evidence_of_file("a.rs", source)
+    }
+
+    fn evidence_of_file(filename: &str, source: &str) -> Vec<Evidence> {
+        let dir = TestDir::new().source_file(filename, source);
 
         let mut evals = check_dir(&dir.root());
         let crate::Outcome::Completed { evidence, .. } = evals.remove(0).outcome else {
@@ -349,6 +385,17 @@ mod tests {
             "evidence found mismatch for rule '{rule}'"
         );
         assert_eq!(entry.expected, expected.map(|s| Expected::Text(s.into())));
+    }
+
+    #[test]
+    fn catch_evidence_formatting() {
+        let evidence = evidence_of_file("a.ts", "function f() { try {} catch (e) {} }");
+        let entry = evidence
+            .iter()
+            .find(|e| e.rule.as_deref() == Some("flow break"))
+            .unwrap();
+
+        assert!(entry.found.contains("'catch' exception handler"));
     }
 
     #[test]
