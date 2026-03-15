@@ -72,20 +72,27 @@ pub fn check(
     let files = resolve_files(paths, definition)?;
     let languages = Languages::new();
 
-    let mut evaluations: Vec<Evaluation> = files
+    let evaluations: Vec<Evaluation> = files
         .iter()
         .filter_map(|path| std::fs::read_to_string(path).ok().map(|src| (path, src)))
         .flat_map(|(path, source)| score_file(path, &source, languages.for_path(path), &thresholds))
         .collect();
 
-    if evaluations.is_empty() {
-        let label = paths
-            .first()
-            .map_or_else(|| ".".into(), |p| p.display().to_string());
-        evaluations.push(Evaluation::completed(label, 0, thresholds, vec![]));
-    }
+    Ok(with_fallback(evaluations, paths, thresholds))
+}
 
-    Ok(evaluations)
+fn with_fallback(
+    evaluations: Vec<Evaluation>,
+    paths: &[PathBuf],
+    thresholds: Thresholds,
+) -> Vec<Evaluation> {
+    if !evaluations.is_empty() {
+        return evaluations;
+    }
+    let label = paths
+        .first()
+        .map_or_else(|| ".".into(), |p| p.display().to_string());
+    vec![Evaluation::completed(label, 0, thresholds, vec![])]
 }
 
 const SUPPORTED_EXTENSIONS: &[&str] = &["rs", "ts", "tsx"];
