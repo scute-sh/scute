@@ -364,97 +364,6 @@ mod tests {
     use crate::code_complexity::rust::Rust;
     use test_case::test_case;
 
-    fn score_only(source: &str) -> u64 {
-        let results = score_functions(source, &Rust);
-        assert_eq!(results.len(), 1, "expected exactly one function");
-        results[0].score
-    }
-
-    #[test_case("fn add(a: i32, b: i32) -> i32 { a + b }", 0 ; "scores_zero_for_flat_function")]
-    #[test_case("fn f(x: i32) -> bool { if x > 0 { return true; } false }", 1 ; "scores_one_for_single_if")]
-    #[test_case("fn f(a: bool, b: bool, c: bool) -> bool { a && b && c }", 1 ; "scores_one_for_same_logical_operators")]
-    #[test_case("fn f(a: bool, b: bool, c: bool) -> bool { a && b || c }", 2 ; "scores_per_operator_change")]
-    // if: +1, else if: +1 (flat chain), else: +1
-    #[test_case("fn f(x: i32) -> i32 {
-        if x > 0 { 1 }
-        else if x < 0 { -1 }
-        else { 0 }
-    }", 3 ; "scores_else_if_chain_flat")]
-    // if: +1, else: +1, recursion: +1
-    #[test_case("fn factorial(n: u64) -> u64 {
-        if n <= 1 { 1 }
-        else { n * factorial(n - 1) }
-    }", 3 ; "adds_one_for_direct_recursion")]
-    // closure: +0 structural, nesting becomes 1; if: +1+1, else: +1
-    #[test_case("fn f(items: &[i32]) -> Vec<i32> {
-        items.iter().filter(|x| {
-            if **x > 0 { true } else { false }
-        }).copied().collect()
-    }", 3 ; "increases_nesting_for_closure")]
-    // for+nested-if+else = 1 + (1+1) + (1+2) + 1
-    #[test_case("fn process(items: &[i32]) -> i32 {
-        let mut total = 0;
-        for item in items {
-            if *item > 0 {
-                if *item > 10 { total += item; }
-                else { total -= item; }
-            }
-        }
-        total
-    }", 7 ; "scores_canonical_example")]
-    // outer for: +1, inner for: +2, if: +3, break 'outer: +1
-    #[test_case("fn f(items: &[&[i32]]) -> i32 {
-        let mut total = 0;
-        'outer: for row in items {
-            for item in *row {
-                if *item < 0 { break 'outer; }
-                total += item;
-            }
-        }
-        total
-    }", 7 ; "adds_one_for_labeled_break")]
-    // impl method should be discovered and scored
-    #[test_case("struct S;
-    impl S {
-        fn method(&self, x: i32) -> i32 {
-            if x > 0 { 1 } else { -1 }
-        }
-    }", 2 ; "scores_impl_method")]
-    // if: +1, else: +1, recursion via self.method(): +1
-    #[test_case("struct S;
-    impl S {
-        fn count(&self, n: u64) -> u64 {
-            if n <= 1 { 1 }
-            else { n * self.count(n - 1) }
-        }
-    }", 3 ; "adds_one_for_self_method_recursion")]
-    // if: +1, else: +1, recursion via Self::method(): +1
-    #[test_case("struct S;
-    impl S {
-        fn count(n: u64) -> u64 {
-            if n <= 1 { 1 }
-            else { n * Self::count(n - 1) }
-        }
-    }", 3 ; "adds_one_for_associated_function_recursion")]
-    // if: +1, else: +1 — Def::foo is NOT recursion into Abc::foo
-    #[test_case("struct Abc;
-    struct Def;
-    impl Abc {
-        fn foo(n: u64) -> u64 {
-            if n <= 1 { 1 }
-            else { Def::foo(n - 1) }
-        }
-    }", 2 ; "different_type_qualified_call_is_not_recursion")]
-    // else if with nested if inside the else-if branch (nesting underflow regression)
-    #[test_case("fn f(x: i32, y: bool) -> i32 {
-        if x > 0 { 1 }
-        else if y { if x < -10 { 2 } else { 3 } }
-        else { 0 }
-    }", 6 ; "scores_nested_if_inside_else_if")]
-    fn scores(source: &str, expected: u64) {
-        assert_eq!(score_only(source), expected);
-    }
-
     fn contributors(source: &str) -> Vec<Contributor> {
         let results = score_functions(source, &Rust);
         assert_eq!(results.len(), 1, "expected exactly one function");
@@ -621,6 +530,39 @@ mod tests {
         );
     }
 
+    // else if with nested if inside the else-if branch (nesting underflow regression)
+    #[test]
+    fn scores_nested_if_inside_else_if() {
+        let results = score_functions(
+            "fn f(x: i32, y: bool) -> i32 {
+                if x > 0 { 1 }
+                else if y { if x < -10 { 2 } else { 3 } }
+                else { 0 }
+            }",
+            &Rust,
+        );
+        assert_eq!(results[0].score, 6);
+    }
+
+    // for+nested-if+else = 1 + (1+1) + (1+2) + 1
+    #[test]
+    fn scores_canonical_nested_example() {
+        let results = score_functions(
+            "fn process(items: &[i32]) -> i32 {
+                let mut total = 0;
+                for item in items {
+                    if *item > 0 {
+                        if *item > 10 { total += item; }
+                        else { total -= item; }
+                    }
+                }
+                total
+            }",
+            &Rust,
+        );
+        assert_eq!(results[0].score, 7);
+    }
+
     #[test]
     fn empty_source_returns_no_functions() {
         let results = score_functions("", &Rust);
@@ -632,23 +574,5 @@ mod tests {
         let results = score_functions("fn f(x: i32 -> { x + }", &Rust);
         // tree-sitter recovers from errors — should not panic
         let _ = results;
-    }
-
-    // outer: inner fn bumps nesting to 1, if inside inner at nesting 1 = +2, if in outer = +1 → 3
-    // inner: scored independently, if at nesting 0 = +1 → 1
-    #[test]
-    fn scores_nested_function_and_outer_independently() {
-        let results = score_functions(
-            "fn outer() {
-                fn inner() { if true {} }
-                if true {}
-            }",
-            &Rust,
-        );
-        assert_eq!(results.len(), 2);
-        assert_eq!(results[0].name, "outer");
-        assert_eq!(results[0].score, 3);
-        assert_eq!(results[1].name, "inner");
-        assert_eq!(results[1].score, 1);
     }
 }

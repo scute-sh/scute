@@ -355,6 +355,42 @@ checks:
 
     #[test_case(Cli)]
     #[test_case(Mcp)]
+    fn complex_typescript_function_gets_flagged(interface: Interface) {
+        Scute::new(interface)
+            .scute_config(
+                r"
+checks:
+  code-complexity:
+    thresholds:
+      warn: 1
+      fail: 10
+",
+            )
+            .source_file(
+                "src/complex.ts",
+                r"
+function process(items: number[]): number {
+    let total = 0;
+    for (const item of items) {
+        if (item > 0) {
+            if (item > 10) {
+                total += item;
+            } else {
+                total -= item;
+            }
+        }
+    }
+    return total;
+}
+",
+            )
+            .check(&["code-complexity"])
+            .expect_warn()
+            .expect_target_contains("process");
+    }
+
+    #[test_case(Cli)]
+    #[test_case(Mcp)]
     fn nonexistent_path_produces_error(interface: Interface) {
         Scute::new(interface)
             .check(&["code-complexity", "/nonexistent/path"])
