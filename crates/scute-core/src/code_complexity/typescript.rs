@@ -125,7 +125,7 @@ impl LanguageRules for TypeScript {
                 role: Construct::InlineNesting,
                 label: "generator",
             })),
-            "function_declaration" | "generator_function_declaration" => {
+            "function_declaration" | "generator_function_declaration" | "method_definition" => {
                 Some(NestingKind::Separate)
             }
             _ => None,

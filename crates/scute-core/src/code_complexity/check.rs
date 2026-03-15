@@ -242,7 +242,11 @@ fn format_evidence(c: &score::Contributor, path: &Path) -> Evidence {
         ),
         score::ContributorKind::Logical { operators } => (
             "boolean logic",
-            format!("{} operators (+{})", format_operators(operators), c.increment),
+            format!(
+                "{} operators (+{})",
+                format_operators(operators),
+                c.increment
+            ),
             text("extract into a named boolean"),
         ),
         score::ContributorKind::Recursion { fn_name } => (
@@ -321,7 +325,11 @@ mod tests {
     }
 
     fn evidence_of(source: &str) -> Vec<Evidence> {
-        let dir = TestDir::new().source_file("a.rs", source);
+        evidence_of_file("a.rs", source)
+    }
+
+    fn evidence_of_file(filename: &str, source: &str) -> Vec<Evidence> {
+        let dir = TestDir::new().source_file(filename, source);
 
         let mut evals = check_dir(&dir.root());
         let crate::Outcome::Completed { evidence, .. } = evals.remove(0).outcome else {
@@ -377,6 +385,17 @@ mod tests {
             "evidence found mismatch for rule '{rule}'"
         );
         assert_eq!(entry.expected, expected.map(|s| Expected::Text(s.into())));
+    }
+
+    #[test]
+    fn catch_evidence_formatting() {
+        let evidence = evidence_of_file("a.ts", "function f() { try {} catch (e) {} }");
+        let entry = evidence
+            .iter()
+            .find(|e| e.rule.as_deref() == Some("flow break"))
+            .unwrap();
+
+        assert!(entry.found.contains("'catch' exception handler"));
     }
 
     #[test]
