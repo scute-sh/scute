@@ -2,7 +2,8 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use super::score;
+use super::rules::LanguageRules;
+use super::{rust, score};
 use crate::files;
 use crate::{Evaluation, Evidence, ExecutionError, Expected, Thresholds};
 
@@ -76,7 +77,7 @@ pub fn check(
         recovery: "check that the path exists and is readable".into(),
     })?;
 
-    let rules = score::Rust;
+    let rules = rust::Rust;
     let mut evaluations = Vec::new();
 
     for path in &files {
@@ -99,7 +100,7 @@ pub fn check(
 fn score_file(
     path: &Path,
     source: &str,
-    rules: &dyn score::LanguageRules,
+    rules: &dyn LanguageRules,
     thresholds: &Thresholds,
 ) -> Vec<Evaluation> {
     score::score_functions(source, rules)
