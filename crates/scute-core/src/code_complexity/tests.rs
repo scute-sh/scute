@@ -101,6 +101,17 @@ fn scores_direct_recursion(rules: &dyn LanguageRules, source: &str) {
     expect_score(source, rules, 3);
 }
 
+// if: +1, else: +1, this.method() recursion: +1
+#[test_case(&ts(), "class C {
+    count(n: number): number {
+        if (n <= 1) { return 1; }
+        else { return n * this.count(n - 1); }
+    }
+}" ; "typescript_this_method")]
+fn scores_this_method_recursion(rules: &dyn LanguageRules, source: &str) {
+    expect_score(source, rules, 3);
+}
+
 // Rust-specific: self.method() and Self::method() recursion
 #[test_case("struct S;
 impl S {
