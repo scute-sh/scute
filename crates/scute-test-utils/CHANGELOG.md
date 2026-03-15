@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.3](https://github.com/scute-sh/scute/compare/scute-test-utils-v0.0.2...scute-test-utils-v0.0.3) - 2026-03-15
+
+### Other
+
+- *(test-utils)* add TestDir::source_file ([#72](https://github.com/scute-sh/scute/pull/72))
+- eliminate all remaining complexity warnings ([#71](https://github.com/scute-sh/scute/pull/71))
+- *(test-utils)* extract write_source_files from setup_at ([#66](https://github.com/scute-sh/scute/pull/66))
+
 ## [0.0.2](https://github.com/scute-sh/scute/compare/scute-test-utils-v0.0.1...scute-test-utils-v0.0.2) - 2026-03-14
 
 ### Added

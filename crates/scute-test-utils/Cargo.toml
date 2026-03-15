@@ -1,6 +1,6 @@
 [package]
 name = "scute-test-utils"
-version = "0.0.2"
+version = "0.0.3"
 edition = "2024"
 description = "Test utilities for Scute"
 repository = "https://github.com/scute-sh/scute"
