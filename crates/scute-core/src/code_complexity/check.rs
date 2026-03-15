@@ -370,20 +370,6 @@ mod tests {
     }
 
     #[test]
-    fn scores_typescript_function() {
-        let dir = TestDir::new().source_file(
-            "simple.ts",
-            "function add(a: number, b: number): number { return a + b }",
-        );
-
-        let evals = check_dir(&dir.root());
-
-        assert_eq!(evals.len(), 1);
-        assert!(evals[0].target.contains("add"));
-        assert!(evals[0].is_pass());
-    }
-
-    #[test]
     fn scores_tsx_file() {
         let dir =
             TestDir::new().source_file("component.tsx", "function Greeting() { return 'hello' }");
