@@ -201,7 +201,7 @@ fn format_evidence(c: &score::Contributor, path: &Path) -> Evidence {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
+    use scute_test_utils::TestDir;
     use test_case::test_case;
 
     fn check_dir(dir: &Path) -> Vec<Evaluation> {
@@ -210,14 +210,12 @@ mod tests {
 
     #[test]
     fn returns_one_evaluation_per_function() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(
-            dir.path().join("two.rs"),
+        let dir = TestDir::new().source_file(
+            "two.rs",
             "fn a() {} fn b(x: i32) -> i32 { if x > 0 { 1 } else { -1 } }",
-        )
-        .unwrap();
+        );
 
-        let evals = check_dir(dir.path());
+        let evals = check_dir(&dir.root());
 
         assert_eq!(evals.len(), 2);
         assert!(evals[0].target.contains('a'));
@@ -226,9 +224,9 @@ mod tests {
 
     #[test]
     fn returns_single_pass_for_empty_directory() {
-        let dir = tempfile::tempdir().unwrap();
+        let dir = TestDir::new();
 
-        let evals = check_dir(dir.path());
+        let evals = check_dir(&dir.root());
 
         assert_eq!(evals.len(), 1);
         assert!(evals[0].is_pass());
@@ -236,32 +234,29 @@ mod tests {
 
     #[test]
     fn scores_only_functions_in_specified_file() {
-        let dir = tempfile::tempdir().unwrap();
-        let target = dir.path().join("target.rs");
-        fs::write(&target, "fn focused() { if true {} }").unwrap();
-        fs::write(dir.path().join("other.rs"), "fn ignored() { if true {} }").unwrap();
+        let dir = TestDir::new()
+            .source_file("target.rs", "fn focused() { if true {} }")
+            .source_file("other.rs", "fn ignored() { if true {} }");
 
-        let evals = check(&[target], &Definition::default()).unwrap();
+        let evals = check(&[dir.path("target.rs")], &Definition::default()).unwrap();
 
         assert!(evals.iter().all(|e| e.target.contains("focused")));
     }
 
     #[test]
     fn applies_default_thresholds() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join("simple.rs"), "fn f() { if true {} }").unwrap();
+        let dir = TestDir::new().source_file("simple.rs", "fn f() { if true {} }");
 
-        let evals = check_dir(dir.path());
+        let evals = check_dir(&dir.root());
 
         assert_eq!(evals.len(), 1);
         assert!(evals[0].is_pass()); // score 1, default warn 5
     }
 
     fn evidence_of(source: &str) -> Vec<Evidence> {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join("a.rs"), source).unwrap();
+        let dir = TestDir::new().source_file("a.rs", source);
 
-        let mut evals = check_dir(dir.path());
+        let mut evals = check_dir(&dir.root());
         let crate::Outcome::Completed { evidence, .. } = evals.remove(0).outcome else {
             panic!("expected completed");
         };
@@ -334,10 +329,9 @@ mod tests {
 
     #[test]
     fn skips_non_rust_files() {
-        let dir = tempfile::tempdir().unwrap();
-        fs::write(dir.path().join("code.py"), "def foo(): pass").unwrap();
+        let dir = TestDir::new().source_file("code.py", "def foo(): pass");
 
-        let evals = check_dir(dir.path());
+        let evals = check_dir(&dir.root());
 
         assert_eq!(evals.len(), 1);
         assert!(evals[0].is_pass()); // fallback pass, no rust files
@@ -356,11 +350,9 @@ mod tests {
 
     #[test]
     fn rejects_unsupported_file_extension() {
-        let dir = tempfile::tempdir().unwrap();
-        let py_file = dir.path().join("code.py");
-        fs::write(&py_file, "def foo(): pass").unwrap();
+        let dir = TestDir::new().source_file("code.py", "def foo(): pass");
 
-        let result = check(&[py_file], &Definition::default());
+        let result = check(&[dir.path("code.py")], &Definition::default());
 
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().code, "invalid_target");
