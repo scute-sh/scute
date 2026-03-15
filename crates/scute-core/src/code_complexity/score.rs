@@ -8,6 +8,7 @@ use tree_sitter::Language;
 /// and applies the Sonar cognitive complexity rules uniformly.
 pub trait LanguageRules {
     fn language(&self) -> Language;
+    fn flow_construct(&self, node: tree_sitter::Node) -> Option<Construct>;
 }
 
 pub struct Rust;
@@ -15,6 +16,17 @@ pub struct Rust;
 impl LanguageRules for Rust {
     fn language(&self) -> Language {
         tree_sitter_rust::LANGUAGE.into()
+    }
+
+    fn flow_construct(&self, node: tree_sitter::Node) -> Option<Construct> {
+        match node.kind() {
+            "if_expression" => Some(Construct::If),
+            "for_expression" => Some(Construct::For),
+            "while_expression" => Some(Construct::While),
+            "loop_expression" => Some(Construct::Loop),
+            "match_expression" => Some(Construct::Match),
+            _ => None,
+        }
     }
 }
 
@@ -110,11 +122,16 @@ pub fn score_functions(source: &str, rules: &dyn LanguageRules) -> Vec<FunctionS
 
     let src = source.as_bytes();
     let mut results = vec![];
-    collect_functions(tree.root_node(), src, &mut results);
+    collect_functions(tree.root_node(), src, rules, &mut results);
     results
 }
 
-fn collect_functions(node: tree_sitter::Node, src: &[u8], results: &mut Vec<FunctionScore>) {
+fn collect_functions(
+    node: tree_sitter::Node,
+    src: &[u8],
+    rules: &dyn LanguageRules,
+    results: &mut Vec<FunctionScore>,
+) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         if child.kind() == "function_item" {
@@ -127,6 +144,7 @@ fn collect_functions(node: tree_sitter::Node, src: &[u8], results: &mut Vec<Func
             let impl_type = enclosing_impl_type(child, src);
             let mut contributors = vec![];
             let score = ScoringContext {
+                rules,
                 fn_name: &name,
                 impl_type: impl_type.as_deref(),
                 src,
@@ -140,7 +158,7 @@ fn collect_functions(node: tree_sitter::Node, src: &[u8], results: &mut Vec<Func
                 contributors,
             });
         }
-        collect_functions(child, src, results);
+        collect_functions(child, src, rules, results);
     }
 }
 
@@ -153,6 +171,7 @@ fn enclosing_impl_type(node: tree_sitter::Node, src: &[u8]) -> Option<String> {
 }
 
 struct ScoringContext<'a> {
+    rules: &'a dyn LanguageRules,
     fn_name: &'a str,
     impl_type: Option<&'a str>,
     src: &'a [u8],
@@ -168,33 +187,32 @@ impl ScoringContext<'_> {
     }
 
     fn score_node(&mut self, node: tree_sitter::Node, nesting: u64) -> u64 {
-        match node.kind() {
-            kind @ ("if_expression" | "for_expression" | "while_expression" | "loop_expression"
-            | "match_expression") => {
-                self.score_flow_break(node, nesting, parse_construct(kind).unwrap())
-            }
+        if let Some(construct) = self.rules.flow_construct(node) {
+            self.score_flow_break(node, nesting, construct)
+        } else {
+            match node.kind() {
+                "closure_expression" | "function_item" => self.complexity(node, nesting + 1),
 
-            "closure_expression" | "function_item" => self.complexity(node, nesting + 1),
+                "else_clause" => self.score_else(node, nesting),
 
-            "else_clause" => self.score_else(node, nesting),
-
-            "binary_expression" if is_logical_op(node) => {
-                self.score_logical_sequence(node, nesting)
-            }
-
-            kind @ ("break_expression" | "continue_expression") if has_label(node) => {
-                self.score_jump(node, nesting, parse_jump_keyword(kind).unwrap())
-            }
-
-            "call_expression" => {
-                if is_recursive_call(node, self.fn_name, self.impl_type, self.src) {
-                    self.score_recursion(node, nesting)
-                } else {
-                    self.complexity(node, nesting)
+                "binary_expression" if is_logical_op(node) => {
+                    self.score_logical_sequence(node, nesting)
                 }
-            }
 
-            _ => self.complexity(node, nesting),
+                kind @ ("break_expression" | "continue_expression") if has_label(node) => {
+                    self.score_jump(node, nesting, parse_jump_keyword(kind).unwrap())
+                }
+
+                "call_expression" => {
+                    if is_recursive_call(node, self.fn_name, self.impl_type, self.src) {
+                        self.score_recursion(node, nesting)
+                    } else {
+                        self.complexity(node, nesting)
+                    }
+                }
+
+                _ => self.complexity(node, nesting),
+            }
         }
     }
 
@@ -214,7 +232,7 @@ impl ScoringContext<'_> {
     ) -> u64 {
         let increment = 1 + nesting;
         let kind = if nesting > 0 {
-            let mut chain = nesting_chain(node);
+            let mut chain = nesting_chain(node, self.rules);
             chain.push(construct);
             ContributorKind::Nesting {
                 construct,
@@ -296,32 +314,25 @@ impl ScoringContext<'_> {
     }
 }
 
-fn nesting_chain(node: tree_sitter::Node) -> Vec<Construct> {
+fn nesting_chain(node: tree_sitter::Node, rules: &dyn LanguageRules) -> Vec<Construct> {
     let ancestors = std::iter::successors(node.parent(), tree_sitter::Node::parent);
     let mut chain = Vec::new();
-    for parent in ancestors {
-        match parent.kind() {
-            "function_item" => break,
-            "closure_expression" => {
-                chain.push(Construct::Closure);
-                break;
+    for ancestor in ancestors {
+        if let Some(construct) = rules.flow_construct(ancestor) {
+            chain.push(construct);
+        } else {
+            match ancestor.kind() {
+                "function_item" => break,
+                "closure_expression" => {
+                    chain.push(Construct::Closure);
+                    break;
+                }
+                _ => {}
             }
-            kind => chain.extend(parse_construct(kind)),
         }
     }
     chain.reverse();
     chain
-}
-
-fn parse_construct(tree_sitter_kind: &str) -> Option<Construct> {
-    match tree_sitter_kind {
-        "if_expression" => Some(Construct::If),
-        "for_expression" => Some(Construct::For),
-        "while_expression" => Some(Construct::While),
-        "loop_expression" => Some(Construct::Loop),
-        "match_expression" => Some(Construct::Match),
-        _ => None,
-    }
 }
 
 fn parse_jump_keyword(tree_sitter_kind: &str) -> Option<JumpKeyword> {
