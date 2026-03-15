@@ -8,7 +8,6 @@ pub enum NodeRole {
     LogicalExpression,
     LabeledJump(JumpKeyword, String),
     RecursiveCall,
-    Other,
 }
 
 pub enum NestingKind {
@@ -293,9 +292,9 @@ fn classify(
     fn_name: &str,
     receiver_type: Option<&str>,
     src: &[u8],
-) -> NodeRole {
+) -> Option<NodeRole> {
     classify_structural(rules, node)
-        .unwrap_or_else(|| classify_contextual(rules, node, fn_name, receiver_type, src))
+        .or_else(|| classify_contextual(rules, node, fn_name, receiver_type, src))
 }
 
 fn classify_structural(rules: &dyn LanguageRules, node: tree_sitter::Node) -> Option<NodeRole> {
@@ -320,14 +319,14 @@ fn classify_contextual(
     fn_name: &str,
     receiver_type: Option<&str>,
     src: &[u8],
-) -> NodeRole {
+) -> Option<NodeRole> {
     if let Some((keyword, label)) = rules.jump_label(node, src) {
-        NodeRole::LabeledJump(keyword, label)
-    } else if rules.is_recursive_call(node, fn_name, receiver_type, src) {
-        NodeRole::RecursiveCall
-    } else {
-        NodeRole::Other
+        return Some(NodeRole::LabeledJump(keyword, label));
     }
+    if rules.is_recursive_call(node, fn_name, receiver_type, src) {
+        return Some(NodeRole::RecursiveCall);
+    }
+    None
 }
 
 struct ScoringContext<'a> {
@@ -347,14 +346,16 @@ impl ScoringContext<'_> {
     }
 
     fn score_node(&mut self, node: tree_sitter::Node, nesting: u64) -> u64 {
-        match classify(self.rules, node, self.fn_name, self.impl_type, self.src) {
+        let Some(role) = classify(self.rules, node, self.fn_name, self.impl_type, self.src) else {
+            return self.complexity(node, nesting);
+        };
+        match role {
             NodeRole::FlowConstruct(construct) => self.score_flow_break(node, nesting, construct),
             NodeRole::ElseClause => self.score_else(node, nesting),
             NodeRole::NestingBoundary => self.complexity(node, nesting + 1),
             NodeRole::LogicalExpression => self.score_logical_sequence(node, nesting),
             NodeRole::LabeledJump(keyword, label) => self.score_jump(node, nesting, keyword, label),
             NodeRole::RecursiveCall => self.score_recursion(node, nesting),
-            NodeRole::Other => self.complexity(node, nesting),
         }
     }
 
