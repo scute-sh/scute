@@ -339,13 +339,13 @@ mod tests {
     }
 
     #[test]
-    fn skips_non_rust_files() {
+    fn skips_unsupported_files() {
         let dir = TestDir::new().source_file("code.py", "def foo(): pass");
 
         let evals = check_dir(&dir.root());
 
         assert_eq!(evals.len(), 1);
-        assert!(evals[0].is_pass()); // fallback pass, no rust files
+        assert!(evals[0].is_pass());
     }
 
     #[test]
