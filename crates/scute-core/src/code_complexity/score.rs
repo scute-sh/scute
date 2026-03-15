@@ -1,6 +1,23 @@
 use crate::parser::{AstParser, TreeSitterParser};
 use tree_sitter::Language;
 
+/// Maps a language's tree-sitter AST to cognitive complexity drivers.
+///
+/// The scoring algorithm is language-agnostic: it asks the language to identify
+/// its own constructs (flow control, nesting boundaries, logical operators, etc.)
+/// and applies the Sonar cognitive complexity rules uniformly.
+pub trait LanguageRules {
+    fn language(&self) -> Language;
+}
+
+pub struct Rust;
+
+impl LanguageRules for Rust {
+    fn language(&self) -> Language {
+        tree_sitter_rust::LANGUAGE.into()
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Construct {
     If,
@@ -85,9 +102,9 @@ pub struct FunctionScore {
     pub contributors: Vec<Contributor>,
 }
 
-pub fn score_functions(source: &str, language: &Language) -> Vec<FunctionScore> {
+pub fn score_functions(source: &str, rules: &dyn LanguageRules) -> Vec<FunctionScore> {
     let mut parser = TreeSitterParser::new();
-    let Ok(tree) = parser.parse(source, language) else {
+    let Ok(tree) = parser.parse(source, &rules.language()) else {
         return vec![];
     };
 
@@ -407,7 +424,7 @@ mod tests {
     use test_case::test_case;
 
     fn score_only(source: &str) -> u64 {
-        let results = score_functions(source, &tree_sitter_rust::LANGUAGE.into());
+        let results = score_functions(source, &Rust);
         assert_eq!(results.len(), 1, "expected exactly one function");
         results[0].score
     }
@@ -498,7 +515,7 @@ mod tests {
     }
 
     fn contributors(source: &str) -> Vec<Contributor> {
-        let results = score_functions(source, &tree_sitter_rust::LANGUAGE.into());
+        let results = score_functions(source, &Rust);
         assert_eq!(results.len(), 1, "expected exactly one function");
         results.into_iter().next().unwrap().contributors
     }
@@ -638,13 +655,13 @@ mod tests {
 
     #[test]
     fn empty_source_returns_no_functions() {
-        let results = score_functions("", &tree_sitter_rust::LANGUAGE.into());
+        let results = score_functions("", &Rust);
         assert!(results.is_empty());
     }
 
     #[test]
     fn broken_syntax_does_not_panic() {
-        let results = score_functions("fn f(x: i32 -> { x + }", &tree_sitter_rust::LANGUAGE.into());
+        let results = score_functions("fn f(x: i32 -> { x + }", &Rust);
         // tree-sitter recovers from errors — should not panic
         let _ = results;
     }
@@ -658,7 +675,7 @@ mod tests {
                 fn inner() { if true {} }
                 if true {}
             }",
-            &tree_sitter_rust::LANGUAGE.into(),
+            &Rust,
         );
         assert_eq!(results.len(), 2);
         assert_eq!(results[0].name, "outer");

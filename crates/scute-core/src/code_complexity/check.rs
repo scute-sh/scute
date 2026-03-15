@@ -76,14 +76,14 @@ pub fn check(
         recovery: "check that the path exists and is readable".into(),
     })?;
 
-    let language: tree_sitter::Language = tree_sitter_rust::LANGUAGE.into();
+    let rules = score::Rust;
     let mut evaluations = Vec::new();
 
     for path in &files {
         let Ok(source) = std::fs::read_to_string(path) else {
             continue;
         };
-        evaluations.extend(score_file(path, &source, &language, &thresholds));
+        evaluations.extend(score_file(path, &source, &rules, &thresholds));
     }
 
     if evaluations.is_empty() {
@@ -99,10 +99,10 @@ pub fn check(
 fn score_file(
     path: &Path,
     source: &str,
-    language: &tree_sitter::Language,
+    rules: &dyn score::LanguageRules,
     thresholds: &Thresholds,
 ) -> Vec<Evaluation> {
-    score::score_functions(source, language)
+    score::score_functions(source, rules)
         .into_iter()
         .map(|func| {
             let target = format!("{}:{}:{}", path.display(), func.line, func.name);
