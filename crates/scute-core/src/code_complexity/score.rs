@@ -9,6 +9,8 @@ use tree_sitter::Language;
 pub trait LanguageRules {
     fn language(&self) -> Language;
     fn flow_construct(&self, node: tree_sitter::Node) -> Option<Construct>;
+    fn is_else_clause(&self, node: tree_sitter::Node) -> bool;
+    fn is_else_if(&self, node: tree_sitter::Node) -> bool;
 }
 
 pub struct Rust;
@@ -27,6 +29,15 @@ impl LanguageRules for Rust {
             "match_expression" => Some(Construct::Match),
             _ => None,
         }
+    }
+
+    fn is_else_clause(&self, node: tree_sitter::Node) -> bool {
+        node.kind() == "else_clause"
+    }
+
+    fn is_else_if(&self, node: tree_sitter::Node) -> bool {
+        node.children(&mut node.walk())
+            .any(|c| c.kind() == "if_expression")
     }
 }
 
@@ -189,11 +200,11 @@ impl ScoringContext<'_> {
     fn score_node(&mut self, node: tree_sitter::Node, nesting: u64) -> u64 {
         if let Some(construct) = self.rules.flow_construct(node) {
             self.score_flow_break(node, nesting, construct)
+        } else if self.rules.is_else_clause(node) {
+            self.score_else(node, nesting)
         } else {
             match node.kind() {
                 "closure_expression" | "function_item" => self.complexity(node, nesting + 1),
-
-                "else_clause" => self.score_else(node, nesting),
 
                 "binary_expression" if is_logical_op(node) => {
                     self.score_logical_sequence(node, nesting)
@@ -247,11 +258,7 @@ impl ScoringContext<'_> {
     }
 
     fn score_else(&mut self, node: tree_sitter::Node, nesting: u64) -> u64 {
-        let is_else_if = node
-            .children(&mut node.walk())
-            .any(|c| c.kind() == "if_expression");
-
-        if is_else_if {
+        if self.rules.is_else_if(node) {
             self.complexity(node, nesting.saturating_sub(1))
         } else {
             self.push(ContributorKind::Else, node, 1);
