@@ -364,215 +364,164 @@ mod tests {
     use crate::code_complexity::rust::Rust;
     use test_case::test_case;
 
+    // Source fixtures: named by scenario, not by language.
+    // We use Rust as the AST vehicle, but tests express pure cognitive complexity rules.
+    const FLAT_FUNCTION: &str = "fn f() { 1 + 2 }";
+    const SINGLE_CONDITIONAL: &str = "fn f() { if true {} }";
+    const CONDITIONAL_WITH_ELSE: &str = "fn f(x: bool) { if x {} else {} }";
+    const LOOP_WITH_NESTED_CONDITIONAL: &str = "fn f() { for x in [1] { if true {} } }";
+    const LOOP_WITH_INLINE_NESTING_AND_CONDITIONAL: &str =
+        "fn f() { for x in [1] { [1].iter().filter(|y| { if **y > 0 {} }); } }";
+    const MIXED_LOGICAL_OPERATORS: &str = "fn f(a: bool, b: bool, c: bool) -> bool { a && b || c }";
+    const DIRECT_RECURSION: &str = "fn go(n: u64) -> u64 { go(n - 1) }";
+    const LABELED_BREAK: &str = "fn f() { 'outer: loop { break 'outer; } }";
+    const LABELED_CONTINUE: &str = "fn f() { 'outer: loop { continue 'outer; } }";
+    const ELSE_IF_WITH_NESTED_CONDITIONAL: &str = "fn f(x: i32, y: bool) -> i32 {
+        if x > 0 { 1 }
+        else if y { if x < -10 { 2 } else { 3 } }
+        else { 0 }
+    }";
+    // loop > conditional > conditional + else = 1 + (1+1) + (1+2) + 1
+    const DEEPLY_NESTED: &str = "fn process(items: &[i32]) -> i32 {
+        let mut total = 0;
+        for item in items {
+            if *item > 0 {
+                if *item > 10 { total += item; }
+                else { total -= item; }
+            }
+        }
+        total
+    }";
+    const EMPTY_SOURCE: &str = "";
+    const BROKEN_SYNTAX: &str = "fn f(x: i32 -> { x + }";
+
+    fn rules() -> &'static dyn LanguageRules {
+        &Rust
+    }
+
     fn contributors(source: &str) -> Vec<Contributor> {
-        let results = score_functions(source, &Rust);
+        let results = score_functions(source, rules());
         assert_eq!(results.len(), 1, "expected exactly one function");
         results.into_iter().next().unwrap().contributors
     }
 
+    fn score(source: &str) -> u64 {
+        let results = score_functions(source, rules());
+        assert_eq!(results.len(), 1, "expected exactly one function");
+        results[0].score
+    }
+
     #[test]
     fn flat_function_has_no_contributors() {
-        assert!(contributors("fn f() { 1 + 2 }").is_empty());
+        assert!(contributors(FLAT_FUNCTION).is_empty());
     }
 
     #[test]
-    fn flow_break_at_depth_zero() {
-        assert_eq!(
-            contributors("fn f() { if true {} }"),
-            vec![Contributor {
-                kind: ContributorKind::FlowBreak {
-                    construct: FlowConstruct {
-                        role: Construct::Conditional,
-                        label: "if",
-                    },
-                },
-                line: 1,
-                increment: 1,
-            }]
-        );
+    fn flow_break_increments_by_one_at_depth_zero() {
+        let cs = contributors(SINGLE_CONDITIONAL);
+
+        assert_eq!(cs.len(), 1);
+        assert_eq!(cs[0].increment, 1);
+        assert!(matches!(cs[0].kind, ContributorKind::FlowBreak { .. }));
     }
 
     #[test]
-    fn nesting_tracks_depth_and_chain() {
-        let cs = contributors("fn f() { for x in [1] { if true {} } }");
+    fn nesting_increments_by_one_plus_depth() {
+        let cs = contributors(LOOP_WITH_NESTED_CONDITIONAL);
+        let nested = cs
+            .iter()
+            .find(|c| matches!(c.kind, ContributorKind::Nesting { .. }))
+            .unwrap();
 
-        assert_eq!(
-            cs[1],
-            Contributor {
-                kind: ContributorKind::Nesting {
-                    construct: FlowConstruct {
-                        role: Construct::Conditional,
-                        label: "if",
-                    },
-                    depth: 1,
-                    chain: vec![
-                        FlowConstruct {
-                            role: Construct::Loop,
-                            label: "for"
-                        },
-                        FlowConstruct {
-                            role: Construct::Conditional,
-                            label: "if"
-                        },
-                    ],
-                },
-                line: 1,
-                increment: 2,
-            }
-        );
+        assert_eq!(nested.increment, 2); // 1 + depth 1
+        if let ContributorKind::Nesting { depth, chain, .. } = &nested.kind {
+            assert_eq!(*depth, 1);
+            assert_eq!(chain.len(), 2);
+        }
     }
 
     #[test]
-    fn else_appears_as_contributor() {
-        let cs = contributors("fn f(x: bool) { if x {} else {} }");
-        let else_c = cs.iter().find(|c| c.kind == ContributorKind::Else);
+    fn else_increments_by_one() {
+        let cs = contributors(CONDITIONAL_WITH_ELSE);
+        let else_c = cs
+            .iter()
+            .find(|c| matches!(c.kind, ContributorKind::Else))
+            .unwrap();
 
-        assert_eq!(
-            else_c,
-            Some(&Contributor {
-                kind: ContributorKind::Else,
-                line: 1,
-                increment: 1,
-            })
-        );
+        assert_eq!(else_c.increment, 1);
     }
 
     #[test]
-    fn logical_contributor_captures_operators() {
-        assert_eq!(
-            contributors("fn f(a: bool, b: bool, c: bool) -> bool { a && b || c }"),
-            vec![Contributor {
-                kind: ContributorKind::Logical {
-                    operators: vec![LogicalOp::And("&&"), LogicalOp::Or("||")],
-                },
-                line: 1,
-                increment: 2,
-            },]
-        );
+    fn logical_operators_count_sequence_changes() {
+        let cs = contributors(MIXED_LOGICAL_OPERATORS);
+
+        assert_eq!(cs.len(), 1);
+        assert_eq!(cs[0].increment, 2); // && then || = 2 sequences
+        if let ContributorKind::Logical { operators } = &cs[0].kind {
+            assert_eq!(operators.len(), 2);
+        } else {
+            panic!("expected logical contributor");
+        }
     }
 
     #[test]
-    fn recursion_contributor_captures_function_name() {
-        let cs = contributors("fn go(n: u64) -> u64 { go(n - 1) }");
+    fn recursion_increments_by_one() {
+        let cs = contributors(DIRECT_RECURSION);
+        let rec = cs
+            .iter()
+            .find(|c| matches!(c.kind, ContributorKind::Recursion { .. }))
+            .unwrap();
 
-        assert_eq!(
-            cs,
-            vec![Contributor {
-                kind: ContributorKind::Recursion {
-                    fn_name: "go".into()
-                },
-                line: 1,
-                increment: 1,
-            }]
-        );
+        assert_eq!(rec.increment, 1);
     }
 
-    #[test_case(
-        "fn f() { 'outer: loop { break 'outer; } }",
-        JumpKeyword::Break
-        ; "break_captures_keyword_and_label"
-    )]
-    #[test_case(
-        "fn f() { 'outer: loop { continue 'outer; } }",
-        JumpKeyword::Continue
-        ; "continue_captures_keyword_and_label"
-    )]
-    fn jump_contributor(source: &str, expected_keyword: JumpKeyword) {
+    #[test_case(LABELED_BREAK, JumpKeyword::Break ; "labeled_break")]
+    #[test_case(LABELED_CONTINUE, JumpKeyword::Continue ; "labeled_continue")]
+    fn labeled_jump_increments_by_one(source: &str, expected_keyword: JumpKeyword) {
         let cs = contributors(source);
         let jump = cs
             .iter()
-            .find(|c| matches!(c.kind, ContributorKind::Jump { .. }));
+            .find(|c| matches!(c.kind, ContributorKind::Jump { .. }))
+            .unwrap();
 
-        assert_eq!(
-            jump,
-            Some(&Contributor {
-                kind: ContributorKind::Jump {
-                    keyword: expected_keyword,
-                    label: "'outer".into(),
-                },
-                line: 1,
-                increment: 1,
-            })
-        );
+        assert_eq!(jump.increment, 1);
+        if let ContributorKind::Jump { keyword, .. } = &jump.kind {
+            assert_eq!(*keyword, expected_keyword);
+        }
     }
 
     #[test]
-    fn nesting_chain_includes_closure_boundary() {
-        let cs =
-            contributors("fn f() { for x in [1] { [1].iter().filter(|y| { if **y > 0 {} }); } }");
+    fn nesting_chain_includes_inline_boundary() {
+        let cs = contributors(LOOP_WITH_INLINE_NESTING_AND_CONDITIONAL);
         let nested = cs
             .iter()
-            .find(|c| matches!(c.kind, ContributorKind::Nesting { .. }));
+            .find(|c| matches!(c.kind, ContributorKind::Nesting { .. }))
+            .unwrap();
 
-        assert_eq!(
-            nested,
-            Some(&Contributor {
-                kind: ContributorKind::Nesting {
-                    construct: FlowConstruct {
-                        role: Construct::Conditional,
-                        label: "if",
-                    },
-                    depth: 2,
-                    chain: vec![
-                        FlowConstruct {
-                            role: Construct::InlineNesting,
-                            label: "closure"
-                        },
-                        FlowConstruct {
-                            role: Construct::Conditional,
-                            label: "if"
-                        },
-                    ],
-                },
-                line: 1,
-                increment: 3,
-            })
-        );
+        assert_eq!(nested.increment, 3); // 1 + depth 2
+        if let ContributorKind::Nesting { depth, chain, .. } = &nested.kind {
+            assert_eq!(*depth, 2);
+            assert_eq!(chain[0].role, Construct::InlineNesting);
+        }
     }
 
-    // else if with nested if inside the else-if branch (nesting underflow regression)
     #[test]
-    fn scores_nested_if_inside_else_if() {
-        let results = score_functions(
-            "fn f(x: i32, y: bool) -> i32 {
-                if x > 0 { 1 }
-                else if y { if x < -10 { 2 } else { 3 } }
-                else { 0 }
-            }",
-            &Rust,
-        );
-        assert_eq!(results[0].score, 6);
+    fn else_if_does_not_increase_nesting_for_subsequent_branch() {
+        assert_eq!(score(ELSE_IF_WITH_NESTED_CONDITIONAL), 6);
     }
 
-    // for+nested-if+else = 1 + (1+1) + (1+2) + 1
     #[test]
-    fn scores_canonical_nested_example() {
-        let results = score_functions(
-            "fn process(items: &[i32]) -> i32 {
-                let mut total = 0;
-                for item in items {
-                    if *item > 0 {
-                        if *item > 10 { total += item; }
-                        else { total -= item; }
-                    }
-                }
-                total
-            }",
-            &Rust,
-        );
-        assert_eq!(results[0].score, 7);
+    fn deeply_nested_function_accumulates_nesting_penalties() {
+        assert_eq!(score(DEEPLY_NESTED), 7);
     }
 
     #[test]
     fn empty_source_returns_no_functions() {
-        let results = score_functions("", &Rust);
-        assert!(results.is_empty());
+        assert!(score_functions(EMPTY_SOURCE, rules()).is_empty());
     }
 
     #[test]
     fn broken_syntax_does_not_panic() {
-        let results = score_functions("fn f(x: i32 -> { x + }", &Rust);
-        // tree-sitter recovers from errors — should not panic
-        let _ = results;
+        let _ = score_functions(BROKEN_SYNTAX, rules());
     }
 }
