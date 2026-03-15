@@ -1,37 +1,30 @@
 use crate::parser::{AstParser, TreeSitterParser};
 
-use super::rules::{LanguageRules, NestingKind, NodeRole, ScoringUnit};
+use super::rules::{LanguageRules, NestingKind, NodeRole};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Construct {
-    If,
-    For,
-    While,
+    Conditional,
     Loop,
-    Match,
-    Closure,
+    ExceptionHandler,
+    InlineNesting,
 }
 
 impl Construct {
-    pub fn label(self) -> &'static str {
+    pub fn flow_break_category(self) -> &'static str {
         match self {
-            Self::If => "if",
-            Self::For => "for",
-            Self::While => "while",
+            Self::Conditional => "conditional",
             Self::Loop => "loop",
-            Self::Match => "match",
-            Self::Closure => "closure",
+            Self::ExceptionHandler => "exception handler",
+            Self::InlineNesting => "closure",
         }
     }
+}
 
-    pub fn flow_break_label(self) -> &'static str {
-        match self {
-            Self::For | Self::While | Self::Loop => "loop",
-            Self::If => "conditional",
-            Self::Match => "expression",
-            Self::Closure => "closure",
-        }
-    }
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FlowConstruct {
+    pub role: Construct,
+    pub label: &'static str,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,12 +70,12 @@ impl Eq for LogicalOp {}
 #[derive(Debug, Clone, PartialEq)]
 pub enum ContributorKind {
     FlowBreak {
-        construct: Construct,
+        construct: FlowConstruct,
     },
     Nesting {
-        construct: Construct,
+        construct: FlowConstruct,
         depth: u64,
-        chain: Vec<Construct>,
+        chain: Vec<FlowConstruct>,
     },
     Else,
     Logical {
@@ -237,7 +230,7 @@ impl ScoringContext<'_> {
         &mut self,
         node: tree_sitter::Node,
         nesting: u64,
-        construct: Construct,
+        construct: FlowConstruct,
     ) -> u64 {
         let increment = 1 + nesting;
         let kind = if nesting > 0 {
@@ -318,7 +311,7 @@ impl ScoringContext<'_> {
     }
 }
 
-fn nesting_chain(node: tree_sitter::Node, rules: &dyn LanguageRules) -> Vec<Construct> {
+fn nesting_chain(node: tree_sitter::Node, rules: &dyn LanguageRules) -> Vec<FlowConstruct> {
     let ancestors = std::iter::successors(node.parent(), tree_sitter::Node::parent);
     let mut chain = Vec::new();
     for ancestor in ancestors {
@@ -479,7 +472,10 @@ mod tests {
             contributors("fn f() { if true {} }"),
             vec![Contributor {
                 kind: ContributorKind::FlowBreak {
-                    construct: Construct::If,
+                    construct: FlowConstruct {
+                        role: Construct::Conditional,
+                        label: "if",
+                    },
                 },
                 line: 1,
                 increment: 1,
@@ -495,9 +491,21 @@ mod tests {
             cs[1],
             Contributor {
                 kind: ContributorKind::Nesting {
-                    construct: Construct::If,
+                    construct: FlowConstruct {
+                        role: Construct::Conditional,
+                        label: "if",
+                    },
                     depth: 1,
-                    chain: vec![Construct::For, Construct::If],
+                    chain: vec![
+                        FlowConstruct {
+                            role: Construct::Loop,
+                            label: "for"
+                        },
+                        FlowConstruct {
+                            role: Construct::Conditional,
+                            label: "if"
+                        },
+                    ],
                 },
                 line: 1,
                 increment: 2,
@@ -591,9 +599,21 @@ mod tests {
             nested,
             Some(&Contributor {
                 kind: ContributorKind::Nesting {
-                    construct: Construct::If,
+                    construct: FlowConstruct {
+                        role: Construct::Conditional,
+                        label: "if",
+                    },
                     depth: 2,
-                    chain: vec![Construct::Closure, Construct::If],
+                    chain: vec![
+                        FlowConstruct {
+                            role: Construct::InlineNesting,
+                            label: "closure"
+                        },
+                        FlowConstruct {
+                            role: Construct::Conditional,
+                            label: "if"
+                        },
+                    ],
                 },
                 line: 1,
                 increment: 3,

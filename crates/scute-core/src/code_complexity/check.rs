@@ -117,10 +117,10 @@ fn score_file(
         .collect()
 }
 
-fn format_nesting_chain(chain: &[score::Construct]) -> String {
+fn format_nesting_chain(chain: &[score::FlowConstruct]) -> String {
     chain
         .iter()
-        .map(|c| c.label())
+        .map(|c| c.label)
         .collect::<Vec<_>>()
         .join(" > ")
 }
@@ -146,8 +146,8 @@ fn format_evidence(c: &score::Contributor, path: &Path) -> Evidence {
             "flow break",
             format!(
                 "'{}' {} (+{})",
-                construct.label(),
-                construct.flow_break_label(),
+                construct.label,
+                construct.role.flow_break_category(),
                 c.increment
             ),
             None,
@@ -157,7 +157,7 @@ fn format_evidence(c: &score::Contributor, path: &Path) -> Evidence {
             depth,
             chain,
         } => {
-            let name = construct.label();
+            let name = construct.label;
             let chain = format_nesting_chain(chain);
             let levels = pluralize_levels(*depth);
             (

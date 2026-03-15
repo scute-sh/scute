@@ -1,9 +1,9 @@
 use tree_sitter::Language;
 
-use super::score::{Construct, JumpKeyword, LogicalOp};
+use super::score::{FlowConstruct, JumpKeyword, LogicalOp};
 
 pub enum NodeRole {
-    FlowConstruct(Construct),
+    FlowConstruct(FlowConstruct),
     ElseClause,
     NestingBoundary,
     LogicalExpression,
@@ -14,7 +14,7 @@ pub enum NodeRole {
 pub enum NestingKind {
     /// Increases nesting, part of enclosing function (closures, arrow functions).
     /// The construct appears in nesting chains.
-    Inline(Construct),
+    Inline(FlowConstruct),
     /// Increases nesting in outer function, scored independently at depth 0.
     Separate,
 }
@@ -43,8 +43,9 @@ pub trait LanguageRules {
     ) -> Option<ScoringUnit<'a>>;
 
     /// If this node is a flow control construct (`if`, `for`, `match`, etc.),
-    /// return which one. These get a structural increment of `1 + nesting`.
-    fn flow_construct(&self, node: tree_sitter::Node) -> Option<Construct>;
+    /// return its cognitive role and language-specific label.
+    /// These get a structural increment of `1 + nesting`.
+    fn flow_construct(&self, node: tree_sitter::Node) -> Option<FlowConstruct>;
 
     /// Whether this node is an else clause (scores +1 as a hybrid increment).
     fn is_else_clause(&self, node: tree_sitter::Node) -> bool;
