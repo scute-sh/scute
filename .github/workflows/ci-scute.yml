@@ -63,7 +63,7 @@ jobs:
       - name: Check for duplication in changed files
         env:
           BASE: origin/${{ github.base_ref }}
-        run: git diff --name-only $BASE...HEAD -- '*.rs' | $SCUTE check code-similarity
+        run: git diff --name-only --relative $BASE...HEAD -- '*.rs' | $SCUTE check code-similarity
         working-directory: crates
 
   code-complexity:
@@ -86,5 +86,5 @@ jobs:
       - name: Check complexity of changed files
         env:
           BASE: origin/${{ github.base_ref }}
-        run: git diff --name-only $BASE...HEAD -- '*.rs' | $SCUTE check code-complexity
+        run: git diff --name-only --relative $BASE...HEAD -- '*.rs' | $SCUTE check code-complexity
         working-directory: crates
