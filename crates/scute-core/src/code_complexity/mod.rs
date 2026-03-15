@@ -1,4 +1,4 @@
-//! Cognitive complexity scoring for Rust functions.
+//! Cognitive complexity scoring for source code functions.
 //!
 //! Scores each function based on how hard it is to understand, following
 //! [G. Ann Campbell's cognitive complexity spec](https://www.sonarsource.com/docs/CognitiveComplexity.pdf).

@@ -1,6 +1,14 @@
 use crate::parser::{AstParser, TreeSitterParser};
 use tree_sitter::Language;
 
+pub enum NestingKind {
+    /// Increases nesting, part of enclosing function (closures, arrow functions).
+    /// The construct appears in nesting chains.
+    Inline(Construct),
+    /// Increases nesting in outer function, scored independently at depth 0.
+    Separate,
+}
+
 /// Maps a language's tree-sitter AST to cognitive complexity drivers.
 ///
 /// The scoring algorithm is language-agnostic: it asks the language to identify
@@ -11,6 +19,7 @@ pub trait LanguageRules {
     fn flow_construct(&self, node: tree_sitter::Node) -> Option<Construct>;
     fn is_else_clause(&self, node: tree_sitter::Node) -> bool;
     fn is_else_if(&self, node: tree_sitter::Node) -> bool;
+    fn nesting_kind(&self, node: tree_sitter::Node) -> Option<NestingKind>;
 }
 
 pub struct Rust;
@@ -38,6 +47,14 @@ impl LanguageRules for Rust {
     fn is_else_if(&self, node: tree_sitter::Node) -> bool {
         node.children(&mut node.walk())
             .any(|c| c.kind() == "if_expression")
+    }
+
+    fn nesting_kind(&self, node: tree_sitter::Node) -> Option<NestingKind> {
+        match node.kind() {
+            "closure_expression" => Some(NestingKind::Inline(Construct::Closure)),
+            "function_item" => Some(NestingKind::Separate),
+            _ => None,
+        }
     }
 }
 
@@ -202,10 +219,10 @@ impl ScoringContext<'_> {
             self.score_flow_break(node, nesting, construct)
         } else if self.rules.is_else_clause(node) {
             self.score_else(node, nesting)
+        } else if self.rules.nesting_kind(node).is_some() {
+            self.complexity(node, nesting + 1)
         } else {
             match node.kind() {
-                "closure_expression" | "function_item" => self.complexity(node, nesting + 1),
-
                 "binary_expression" if is_logical_op(node) => {
                     self.score_logical_sequence(node, nesting)
                 }
@@ -328,13 +345,13 @@ fn nesting_chain(node: tree_sitter::Node, rules: &dyn LanguageRules) -> Vec<Cons
         if let Some(construct) = rules.flow_construct(ancestor) {
             chain.push(construct);
         } else {
-            match ancestor.kind() {
-                "function_item" => break,
-                "closure_expression" => {
-                    chain.push(Construct::Closure);
+            match rules.nesting_kind(ancestor) {
+                Some(NestingKind::Inline(construct)) => {
+                    chain.push(construct);
                     break;
                 }
-                _ => {}
+                Some(NestingKind::Separate) => break,
+                None => {}
             }
         }
     }
