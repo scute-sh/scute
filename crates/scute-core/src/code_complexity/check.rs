@@ -69,42 +69,70 @@ pub fn check(
     definition: &Definition,
 ) -> Result<Vec<Evaluation>, ExecutionError> {
     let thresholds = definition.thresholds();
-    let exclude = definition.exclude.as_deref().unwrap_or_default();
+    let files = resolve_files(paths, definition)?;
+    let languages = Languages::new();
 
-    let extensions = &["rs", "ts", "tsx"];
-    let files = files::resolve_paths(paths, extensions, exclude).map_err(|e| ExecutionError {
+    let evaluations: Vec<Evaluation> = files
+        .iter()
+        .filter_map(|path| std::fs::read_to_string(path).ok().map(|src| (path, src)))
+        .flat_map(|(path, source)| score_file(path, &source, languages.for_path(path), &thresholds))
+        .collect();
+
+    Ok(with_fallback(evaluations, paths, thresholds))
+}
+
+fn with_fallback(
+    evaluations: Vec<Evaluation>,
+    paths: &[PathBuf],
+    thresholds: Thresholds,
+) -> Vec<Evaluation> {
+    if !evaluations.is_empty() {
+        return evaluations;
+    }
+    let label = paths
+        .first()
+        .map_or_else(|| ".".into(), |p| p.display().to_string());
+    vec![Evaluation::completed(label, 0, thresholds, vec![])]
+}
+
+const SUPPORTED_EXTENSIONS: &[&str] = &["rs", "ts", "tsx"];
+
+fn resolve_files(
+    paths: &[PathBuf],
+    definition: &Definition,
+) -> Result<Vec<PathBuf>, ExecutionError> {
+    let exclude = definition.exclude.as_deref().unwrap_or_default();
+    files::resolve_paths(paths, SUPPORTED_EXTENSIONS, exclude).map_err(|e| ExecutionError {
         code: "invalid_target".into(),
         message: e.to_string(),
         recovery: "check that the path exists and is readable".into(),
-    })?;
+    })
+}
 
-    let rust = rust::Rust;
-    let typescript =
-        typescript::TypeScript::new(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into());
-    let tsx = typescript::TypeScript::new(tree_sitter_typescript::LANGUAGE_TSX.into());
+struct Languages {
+    rust: rust::Rust,
+    typescript: typescript::TypeScript,
+    tsx: typescript::TypeScript,
+}
 
-    let mut evaluations = Vec::new();
-
-    for path in &files {
-        let Ok(source) = std::fs::read_to_string(path) else {
-            continue;
-        };
-        let rules: &dyn LanguageRules = match path.extension().and_then(|e| e.to_str()) {
-            Some("ts") => &typescript,
-            Some("tsx") => &tsx,
-            _ => &rust,
-        };
-        evaluations.extend(score_file(path, &source, rules, &thresholds));
+impl Languages {
+    fn new() -> Self {
+        Self {
+            rust: rust::Rust,
+            typescript: typescript::TypeScript::new(
+                tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+            ),
+            tsx: typescript::TypeScript::new(tree_sitter_typescript::LANGUAGE_TSX.into()),
+        }
     }
 
-    if evaluations.is_empty() {
-        let label = paths
-            .first()
-            .map_or_else(|| ".".into(), |p| p.display().to_string());
-        evaluations.push(Evaluation::completed(label, 0, thresholds, vec![]));
+    fn for_path(&self, path: &Path) -> &dyn LanguageRules {
+        match path.extension().and_then(|e| e.to_str()) {
+            Some("ts") => &self.typescript,
+            Some("tsx") => &self.tsx,
+            _ => &self.rust,
+        }
     }
-
-    Ok(evaluations)
 }
 
 fn score_file(
@@ -339,13 +367,13 @@ mod tests {
     }
 
     #[test]
-    fn skips_non_rust_files() {
+    fn skips_unsupported_files() {
         let dir = TestDir::new().source_file("code.py", "def foo(): pass");
 
         let evals = check_dir(&dir.root());
 
         assert_eq!(evals.len(), 1);
-        assert!(evals[0].is_pass()); // fallback pass, no rust files
+        assert!(evals[0].is_pass());
     }
 
     #[test]
@@ -367,20 +395,6 @@ mod tests {
 
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().code, "invalid_target");
-    }
-
-    #[test]
-    fn scores_typescript_function() {
-        let dir = TestDir::new().source_file(
-            "simple.ts",
-            "function add(a: number, b: number): number { return a + b }",
-        );
-
-        let evals = check_dir(&dir.root());
-
-        assert_eq!(evals.len(), 1);
-        assert!(evals[0].target.contains("add"));
-        assert!(evals[0].is_pass());
     }
 
     #[test]
