@@ -53,15 +53,34 @@ pub trait LanguageRules {
         receiver_type: Option<&str>,
         src: &[u8],
     ) -> NodeRole {
+        self.classify_structural(node)
+            .unwrap_or_else(|| self.classify_contextual(node, fn_name, receiver_type, src))
+    }
+
+    fn classify_structural(&self, node: tree_sitter::Node) -> Option<NodeRole> {
         if let Some(construct) = self.flow_construct(node) {
-            NodeRole::FlowConstruct(construct)
-        } else if self.is_else_clause(node) {
-            NodeRole::ElseClause
-        } else if self.nesting_kind(node).is_some() {
-            NodeRole::NestingBoundary
-        } else if self.logical_operator(node).is_some() {
-            NodeRole::LogicalExpression
-        } else if let Some((keyword, label)) = self.jump_label(node, src) {
+            return Some(NodeRole::FlowConstruct(construct));
+        }
+        if self.is_else_clause(node) {
+            return Some(NodeRole::ElseClause);
+        }
+        if self.nesting_kind(node).is_some() {
+            return Some(NodeRole::NestingBoundary);
+        }
+        if self.logical_operator(node).is_some() {
+            return Some(NodeRole::LogicalExpression);
+        }
+        None
+    }
+
+    fn classify_contextual(
+        &self,
+        node: tree_sitter::Node,
+        fn_name: &str,
+        receiver_type: Option<&str>,
+        src: &[u8],
+    ) -> NodeRole {
+        if let Some((keyword, label)) = self.jump_label(node, src) {
             NodeRole::LabeledJump(keyword, label)
         } else if self.is_recursive_call(node, fn_name, receiver_type, src) {
             NodeRole::RecursiveCall
