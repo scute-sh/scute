@@ -338,27 +338,27 @@ mod tests {
 
         #[test]
         fn resolves_single_file() {
-            let t = TestDir::new().file("main.rs");
+            let dir = TestDir::new().file("main.rs");
 
-            let result = resolve_paths(&[t.path("main.rs")], &["rs"], &[]);
+            let result = resolve_paths(&[dir.path("main.rs")], &["rs"], &[]);
 
             assert_that!(result, ok(len(eq(1))));
         }
 
         #[test]
         fn resolves_directory() {
-            let t = TestDir::new().file("a.rs").file("b.rs");
+            let dir = TestDir::new().file("a.rs").file("b.rs");
 
-            let result = resolve_paths(&[t.root()], &["rs"], &[]);
+            let result = resolve_paths(&[dir.root()], &["rs"], &[]);
 
             assert_that!(result, ok(len(eq(2))));
         }
 
         #[test]
         fn resolves_mixed_files_and_directories() {
-            let t = TestDir::new().file("main.rs").file("src/lib.rs");
+            let dir = TestDir::new().file("main.rs").file("src/lib.rs");
 
-            let result = resolve_paths(&[t.path("main.rs"), t.path("src")], &["rs"], &[]);
+            let result = resolve_paths(&[dir.path("main.rs"), dir.path("src")], &["rs"], &[]);
 
             assert_that!(result, ok(len(eq(2))));
         }
@@ -372,10 +372,10 @@ mod tests {
 
         #[test]
         fn fails_fast_on_first_invalid_path() {
-            let t = TestDir::new().file("good.rs");
+            let dir = TestDir::new().file("good.rs");
             let bad = PathBuf::from("/nonexistent/file.rs");
 
-            let result = resolve_paths(&[bad.clone(), t.path("good.rs")], &["rs"], &[]);
+            let result = resolve_paths(&[bad.clone(), dir.path("good.rs")], &["rs"], &[]);
 
             let err = result.unwrap_err();
             assert_eq!(err.path, bad.display().to_string());
@@ -383,9 +383,9 @@ mod tests {
 
         #[test]
         fn forwards_exclude_patterns_to_directory_walk() {
-            let t = TestDir::new().file("keep.rs").file("gen/skip.rs");
+            let dir = TestDir::new().file("keep.rs").file("gen/skip.rs");
 
-            let result = resolve_paths(&[t.root()], &["rs"], &["gen/**".into()]);
+            let result = resolve_paths(&[dir.root()], &["rs"], &["gen/**".into()]);
 
             let files = result.unwrap();
             assert_eq!(files.len(), 1);
@@ -394,9 +394,9 @@ mod tests {
 
         #[test]
         fn rejects_unsupported_extension() {
-            let t = TestDir::new().file("script.py");
+            let dir = TestDir::new().file("script.py");
 
-            let result = resolve_paths(&[t.path("script.py")], &["rs"], &[]);
+            let result = resolve_paths(&[dir.path("script.py")], &["rs"], &[]);
 
             assert_that!(
                 result,

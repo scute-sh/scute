@@ -21,8 +21,8 @@ use tempfile::TempDir;
 /// use scute_test_utils::TestDir;
 ///
 /// let t = TestDir::new()
-///     .file("src/main.rs")    // creates parent dirs automatically
-///     .file("lib.rs");
+///     .file("src/main.rs")                       // empty file
+///     .source_file("lib.rs", "fn hello() {}");   // file with content
 ///
 /// let root = t.root();        // path to the temp directory
 /// let file = t.path("lib.rs"); // path to a specific file
@@ -40,11 +40,15 @@ impl TestDir {
     }
 
     pub fn file(self, name: &str) -> Self {
+        self.source_file(name, "")
+    }
+
+    pub fn source_file(self, name: &str, content: &str) -> Self {
         let path = self.dir.path().join(name);
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent).unwrap();
         }
-        std::fs::write(path, "").unwrap();
+        std::fs::write(path, content).unwrap();
         self
     }
 
