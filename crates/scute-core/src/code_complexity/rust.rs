@@ -1,7 +1,7 @@
 use tree_sitter::Language;
 
 use super::rules::{LanguageRules, NestingKind, ScoringUnit};
-use super::score::{Construct, JumpKeyword, LogicalOp};
+use super::score::{Construct, FlowConstruct, JumpKeyword, LogicalOp};
 
 pub struct Rust;
 
@@ -32,13 +32,28 @@ impl LanguageRules for Rust {
         })
     }
 
-    fn flow_construct(&self, node: tree_sitter::Node) -> Option<Construct> {
+    fn flow_construct(&self, node: tree_sitter::Node) -> Option<FlowConstruct> {
         match node.kind() {
-            "if_expression" => Some(Construct::If),
-            "for_expression" => Some(Construct::For),
-            "while_expression" => Some(Construct::While),
-            "loop_expression" => Some(Construct::Loop),
-            "match_expression" => Some(Construct::Match),
+            "if_expression" => Some(FlowConstruct {
+                role: Construct::Conditional,
+                label: "if",
+            }),
+            "for_expression" => Some(FlowConstruct {
+                role: Construct::Loop,
+                label: "for",
+            }),
+            "while_expression" => Some(FlowConstruct {
+                role: Construct::Loop,
+                label: "while",
+            }),
+            "loop_expression" => Some(FlowConstruct {
+                role: Construct::Loop,
+                label: "loop",
+            }),
+            "match_expression" => Some(FlowConstruct {
+                role: Construct::Conditional,
+                label: "match",
+            }),
             _ => None,
         }
     }
@@ -54,7 +69,10 @@ impl LanguageRules for Rust {
 
     fn nesting_kind(&self, node: tree_sitter::Node) -> Option<NestingKind> {
         match node.kind() {
-            "closure_expression" => Some(NestingKind::Inline(Construct::Closure)),
+            "closure_expression" => Some(NestingKind::Inline(FlowConstruct {
+                role: Construct::InlineNesting,
+                label: "closure",
+            })),
             "function_item" => Some(NestingKind::Separate),
             _ => None,
         }
