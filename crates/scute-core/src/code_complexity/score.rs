@@ -20,6 +20,15 @@ pub trait LanguageRules {
     fn is_else_clause(&self, node: tree_sitter::Node) -> bool;
     fn is_else_if(&self, node: tree_sitter::Node) -> bool;
     fn nesting_kind(&self, node: tree_sitter::Node) -> Option<NestingKind>;
+    fn logical_operator(&self, node: tree_sitter::Node) -> Option<&'static str>;
+    fn jump_label(&self, node: tree_sitter::Node, src: &[u8]) -> Option<(JumpKeyword, String)>;
+    fn is_recursive_call(
+        &self,
+        node: tree_sitter::Node,
+        fn_name: &str,
+        receiver_type: Option<&str>,
+        src: &[u8],
+    ) -> bool;
 }
 
 pub struct Rust;
@@ -55,6 +64,44 @@ impl LanguageRules for Rust {
             "function_item" => Some(NestingKind::Separate),
             _ => None,
         }
+    }
+
+    fn logical_operator(&self, node: tree_sitter::Node) -> Option<&'static str> {
+        if node.kind() != "binary_expression" {
+            return None;
+        }
+        node.children(&mut node.walk())
+            .find(|c| c.kind() == "&&" || c.kind() == "||")
+            .map(|c| c.kind())
+    }
+
+    fn jump_label(&self, node: tree_sitter::Node, src: &[u8]) -> Option<(JumpKeyword, String)> {
+        let keyword = match node.kind() {
+            "break_expression" => JumpKeyword::Break,
+            "continue_expression" => JumpKeyword::Continue,
+            _ => return None,
+        };
+        let label = node
+            .children(&mut node.walk())
+            .find(|c| c.kind() == "label")
+            .and_then(|l| l.utf8_text(src).ok())?;
+        Some((keyword, label.to_string()))
+    }
+
+    fn is_recursive_call(
+        &self,
+        node: tree_sitter::Node,
+        fn_name: &str,
+        receiver_type: Option<&str>,
+        src: &[u8],
+    ) -> bool {
+        if node.kind() != "call_expression" {
+            return false;
+        }
+        let Some(target) = node.child_by_field_name("function") else {
+            return false;
+        };
+        callee_name(target, src) == Some(fn_name) && scope_is_self(target, receiver_type, src)
     }
 }
 
@@ -221,26 +268,14 @@ impl ScoringContext<'_> {
             self.score_else(node, nesting)
         } else if self.rules.nesting_kind(node).is_some() {
             self.complexity(node, nesting + 1)
+        } else if self.rules.logical_operator(node).is_some() {
+            self.score_logical_sequence(node, nesting)
+        } else if let Some((keyword, label)) = self.rules.jump_label(node, self.src) {
+            self.score_jump(node, nesting, keyword, label)
+        } else if self.rules.is_recursive_call(node, self.fn_name, self.impl_type, self.src) {
+            self.score_recursion(node, nesting)
         } else {
-            match node.kind() {
-                "binary_expression" if is_logical_op(node) => {
-                    self.score_logical_sequence(node, nesting)
-                }
-
-                kind @ ("break_expression" | "continue_expression") if has_label(node) => {
-                    self.score_jump(node, nesting, parse_jump_keyword(kind).unwrap())
-                }
-
-                "call_expression" => {
-                    if is_recursive_call(node, self.fn_name, self.impl_type, self.src) {
-                        self.score_recursion(node, nesting)
-                    } else {
-                        self.complexity(node, nesting)
-                    }
-                }
-
-                _ => self.complexity(node, nesting),
-            }
+            self.complexity(node, nesting)
         }
     }
 
@@ -283,8 +318,13 @@ impl ScoringContext<'_> {
         }
     }
 
-    fn score_jump(&mut self, node: tree_sitter::Node, nesting: u64, keyword: JumpKeyword) -> u64 {
-        let label = label_text(node, self.src).unwrap_or_default().to_string();
+    fn score_jump(
+        &mut self,
+        node: tree_sitter::Node,
+        nesting: u64,
+        keyword: JumpKeyword,
+        label: String,
+    ) -> u64 {
         self.push(ContributorKind::Jump { keyword, label }, node, 1);
         1 + self.complexity(node, nesting)
     }
@@ -302,7 +342,7 @@ impl ScoringContext<'_> {
 
     fn score_logical_sequence(&mut self, node: tree_sitter::Node, nesting: u64) -> u64 {
         let mut operators = vec![];
-        collect_logical_operators(node, &mut operators);
+        collect_logical_operators(node, self.rules, &mut operators);
 
         let score = count_operator_sequences(&operators);
         if score > 0 {
@@ -328,7 +368,7 @@ impl ScoringContext<'_> {
         children
             .into_iter()
             .map(|child| {
-                if is_nested_logical(child) {
+                if self.rules.logical_operator(child).is_some() {
                     self.visit_logical_leaves(child, nesting)
                 } else {
                     self.complexity(child, nesting)
@@ -359,47 +399,6 @@ fn nesting_chain(node: tree_sitter::Node, rules: &dyn LanguageRules) -> Vec<Cons
     chain
 }
 
-fn parse_jump_keyword(tree_sitter_kind: &str) -> Option<JumpKeyword> {
-    match tree_sitter_kind {
-        "break_expression" => Some(JumpKeyword::Break),
-        "continue_expression" => Some(JumpKeyword::Continue),
-        _ => None,
-    }
-}
-
-fn is_logical_op(node: tree_sitter::Node) -> bool {
-    node.children(&mut node.walk())
-        .any(|c| c.kind() == "&&" || c.kind() == "||")
-}
-
-fn logical_operator(node: tree_sitter::Node) -> Option<&'static str> {
-    node.children(&mut node.walk())
-        .find(|c| c.kind() == "&&" || c.kind() == "||")
-        .map(|c| c.kind())
-}
-
-fn has_label(node: tree_sitter::Node) -> bool {
-    node.children(&mut node.walk()).any(|c| c.kind() == "label")
-}
-
-fn label_text<'a>(node: tree_sitter::Node, src: &'a [u8]) -> Option<&'a str> {
-    node.children(&mut node.walk())
-        .find(|c| c.kind() == "label")
-        .and_then(|l| l.utf8_text(src).ok())
-}
-
-fn is_recursive_call(
-    node: tree_sitter::Node,
-    fn_name: &str,
-    impl_type: Option<&str>,
-    src: &[u8],
-) -> bool {
-    let Some(target) = node.child_by_field_name("function") else {
-        return false;
-    };
-    callee_name(target, src) == Some(fn_name) && scope_is_self(target, impl_type, src)
-}
-
 fn callee_name<'a>(target: tree_sitter::Node, src: &'a [u8]) -> Option<&'a str> {
     match target.kind() {
         "field_expression" => field_text(target, "field", src), // self.foo()
@@ -428,25 +427,22 @@ fn count_operator_sequences(operators: &[&str]) -> u64 {
         + u64::from(!operators.is_empty())
 }
 
-fn collect_logical_operators(node: tree_sitter::Node, operators: &mut Vec<&'static str>) {
-    if node.kind() != "binary_expression" {
-        return;
-    }
-    let Some(op) = logical_operator(node) else {
+fn collect_logical_operators(
+    node: tree_sitter::Node,
+    rules: &dyn LanguageRules,
+    operators: &mut Vec<&'static str>,
+) {
+    let Some(op) = rules.logical_operator(node) else {
         return;
     };
 
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if is_nested_logical(child) {
-            collect_logical_operators(child, operators);
+        if rules.logical_operator(child).is_some() {
+            collect_logical_operators(child, rules, operators);
         }
     }
     operators.push(op);
-}
-
-fn is_nested_logical(node: tree_sitter::Node) -> bool {
-    node.kind() == "binary_expression" && is_logical_op(node)
 }
 
 fn is_operator_token(node: tree_sitter::Node) -> bool {
