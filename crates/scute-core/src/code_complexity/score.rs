@@ -10,6 +10,31 @@ pub enum NodeRole {
     RecursiveCall,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub enum LogicalOp {
+    And(&'static str),
+    Or(&'static str),
+}
+
+impl LogicalOp {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::And(s) | Self::Or(s) => s,
+        }
+    }
+}
+
+impl PartialEq for LogicalOp {
+    fn eq(&self, other: &Self) -> bool {
+        matches!(
+            (self, other),
+            (Self::And(_), Self::And(_)) | (Self::Or(_), Self::Or(_))
+        )
+    }
+}
+
+impl Eq for LogicalOp {}
+
 pub enum NestingKind {
     /// Increases nesting, part of enclosing function (closures, arrow functions).
     /// The construct appears in nesting chains.
@@ -48,9 +73,9 @@ pub trait LanguageRules {
     /// named function), return how it affects scoring.
     fn nesting_kind(&self, node: tree_sitter::Node) -> Option<NestingKind>;
 
-    /// If this node is a logical expression (`&&`, `||`, `and`, `or`),
-    /// return the operator. Used to count operator sequences.
-    fn logical_operator(&self, node: tree_sitter::Node) -> Option<&'static str>;
+    /// If this node is a logical expression, return which operator it uses.
+    /// Used to count operator sequences.
+    fn logical_operator(&self, node: tree_sitter::Node) -> Option<LogicalOp>;
 
     /// Whether this node is a logical operator token (`&&`, `||`).
     /// Used to filter operands when walking logical expression trees.
@@ -134,13 +159,16 @@ impl LanguageRules for Rust {
         }
     }
 
-    fn logical_operator(&self, node: tree_sitter::Node) -> Option<&'static str> {
+    fn logical_operator(&self, node: tree_sitter::Node) -> Option<LogicalOp> {
         if node.kind() != "binary_expression" {
             return None;
         }
         node.children(&mut node.walk())
             .find(|c| c.kind() == "&&" || c.kind() == "||")
-            .map(|c| c.kind())
+            .map(|c| match c.kind() {
+                "&&" => LogicalOp::And("&&"),
+                _ => LogicalOp::Or("||"),
+            })
     }
 
     fn is_logical_operator_token(&self, node: tree_sitter::Node) -> bool {
@@ -236,7 +264,7 @@ pub enum ContributorKind {
     },
     Else,
     Logical {
-        operators: Vec<String>,
+        operators: Vec<LogicalOp>,
     },
     Recursion {
         fn_name: String,
@@ -450,13 +478,7 @@ impl ScoringContext<'_> {
 
         let score = count_operator_sequences(&operators);
         if score > 0 {
-            self.push(
-                ContributorKind::Logical {
-                    operators: operators.iter().map(|&s| s.to_string()).collect(),
-                },
-                node,
-                score,
-            );
+            self.push(ContributorKind::Logical { operators }, node, score);
         }
 
         score + self.visit_logical_leaves(node, nesting)
@@ -523,7 +545,7 @@ fn field_text<'a>(node: tree_sitter::Node, field: &str, src: &'a [u8]) -> Option
         .and_then(|n| n.utf8_text(src).ok())
 }
 
-fn count_operator_sequences(operators: &[&str]) -> u64 {
+fn count_operator_sequences(operators: &[LogicalOp]) -> u64 {
     operators
         .windows(2)
         .filter(|pair| pair[0] != pair[1])
@@ -534,7 +556,7 @@ fn count_operator_sequences(operators: &[&str]) -> u64 {
 fn collect_logical_operators(
     node: tree_sitter::Node,
     rules: &dyn LanguageRules,
-    operators: &mut Vec<&'static str>,
+    operators: &mut Vec<LogicalOp>,
 ) {
     let Some(op) = rules.logical_operator(node) else {
         return;
@@ -709,7 +731,7 @@ mod tests {
             contributors("fn f(a: bool, b: bool, c: bool) -> bool { a && b || c }"),
             vec![Contributor {
                 kind: ContributorKind::Logical {
-                    operators: vec!["&&".into(), "||".into()],
+                    operators: vec![LogicalOp::And("&&"), LogicalOp::Or("||")],
                 },
                 line: 1,
                 increment: 2,
