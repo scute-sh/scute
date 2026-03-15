@@ -24,13 +24,43 @@ pub enum NestingKind {
 /// its own constructs (flow control, nesting boundaries, logical operators, etc.)
 /// and applies the Sonar cognitive complexity rules uniformly.
 pub trait LanguageRules {
+    /// The tree-sitter grammar for this language.
     fn language(&self) -> Language;
+
+    /// If this node is a scoreable function or method, return its metadata.
+    fn scoring_unit<'a>(
+        &self,
+        node: tree_sitter::Node<'a>,
+        src: &'a [u8],
+    ) -> Option<ScoringUnit<'a>>;
+
+    /// If this node is a flow control construct (`if`, `for`, `match`, etc.),
+    /// return which one. These get a structural increment of `1 + nesting`.
     fn flow_construct(&self, node: tree_sitter::Node) -> Option<Construct>;
+
+    /// Whether this node is an else clause (scores +1 as a hybrid increment).
     fn is_else_clause(&self, node: tree_sitter::Node) -> bool;
+
+    /// Whether this else clause is actually an else-if (scored flat, no nesting penalty).
     fn is_else_if(&self, node: tree_sitter::Node) -> bool;
+
+    /// If this node is a nesting boundary (closure, arrow function, nested
+    /// named function), return how it affects scoring.
     fn nesting_kind(&self, node: tree_sitter::Node) -> Option<NestingKind>;
+
+    /// If this node is a logical expression (`&&`, `||`, `and`, `or`),
+    /// return the operator. Used to count operator sequences.
     fn logical_operator(&self, node: tree_sitter::Node) -> Option<&'static str>;
+
+    /// Whether this node is a logical operator token (`&&`, `||`).
+    /// Used to filter operands when walking logical expression trees.
+    fn is_logical_operator_token(&self, node: tree_sitter::Node) -> bool;
+
+    /// If this node is a labeled jump (`break 'label`, `continue 'label`),
+    /// return the keyword and label text. Scores +1 as a hybrid increment.
     fn jump_label(&self, node: tree_sitter::Node, src: &[u8]) -> Option<(JumpKeyword, String)>;
+
+    /// Whether this node is a direct recursive call to the function being scored.
     fn is_recursive_call(
         &self,
         node: tree_sitter::Node,
@@ -38,12 +68,6 @@ pub trait LanguageRules {
         receiver_type: Option<&str>,
         src: &[u8],
     ) -> bool;
-    fn scoring_unit<'a>(
-        &self,
-        node: tree_sitter::Node<'a>,
-        src: &'a [u8],
-    ) -> Option<ScoringUnit<'a>>;
-    fn is_logical_operator_token(&self, node: tree_sitter::Node) -> bool;
 }
 
 pub struct ScoringUnit<'a> {
@@ -58,6 +82,28 @@ pub struct Rust;
 impl LanguageRules for Rust {
     fn language(&self) -> Language {
         tree_sitter_rust::LANGUAGE.into()
+    }
+
+    fn scoring_unit<'a>(
+        &self,
+        node: tree_sitter::Node<'a>,
+        src: &'a [u8],
+    ) -> Option<ScoringUnit<'a>> {
+        if node.kind() != "function_item" {
+            return None;
+        }
+        let name = node
+            .child_by_field_name("name")
+            .and_then(|n| n.utf8_text(src).ok())
+            .unwrap_or("")
+            .to_string();
+        let receiver_type = enclosing_impl_type(node, src);
+        Some(ScoringUnit {
+            name,
+            line: node.start_position().row + 1,
+            node,
+            receiver_type,
+        })
     }
 
     fn flow_construct(&self, node: tree_sitter::Node) -> Option<Construct> {
@@ -97,6 +143,10 @@ impl LanguageRules for Rust {
             .map(|c| c.kind())
     }
 
+    fn is_logical_operator_token(&self, node: tree_sitter::Node) -> bool {
+        node.kind() == "&&" || node.kind() == "||"
+    }
+
     fn jump_label(&self, node: tree_sitter::Node, src: &[u8]) -> Option<(JumpKeyword, String)> {
         let keyword = match node.kind() {
             "break_expression" => JumpKeyword::Break,
@@ -124,32 +174,6 @@ impl LanguageRules for Rust {
             return false;
         };
         callee_name(target, src) == Some(fn_name) && scope_is_self(target, receiver_type, src)
-    }
-
-    fn scoring_unit<'a>(
-        &self,
-        node: tree_sitter::Node<'a>,
-        src: &'a [u8],
-    ) -> Option<ScoringUnit<'a>> {
-        if node.kind() != "function_item" {
-            return None;
-        }
-        let name = node
-            .child_by_field_name("name")
-            .and_then(|n| n.utf8_text(src).ok())
-            .unwrap_or("")
-            .to_string();
-        let receiver_type = enclosing_impl_type(node, src);
-        Some(ScoringUnit {
-            name,
-            line: node.start_position().row + 1,
-            node,
-            receiver_type,
-        })
-    }
-
-    fn is_logical_operator_token(&self, node: tree_sitter::Node) -> bool {
-        node.kind() == "&&" || node.kind() == "||"
     }
 }
 
