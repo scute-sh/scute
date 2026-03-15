@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.8](https://github.com/scute-sh/scute/compare/scute-core-v0.0.7...scute-core-v0.0.8) - 2026-03-15
+
+### Added
+
+- *(code-complexity)* TypeScript support ([#78](https://github.com/scute-sh/scute/pull/78))
+
+### Other
+
+- *(code-complexity)* decouple scoring engine tests from language ([#81](https://github.com/scute-sh/scute/pull/81))
+- *(code-complexity)* clean up check.rs orchestration and tests ([#80](https://github.com/scute-sh/scute/pull/80))
+- *(code-complexity)* cognitive roles for Construct ([#76](https://github.com/scute-sh/scute/pull/76))
+- *(code-complexity)* language-agnostic scoring engine ([#74](https://github.com/scute-sh/scute/pull/74))
+
 ## [0.0.7](https://github.com/scute-sh/scute/compare/scute-core-v0.0.6...scute-core-v0.0.7) - 2026-03-15
 
 ### Other
