@@ -28,6 +28,8 @@ mod check;
 mod rules;
 mod rust;
 mod score;
+#[cfg(test)]
+mod tests;
 mod typescript;
 
 pub use check::{CHECK_NAME, Definition, check};
