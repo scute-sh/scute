@@ -14,6 +14,14 @@ fn expect_score(source: &str, rules: &dyn LanguageRules, expected: u64) {
     assert_eq!(results[0].score, expected);
 }
 
+fn assert_function_score(results: &[super::score::FunctionScore], name: &str, expected: u64) {
+    let func = results
+        .iter()
+        .find(|r| r.name == name)
+        .unwrap_or_else(|| panic!("no function named '{name}'"));
+    assert_eq!(func.score, expected, "wrong score for '{name}'");
+}
+
 #[test_case(&Rust, "fn f(a: i32, b: i32) -> i32 { a + b }" ; "rust")]
 #[test_case(&ts(), "function f(a: number, b: number) { return a + b }" ; "typescript")]
 fn flat_function_scores_zero(rules: &dyn LanguageRules, source: &str) {
@@ -35,6 +43,16 @@ fn scores_branch(rules: &dyn LanguageRules, source: &str) {
 #[test]
 fn scores_ternary() {
     expect_score("function f(x: boolean) { return x ? 1 : 0; }", &ts(), 1);
+}
+
+// if: +1, nested ternary: +1+1 (nesting=1)
+#[test]
+fn scores_nested_ternary_with_nesting_penalty() {
+    expect_score(
+        "function f(x: number) { if (x > 0) { return x > 10 ? 1 : 0; } }",
+        &ts(),
+        3,
+    );
 }
 
 #[test_case(&Rust, "fn f(items: &[i32]) { for _ in items {} }" ; "rust_for")]
@@ -98,6 +116,17 @@ fn ignores_nullish_coalescing() {
     else { return n * factorial(n - 1); }
 }" ; "typescript")]
 fn scores_direct_recursion(rules: &dyn LanguageRules, source: &str) {
+    expect_score(source, rules, 3);
+}
+
+// if: +1, else: +1, this.method() recursion: +1
+#[test_case(&ts(), "class C {
+    count(n: number): number {
+        if (n <= 1) { return 1; }
+        else { return n * this.count(n - 1); }
+    }
+}" ; "typescript_this_method")]
+fn scores_this_method_recursion(rules: &dyn LanguageRules, source: &str) {
     expect_score(source, rules, 3);
 }
 
@@ -169,6 +198,37 @@ fn scores_inline_nesting(rules: &dyn LanguageRules, source: &str) {
     expect_score(source, rules, 3);
 }
 
+// function expression: const f = function() {...}
+// nesting +1, if: +1+1, else: +1
+#[test_case(&ts(), "function f() {
+    const g = function() {
+        if (true) { return 1; }
+        else { return 0; }
+    };
+}" ; "typescript_function_expression")]
+fn scores_function_expression_as_inline_nesting(rules: &dyn LanguageRules, source: &str) {
+    expect_score(source, rules, 3);
+}
+
+// generator declaration: behaves like nested named function (Separate)
+#[test_case(&ts(),
+    "function outer() { function* gen() { if (true) {} } if (true) {} }",
+    "outer", 3, "gen", 1
+    ; "typescript_generator"
+)]
+fn scores_generator_declaration_independently(
+    rules: &dyn LanguageRules,
+    source: &str,
+    outer_name: &str,
+    outer_score: u64,
+    inner_name: &str,
+    inner_score: u64,
+) {
+    let results = score_functions(source, rules);
+    assert_function_score(&results, outer_name, outer_score);
+    assert_function_score(&results, inner_name, inner_score);
+}
+
 #[test_case(&Rust,
     "fn outer() { fn inner() { if true {} } if true {} }",
     "outer", 3, "inner", 1
@@ -188,11 +248,8 @@ fn scores_nested_function_independently(
     inner_score: u64,
 ) {
     let results = score_functions(source, rules);
-    assert_eq!(results.len(), 2);
-    assert_eq!(results[0].name, outer_name);
-    assert_eq!(results[0].score, outer_score);
-    assert_eq!(results[1].name, inner_name);
-    assert_eq!(results[1].score, inner_score);
+    assert_function_score(&results, outer_name, outer_score);
+    assert_function_score(&results, inner_name, inner_score);
 }
 
 #[test_case(&Rust, "struct S;

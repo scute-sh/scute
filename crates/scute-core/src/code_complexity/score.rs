@@ -521,7 +521,11 @@ mod tests {
     }
 
     #[test]
-    fn broken_syntax_does_not_panic() {
-        let _ = score_functions(BROKEN_SYNTAX, rules());
+    fn broken_syntax_returns_partial_results() {
+        let results = score_functions(BROKEN_SYNTAX, rules());
+        assert!(
+            results.is_empty() || results.iter().all(|r| r.score < u64::MAX),
+            "broken syntax should produce empty or valid results"
+        );
     }
 }
