@@ -110,8 +110,14 @@ pub fn check(
     let sources = read_sources(&canonical_dir, skip_ignored, exclude);
     let clone_groups = detect_clones(&sources, min_tokens)?;
     let relevant = filter_by_focus(&clone_groups, &focus_files);
+    let test_thresholds = definition.test_thresholds.clone().unwrap_or(Thresholds {
+        warn: Some(DEFAULT_TEST_WARN),
+        fail: Some(DEFAULT_TEST_FAIL),
+    });
 
-    if relevant.is_empty() {
+    let evaluations = evaluate_groups(&relevant, &sources, &thresholds, &test_thresholds);
+
+    if evaluations.is_empty() {
         return Ok(vec![Evaluation::completed(
             source_dir.display().to_string(),
             0,
@@ -120,16 +126,7 @@ pub fn check(
         )]);
     }
 
-    let test_thresholds = definition.test_thresholds.clone().unwrap_or(Thresholds {
-        warn: Some(DEFAULT_TEST_WARN),
-        fail: Some(DEFAULT_TEST_FAIL),
-    });
-    Ok(build_evaluations(
-        &relevant,
-        &sources,
-        &thresholds,
-        &test_thresholds,
-    ))
+    Ok(evaluations)
 }
 
 fn filter_by_focus<'a>(
@@ -182,7 +179,10 @@ fn detect_clones(
     })
 }
 
-fn build_evaluations(
+/// Evaluate clone groups by context: exclude same-contract groups,
+/// apply test thresholds to test-only groups, standard thresholds
+/// to everything else.
+fn evaluate_groups(
     groups: &[&CloneGroup],
     sources: &[(String, String, &'static LanguageConfig)],
     thresholds: &Thresholds,
@@ -193,17 +193,47 @@ fn build_evaluations(
         .iter()
         .map(|(path, content, lang)| (path.as_str(), (content.as_str(), *lang)))
         .collect();
+
     groups
         .iter()
-        .map(|group| {
+        .filter_map(|group| {
+            if is_same_contract_group(&mut parser, group, &source_by_path) {
+                return None;
+            }
             let effective = if is_test_only_group(&mut parser, group, &source_by_path) {
                 test_thresholds
             } else {
                 thresholds
             };
-            to_evaluation(group, effective, &source_by_path)
+            Some(to_evaluation(group, effective, &source_by_path))
         })
         .collect()
+}
+
+/// Returns `true` if every occurrence in this group lives inside an
+/// implementation of the same contract (trait/interface). Groups where
+/// any occurrence is outside a contract impl, or where occurrences span
+/// different contracts, return `false`.
+fn is_same_contract_group(
+    parser: &mut dyn AstParser,
+    group: &CloneGroup,
+    sources: &HashMap<&str, (&str, &'static LanguageConfig)>,
+) -> bool {
+    let mut contract: Option<String> = None;
+    for occ in &group.occurrences {
+        let Some((content, lang)) = sources.get(occ.source_id.as_str()) else {
+            return false;
+        };
+        let Some(name) = lang.contract_name(parser, content, occ.start_line, occ.end_line) else {
+            return false;
+        };
+        match &contract {
+            None => contract = Some(name),
+            Some(existing) if *existing == name => {}
+            Some(_) => return false,
+        }
+    }
+    contract.is_some()
 }
 
 fn is_test_only_group(
@@ -329,7 +359,7 @@ mod tests {
     use super::*;
     use crate::Outcome;
     use googletest::prelude::*;
-    use tempfile::TempDir;
+    use scute_test_utils::TestDir;
 
     fn low_threshold() -> Definition {
         Definition {
@@ -354,31 +384,21 @@ mod tests {
         check(dir, focus_files, &low_threshold()).unwrap()
     }
 
-    /// Create a temp directory with the given files and run a similarity check.
-    /// Returns `(TempDir, Vec<Evaluation>)` — caller keeps `TempDir` alive for
-    /// any assertions that reference paths.
-    fn check_files(files: &[(&str, &str)]) -> (TempDir, Vec<Evaluation>) {
-        let dir = make_dir(files);
-        let evals = check_dir(dir.path());
-        (dir, evals)
-    }
-
-    fn make_dir(files: &[(&str, &str)]) -> TempDir {
-        let dir = TempDir::new().unwrap();
-        for (name, content) in files {
-            write_file(dir.path(), name, content);
-        }
-        dir
+    fn clone_pair() -> TestDir {
+        TestDir::new()
+            .source_file("a.rs", "fn foo(x: i32) -> i32 { x + 1 }")
+            .source_file("b.rs", "fn bar(y: i32) -> i32 { y + 1 }")
     }
 
     fn check_clone_pair() -> Vec<Evaluation> {
-        check_files(CLONE_PAIR).1
+        let dir = clone_pair();
+        check_dir(&dir.root())
     }
 
     fn check_clone_pair_with_thresholds(warn: u64, fail: u64) -> Vec<Evaluation> {
-        let dir = make_dir(CLONE_PAIR);
+        let dir = clone_pair();
         check(
-            dir.path(),
+            &dir.root(),
             &[],
             &Definition {
                 min_tokens: Some(5),
@@ -392,25 +412,12 @@ mod tests {
         .unwrap()
     }
 
-    const CLONE_PAIR: &[(&str, &str)] = &[
-        ("a.rs", "fn foo(x: i32) -> i32 { x + 1 }"),
-        ("b.rs", "fn bar(y: i32) -> i32 { y + 1 }"),
-    ];
-
-    fn two_clone_pairs_dir() -> TempDir {
-        let mut files = CLONE_PAIR.to_vec();
-        files.extend_from_slice(&[
-            ("c.rs", "const A: [i32; 5] = [10, 20, 30, 40, 50];"),
-            ("d.rs", "const B: [u32; 5] = [60, 70, 80, 90, 100];"),
-        ]);
-        make_dir(&files)
-    }
-
-    fn write_file(dir: &Path, name: &str, content: &str) {
-        if let Some(parent) = Path::new(name).parent() {
-            std::fs::create_dir_all(dir.join(parent)).unwrap();
-        }
-        std::fs::write(dir.join(name), content).unwrap();
+    fn two_clone_pairs() -> TestDir {
+        TestDir::new()
+            .source_file("a.rs", "fn foo(x: i32) -> i32 { x + 1 }")
+            .source_file("b.rs", "fn bar(y: i32) -> i32 { y + 1 }")
+            .source_file("c.rs", "const A: [i32; 5] = [10, 20, 30, 40, 50];")
+            .source_file("d.rs", "const B: [u32; 5] = [60, 70, 80, 90, 100];")
     }
 
     fn unwrap_evidence(eval: &Evaluation) -> &Vec<Evidence> {
@@ -432,9 +439,9 @@ mod tests {
 
     #[test]
     fn empty_directory_passes_with_zero_observed() {
-        let dir = TempDir::new().unwrap();
+        let dir = TestDir::new();
 
-        let evals = check_dir(dir.path());
+        let evals = check_dir(&dir.root());
 
         assert_that!(evals, len(eq(1)));
         assert!(evals[0].is_pass());
@@ -466,7 +473,11 @@ mod tests {
 
     #[test]
     fn directory_with_only_unsupported_files_passes() {
-        let (_, evals) = check_files(&[("readme.md", "# Hello"), ("data.json", "{}")]);
+        let dir = TestDir::new()
+            .source_file("readme.md", "# Hello")
+            .source_file("data.json", "{}");
+
+        let evals = check_dir(&dir.root());
 
         assert_that!(evals, len(eq(1)));
         assert!(evals[0].is_pass());
@@ -474,10 +485,11 @@ mod tests {
 
     #[test]
     fn discovers_files_in_subdirectories() {
-        let (_, evals) = check_files(&[
-            ("src/a.rs", "fn foo(x: i32) -> i32 { x + 1 }"),
-            ("lib/b.rs", "fn bar(y: i32) -> i32 { y + 1 }"),
-        ]);
+        let dir = TestDir::new()
+            .source_file("src/a.rs", "fn foo(x: i32) -> i32 { x + 1 }")
+            .source_file("lib/b.rs", "fn bar(y: i32) -> i32 { y + 1 }");
+
+        let evals = check_dir(&dir.root());
 
         assert_that!(evals, len(eq(1)));
         let evidence = unwrap_evidence(&evals[0]);
@@ -485,21 +497,19 @@ mod tests {
         assert_location_contains(evidence, "lib");
     }
 
-    fn gitignore_dir() -> TempDir {
-        let dir = make_dir(&[
-            (".gitignore", "vendor/\n"),
-            ("src/a.rs", "fn foo(x: i32) -> i32 { x + 1 }"),
-            ("vendor/lib/b.rs", "fn bar(y: i32) -> i32 { y + 1 }"),
-        ]);
-        std::fs::create_dir(dir.path().join(".git")).unwrap();
-        dir
+    fn gitignore_dir() -> TestDir {
+        TestDir::new()
+            .source_file(".git/HEAD", "")
+            .source_file(".gitignore", "vendor/\n")
+            .source_file("src/a.rs", "fn foo(x: i32) -> i32 { x + 1 }")
+            .source_file("vendor/lib/b.rs", "fn bar(y: i32) -> i32 { y + 1 }")
     }
 
     #[test]
     fn skips_gitignored_directories() {
         let dir = gitignore_dir();
 
-        let evals = check_dir(dir.path());
+        let evals = check_dir(&dir.root());
 
         // vendor/ is gitignored → only src/a.rs discovered → no clone pair
         assert!(
@@ -513,7 +523,7 @@ mod tests {
         let dir = gitignore_dir();
 
         let evals = check(
-            dir.path(),
+            &dir.root(),
             &[],
             &Definition {
                 skip_ignored_files: Some(false),
@@ -565,61 +575,67 @@ mod tests {
 
     #[test]
     fn distinct_code_passes() {
-        let (_, evals) = check_files(&[
-            ("a.rs", "let x = 1 + 2;"),
-            ("b.rs", "if true { return false; }"),
-        ]);
+        let dir = TestDir::new()
+            .source_file("a.rs", "let x = 1 + 2;")
+            .source_file("b.rs", "if true { return false; }");
+
+        let evals = check_dir(&dir.root());
 
         assert_that!(evals, len(eq(1)));
         assert!(evals[0].is_pass());
     }
 
-    #[test_case::test_case(
-        &[("a.ts", "function foo(x: number): number { return x + 1; }"),
-          ("b.ts", "function bar(y: number): number { return y + 1; }")]
+    #[test_case::test_case("a.ts", "b.ts",
+        "function foo(x: number): number { return x + 1; }",
+        "function bar(y: number): number { return y + 1; }"
         ; "typescript"
     )]
-    #[test_case::test_case(
-        &[("a.js", "function foo(x) { return x + 1; }"),
-          ("b.js", "function bar(y) { return y + 1; }")]
+    #[test_case::test_case("a.js", "b.js",
+        "function foo(x) { return x + 1; }",
+        "function bar(y) { return y + 1; }"
         ; "javascript"
     )]
-    #[test_case::test_case(
-        &[("a.jsx", "function Greeting({ name }) { return <div>Hello {name}</div>; }"),
-          ("b.jsx", "function Welcome({ name }) { return <div>Hello {name}</div>; }")]
+    #[test_case::test_case("a.jsx", "b.jsx",
+        "function Greeting({ name }) { return <div>Hello {name}</div>; }",
+        "function Welcome({ name }) { return <div>Hello {name}</div>; }"
         ; "jsx"
     )]
-    #[test_case::test_case(
-        &[("a.js", "function foo(x) { return x + 1; }"),
-          ("b.mjs", "function bar(y) { return y + 1; }")]
+    #[test_case::test_case("a.js", "b.mjs",
+        "function foo(x) { return x + 1; }",
+        "function bar(y) { return y + 1; }"
         ; "across js and mjs"
     )]
-    #[test_case::test_case(
-        &[("a.js", "function foo(x) { return x + 1; }"),
-          ("b.cjs", "function bar(y) { return y + 1; }")]
+    #[test_case::test_case("a.js", "b.cjs",
+        "function foo(x) { return x + 1; }",
+        "function bar(y) { return y + 1; }"
         ; "across js and cjs"
     )]
-    #[test_case::test_case(
-        &[("a.tsx", "function Greeting({ name }: { name: string }) { return <div>Hello {name}</div>; }"),
-          ("b.tsx", "function Welcome({ name }: { name: string }) { return <div>Hello {name}</div>; }")]
+    #[test_case::test_case("a.tsx", "b.tsx",
+        "function Greeting({ name }: { name: string }) { return <div>Hello {name}</div>; }",
+        "function Welcome({ name }: { name: string }) { return <div>Hello {name}</div>; }"
         ; "tsx"
     )]
-    #[test_case::test_case(
-        &[("a.ts", "function foo(x: number): number { return x + 1; }"),
-          ("b.tsx", "function bar(y: number): number { return y + 1; }")]
+    #[test_case::test_case("a.ts", "b.tsx",
+        "function foo(x: number): number { return x + 1; }",
+        "function bar(y: number): number { return y + 1; }"
         ; "across ts and tsx"
     )]
-    fn detects_duplications(files: &[(&str, &str)]) {
-        let (_, evals) = check_files(files);
+    fn detects_duplications(file_a: &str, file_b: &str, content_a: &str, content_b: &str) {
+        let dir = TestDir::new()
+            .source_file(file_a, content_a)
+            .source_file(file_b, content_b);
+
+        let evals = check_dir(&dir.root());
+
         assert_that!(evals, len(eq(1)));
         assert!(evals[0].is_fail(), "expected fail, got: {evals:?}");
     }
 
     #[test]
     fn focus_file_only_reports_clone_groups_involving_that_file() {
-        let dir = two_clone_pairs_dir();
+        let dir = two_clone_pairs();
 
-        let evals = check_focused(dir.path(), &[dir.path().join("a.rs")]);
+        let evals = check_focused(&dir.root(), &[dir.path("a.rs")]);
 
         assert_that!(evals, len(eq(1)));
         let evidence = unwrap_evidence(&evals[0]);
@@ -629,13 +645,12 @@ mod tests {
 
     #[test]
     fn focus_file_without_clones_passes() {
-        let dir = make_dir(&[
-            ("clean.rs", "fn unique_stuff() -> bool { true }"),
-            ("a.rs", "fn foo(x: i32) -> i32 { x + 1 }"),
-            ("b.rs", "fn bar(y: i32) -> i32 { y + 1 }"),
-        ]);
+        let dir = TestDir::new()
+            .source_file("clean.rs", "fn unique_stuff() -> bool { true }")
+            .source_file("a.rs", "fn foo(x: i32) -> i32 { x + 1 }")
+            .source_file("b.rs", "fn bar(y: i32) -> i32 { y + 1 }");
 
-        let evals = check_focused(dir.path(), &[dir.path().join("clean.rs")]);
+        let evals = check_focused(&dir.root(), &[dir.path("clean.rs")]);
 
         assert_that!(evals, len(eq(1)));
         assert!(evals[0].is_pass());
@@ -643,60 +658,62 @@ mod tests {
 
     #[test]
     fn multiple_focus_files_report_clones_involving_any_of_them() {
-        let dir = two_clone_pairs_dir();
+        let dir = two_clone_pairs();
 
-        let evals = check_focused(
-            dir.path(),
-            &[dir.path().join("a.rs"), dir.path().join("c.rs")],
-        );
+        let evals = check_focused(&dir.root(), &[dir.path("a.rs"), dir.path("c.rs")]);
 
         assert_that!(evals, len(eq(2)));
     }
 
-    #[test_case::test_case(
-        &[("tests/a.rs", "fn foo(x: i32) -> i32 { x + 1 }"),
-          ("tests/b.rs", "fn bar(y: i32) -> i32 { y + 1 }")]
+    #[test_case::test_case("tests/a.rs", "tests/b.rs",
+        "fn foo(x: i32) -> i32 { x + 1 }",
+        "fn bar(y: i32) -> i32 { y + 1 }"
         ; "test directory clones"
     )]
-    #[test_case::test_case(
-        &[("a.test.ts", "function foo(x: number): number { return x + 1; }"),
-          ("b.test.ts", "function bar(y: number): number { return y + 1; }")]
+    #[test_case::test_case("a.test.ts", "b.test.ts",
+        "function foo(x: number): number { return x + 1; }",
+        "function bar(y: number): number { return y + 1; }"
         ; "typescript test files"
     )]
-    #[test_case::test_case(
-        &[("a.test.js", "function foo(x) { return x + 1; }"),
-          ("b.test.js", "function bar(y) { return y + 1; }")]
+    #[test_case::test_case("a.test.js", "b.test.js",
+        "function foo(x) { return x + 1; }",
+        "function bar(y) { return y + 1; }"
         ; "javascript test files"
     )]
-    #[test_case::test_case(
-        &[("__tests__/a.js", "function foo(x) { return x + 1; }"),
-          ("__tests__/b.js", "function bar(y) { return y + 1; }")]
+    #[test_case::test_case("__tests__/a.js", "__tests__/b.js",
+        "function foo(x) { return x + 1; }",
+        "function bar(y) { return y + 1; }"
         ; "js files in __tests__ directory"
     )]
-    #[test_case::test_case(
-        &[("a.spec.ts", "function foo(x: number): number { return x + 1; }"),
-          ("b.spec.ts", "function bar(y: number): number { return y + 1; }")]
+    #[test_case::test_case("a.spec.ts", "b.spec.ts",
+        "function foo(x: number): number { return x + 1; }",
+        "function bar(y: number): number { return y + 1; }"
         ; "spec ts files"
     )]
-    #[test_case::test_case(
-        &[("a.test.tsx", "function Greeting({ name }: { name: string }) { return <div>Hello {name}</div>; }"),
-          ("b.test.tsx", "function Welcome({ name }: { name: string }) { return <div>Hello {name}</div>; }")]
+    #[test_case::test_case("a.test.tsx", "b.test.tsx",
+        "function Greeting({ name }: { name: string }) { return <div>Hello {name}</div>; }",
+        "function Welcome({ name }: { name: string }) { return <div>Hello {name}</div>; }"
         ; "tsx test files"
     )]
-    #[test_case::test_case(
-        &[("src/a.rs", "#[test]\nfn test_a(x: i32) -> i32 { x + 1 }"),
-          ("src/b.rs", "#[test]\nfn test_b(y: i32) -> i32 { y + 1 }")]
+    #[test_case::test_case("src/a.rs", "src/b.rs",
+        "#[test]\nfn test_a(x: i32) -> i32 { x + 1 }",
+        "#[test]\nfn test_b(y: i32) -> i32 { y + 1 }"
         ; "naked test fns"
     )]
-    #[test_case::test_case(
-        &[("src/a.rs", "fn serve() -> String { String::from(\"hello\") }\n\
-                         #[cfg(test)]\nmod tests {\n    fn helper_a(x: i32) -> i32 { x + 1 }\n}"),
-          ("src/b.rs", "use std::collections::HashMap;\n\
-                         #[cfg(test)]\nmod tests {\n    fn helper_b(y: i32) -> i32 { y + 1 }\n}")]
+    #[test_case::test_case("src/a.rs", "src/b.rs",
+        "fn serve() -> String { String::from(\"hello\") }\n\
+         #[cfg(test)]\nmod tests {\n    fn helper_a(x: i32) -> i32 { x + 1 }\n}",
+        "use std::collections::HashMap;\n\
+         #[cfg(test)]\nmod tests {\n    fn helper_b(y: i32) -> i32 { y + 1 }\n}"
         ; "inline rust test modules"
     )]
-    fn applies_test_thresholds(files: &[(&str, &str)]) {
-        let (_, evals) = check_files(files);
+    fn applies_test_thresholds(file_a: &str, file_b: &str, content_a: &str, content_b: &str) {
+        let dir = TestDir::new()
+            .source_file(file_a, content_a)
+            .source_file(file_b, content_b);
+
+        let evals = check_dir(&dir.root());
+
         assert!(
             evals[0].is_warn(),
             "expected warn (test thresholds), got: {evals:?}"
@@ -705,10 +722,11 @@ mod tests {
 
     #[test]
     fn uses_production_thresholds_for_mixed_test_and_production_clones() {
-        let (_, evals) = check_files(&[
-            ("src/a.rs", "fn foo(x: i32) -> i32 { x + 1 }"),
-            ("tests/b.rs", "fn bar(y: i32) -> i32 { y + 1 }"),
-        ]);
+        let dir = TestDir::new()
+            .source_file("src/a.rs", "fn foo(x: i32) -> i32 { x + 1 }")
+            .source_file("tests/b.rs", "fn bar(y: i32) -> i32 { y + 1 }");
+
+        let evals = check_dir(&dir.root());
 
         assert!(
             evals[0].is_fail(),
@@ -718,7 +736,9 @@ mod tests {
 
     #[test]
     fn single_file_without_duplication_passes() {
-        let (_, evals) = check_files(&[("a.rs", "fn foo(x: i32) -> i32 { x + 1 }")]);
+        let dir = TestDir::new().source_file("a.rs", "fn foo(x: i32) -> i32 { x + 1 }");
+
+        let evals = check_dir(&dir.root());
 
         assert_that!(evals, len(eq(1)));
         assert!(evals[0].is_pass());
@@ -726,10 +746,10 @@ mod tests {
 
     #[test]
     fn excludes_files_matching_a_glob_pattern() {
-        let dir = make_dir(CLONE_PAIR);
+        let dir = clone_pair();
 
         let evals = check(
-            dir.path(),
+            &dir.root(),
             &[],
             &Definition {
                 exclude: Some(vec!["b.rs".to_string()]),
@@ -746,14 +766,13 @@ mod tests {
 
     #[test]
     fn excludes_files_matching_multiple_glob_patterns() {
-        let dir = make_dir(&[
-            ("a.rs", "fn foo(x: i32) -> i32 { x + 1 }"),
-            ("b.rs", "fn bar(y: i32) -> i32 { y + 1 }"),
-            ("c.ts", "function baz(z: number): number { return z + 1; }"),
-        ]);
+        let dir = TestDir::new()
+            .source_file("a.rs", "fn foo(x: i32) -> i32 { x + 1 }")
+            .source_file("b.rs", "fn bar(y: i32) -> i32 { y + 1 }")
+            .source_file("c.ts", "function baz(z: number): number { return z + 1; }");
 
         let evals = check(
-            dir.path(),
+            &dir.root(),
             &[],
             &Definition {
                 exclude: Some(vec!["b.rs".to_string(), "*.ts".to_string()]),
@@ -770,13 +789,12 @@ mod tests {
 
     #[test]
     fn excludes_files_in_subdirectory_matching_glob_pattern() {
-        let dir = make_dir(&[
-            ("src/a.rs", "fn foo(x: i32) -> i32 { x + 1 }"),
-            ("generated/b.rs", "fn bar(y: i32) -> i32 { y + 1 }"),
-        ]);
+        let dir = TestDir::new()
+            .source_file("src/a.rs", "fn foo(x: i32) -> i32 { x + 1 }")
+            .source_file("generated/b.rs", "fn bar(y: i32) -> i32 { y + 1 }");
 
         let evals = check(
-            dir.path(),
+            &dir.root(),
             &[],
             &Definition {
                 exclude: Some(vec!["generated/**".to_string()]),
@@ -791,12 +809,133 @@ mod tests {
         );
     }
 
+    const TRAIT_IMPL_A: &str = "\
+impl Render for Html {
+    fn render(&self) -> String {
+        let mut buf = String::new();
+        buf.push_str(\"<div>\");
+        buf.push_str(\"</div>\");
+        buf
+    }
+}";
+
+    #[test]
+    fn excludes_clone_groups_inside_same_rust_trait_impls() {
+        let dir = TestDir::new()
+            .source_file("a.rs", &format!("use crate::Render;\n\n{TRAIT_IMPL_A}"))
+            .source_file(
+                "b.rs",
+                "\
+use crate::Render;
+
+impl Render for Xml {
+    fn render(&self) -> String {
+        let mut buf = String::new();
+        buf.push_str(\"<root>\");
+        buf.push_str(\"</root>\");
+        buf
+    }
+}",
+            );
+
+        let evals = check_dir(&dir.root());
+
+        assert!(
+            evals.iter().all(Evaluation::is_pass),
+            "same-trait impls should be excluded, got: {evals:?}"
+        );
+    }
+
+    #[test]
+    fn reports_clone_groups_mixing_rust_trait_impl_and_free_code() {
+        let dir = TestDir::new()
+            .source_file("a.rs", TRAIT_IMPL_A)
+            .source_file(
+                "b.rs",
+                "\
+fn standalone_render() -> String {
+    let mut buf = String::new();
+    buf.push_str(\"<section>\");
+    buf.push_str(\"</section>\");
+    buf
+}",
+            );
+
+        let evals = check_dir(&dir.root());
+
+        assert!(
+            evals.iter().any(|e| !e.is_pass()),
+            "mixed trait-impl and free code should still be reported, got: {evals:?}"
+        );
+    }
+
+    #[test]
+    fn reports_clone_groups_inside_rust_inherent_impls() {
+        let dir = TestDir::new()
+            .source_file(
+                "a.rs",
+                "\
+impl Html {
+    fn render(&self) -> String {
+        let mut buf = String::new();
+        buf.push_str(\"<div>\");
+        buf.push_str(\"</div>\");
+        buf
+    }
+}",
+            )
+            .source_file(
+                "b.rs",
+                "\
+impl Xml {
+    fn render(&self) -> String {
+        let mut buf = String::new();
+        buf.push_str(\"<root>\");
+        buf.push_str(\"</root>\");
+        buf
+    }
+}",
+            );
+
+        let evals = check_dir(&dir.root());
+
+        assert!(
+            evals.iter().any(|e| !e.is_pass()),
+            "inherent impls (no trait) should still be reported, got: {evals:?}"
+        );
+    }
+
+    #[test]
+    fn reports_clone_groups_across_different_rust_trait_impls() {
+        let dir = TestDir::new()
+            .source_file("a.rs", TRAIT_IMPL_A)
+            .source_file(
+                "b.rs",
+                "\
+impl Format for Xml {
+    fn render(&self) -> String {
+        let mut buf = String::new();
+        buf.push_str(\"<root>\");
+        buf.push_str(\"</root>\");
+        buf
+    }
+}",
+            );
+
+        let evals = check_dir(&dir.root());
+
+        assert!(
+            evals.iter().any(|e| !e.is_pass()),
+            "different-trait impls should still be reported, got: {evals:?}"
+        );
+    }
+
     #[test]
     fn default_definition_uses_sensible_defaults() {
-        let dir = make_dir(CLONE_PAIR);
+        let dir = clone_pair();
 
         // 14 tokens < default min_tokens of 50 → no clones detected → pass
-        let evals = check(dir.path(), &[], &Definition::default()).unwrap();
+        let evals = check(&dir.root(), &[], &Definition::default()).unwrap();
 
         assert_that!(evals, len(eq(1)));
         assert!(evals[0].is_pass());

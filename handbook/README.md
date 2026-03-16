@@ -8,4 +8,5 @@ contributing, building on, or trying to understand the project deeply.
 - [Roadmap](roadmap.md) — phased build plan and explicit boundaries
 - [Pain Points](pain-points.md) — observed bad practices across the delivery lifecycle, backlog of enforcement opportunities
 - [Development](development.md) — dev setup, scripts, CI, and release flow
+- [Checks](checks/) — design notes and mental models for individual checks
 - [Decisions](decisions/) — architecture decision records

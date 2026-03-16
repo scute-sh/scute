@@ -144,6 +144,10 @@ scute check code-similarity src/utils/format.rs
 
 All clear.
 
+## Design notes
+
+See [handbook/checks/code-similarity.md](../../handbook/checks/code-similarity.md) for the design thinking behind context-aware similarity evaluation.
+
 ## Scope & limitations
 
 - **Supported languages:** Rust, JavaScript, TypeScript.
