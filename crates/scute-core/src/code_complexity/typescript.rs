@@ -160,9 +160,15 @@ impl LanguageRules for TypeScript {
 
 fn callee_name<'a>(target: tree_sitter::Node, src: &'a [u8]) -> Option<&'a str> {
     match target.kind() {
-        "member_expression" => target
-            .child_by_field_name("property")
-            .and_then(|n| n.utf8_text(src).ok()),
+        "member_expression" => {
+            let object = target.child_by_field_name("object")?;
+            if object.kind() != "this" {
+                return None;
+            }
+            target
+                .child_by_field_name("property")
+                .and_then(|n| n.utf8_text(src).ok())
+        }
         _ => target.utf8_text(src).ok(),
     }
 }
