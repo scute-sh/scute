@@ -74,7 +74,7 @@ value.
 - **Overparameterization.** (×1) Extracting a helper but keeping the
   hardcoded value as a parameter instead of encapsulating it. If every
   call site passes the same value, the helper should own that value.
-- **Solution-space anchoring.** (×5) Fixating on how existing code works
+- **Solution-space anchoring.** (×6) Fixating on how existing code works
   (helpers, models, constructors) instead of stepping back to the problem
   space. Leads to contorted designs that serve the implementation rather than
   the user. The question should always be "what does the consumer need?" not
@@ -146,7 +146,7 @@ value.
   change signatures or restructure code before writing a failing test that
   requires the change. The test should drive the design, not the other way
   around.
-- **Dismissing review findings as "pre-existing".** (×1) Labeling issues as
+- **Dismissing review findings as "pre-existing".** (×2) Labeling issues as
   "pre-existing" or "out of scope" to avoid fixing or even considering them.
   Every finding deserves honest evaluation on its own merits, not a label
   that shuts down the conversation.

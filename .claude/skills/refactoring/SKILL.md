@@ -58,7 +58,7 @@ For each refactor:
 1. Ensure all tests pass
 2. Choose and perform the simplest possible refactoring (one at a time)
 3. Ensure all tests pass after the change
-4. Commit each successful refactor with the message format: "- r <refactoring>" (the message must include the "- r" prefix)
+4. Commit each successful refactor with the message format: "refactor(<scope>): <refactoring>" (scope is optional, depends on what was refactored)
    Prefer small granular commits. If applying the same refactoring pattern to multiple locations, change one location at a time and commit each separately.
 5. Provide a status update after each refactor
 

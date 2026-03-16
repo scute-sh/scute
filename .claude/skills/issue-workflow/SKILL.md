@@ -35,7 +35,7 @@ Enter a worktree for this issue using `EnterWorktree` — do not create one manu
 
 ## 4. Build and Ship
 
-For each scenario (or the single fix), complete **all** steps before starting the next:
+For each scenario (or the single fix):
 
 1. Build it — _invoke_ `/atdd` for substantial work, `/tdd` or the appropriate testing skill for small fixes
 2. **Ship it** — push the branch and open a PR
@@ -44,8 +44,9 @@ For each scenario (or the single fix), complete **all** steps before starting th
 3. Watch CI checks until they complete
    - If checks fail: read the failure logs, fix, commit, push, watch again
    - After 3 failed fix attempts, stop and ask the user for guidance
-4. Report the PR URL to the user and **stop** — wait for the PR to be reviewed and merged before continuing
-5. Once the PR is merged, reset the worktree to latest main: `git reset --hard origin/main`
+4. Report the PR URL to the user
+
+**⛔ STOP here.** Do not start the next slice. Wait for the user to confirm the PR is reviewed and merged before continuing. When they do, reset the worktree to latest main (`git reset --hard origin/main`) and proceed to the next scenario.
 
 Each PR must not break existing behavior.
 

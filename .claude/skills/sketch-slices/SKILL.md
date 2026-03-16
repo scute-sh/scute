@@ -15,8 +15,8 @@ Enough structure to start, not a complete design. Implementation details (functi
 2. Note integration points with existing code
 3. Define **slices** in two categories, preparatory first:
 
-   **Preparatory slices** (from scout report improvements, if one exists):
-   - Each addresses one improvement from the scout report
+   **Preparatory slices** (from scout report or practical necessity):
+   - Each addresses one improvement from the scout report **or** one refactoring that makes a feature slice clean to build
    - **Code-observable**: Tests prove the improvement (characterization tests, better structure)
    - **Focused**: One concern per slice (one refactoring, one test coverage gap)
    - Ordered before feature slices — they prepare the ground
@@ -39,8 +39,8 @@ Enough structure to start, not a complete design. Implementation details (functi
 
    ## Slices (ordered)
 
-   ### Preparatory (from scout report)
-   - [Code improvement]: addresses [scout item X]
+   ### Preparatory
+   - [Code improvement]: addresses [scout item X] or [why feature needs this first]
 
    ### Feature
    - [Persona] [does action] and [sees result]: addresses [criterion X]
@@ -58,7 +58,7 @@ Enough structure to start, not a complete design. Implementation details (functi
 
 _Invoke_ `/refinement-loop` on the sketch with these checks:
 
-- **Preparatory slices**: Each maps to a scout report improvement? One concern per slice?
+- **Preparatory slices**: Each maps to a scout report improvement **or** a refactoring needed to build the feature cleanly? One concern per slice?
 - **Feature slices**: Names a persona doing something? Could demo to them and they'd care? Maps to an acceptance criterion? Touches all relevant layers?
 - **Both**: Free of implementation details? (no function names, no endpoint paths, no schema details)
 
