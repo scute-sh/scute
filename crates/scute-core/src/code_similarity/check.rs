@@ -109,18 +109,15 @@ pub fn check(
     let exclude = definition.exclude.as_deref().unwrap_or_default();
     let sources = read_sources(&canonical_dir, skip_ignored, exclude);
     let clone_groups = detect_clones(&sources, min_tokens)?;
-    let focused = filter_by_focus(&clone_groups, &focus_files);
-    let mut parser = TreeSitterParser::new();
-    let source_by_path: HashMap<&str, (&str, &'static LanguageConfig)> = sources
-        .iter()
-        .map(|(path, content, lang)| (path.as_str(), (content.as_str(), *lang)))
-        .collect();
-    let relevant: Vec<_> = focused
-        .into_iter()
-        .filter(|group| !is_same_contract_group(&mut parser, group, &source_by_path))
-        .collect();
+    let relevant = filter_by_focus(&clone_groups, &focus_files);
+    let test_thresholds = definition.test_thresholds.clone().unwrap_or(Thresholds {
+        warn: Some(DEFAULT_TEST_WARN),
+        fail: Some(DEFAULT_TEST_FAIL),
+    });
 
-    if relevant.is_empty() {
+    let evaluations = evaluate_groups(&relevant, &sources, &thresholds, &test_thresholds);
+
+    if evaluations.is_empty() {
         return Ok(vec![Evaluation::completed(
             source_dir.display().to_string(),
             0,
@@ -129,17 +126,7 @@ pub fn check(
         )]);
     }
 
-    let test_thresholds = definition.test_thresholds.clone().unwrap_or(Thresholds {
-        warn: Some(DEFAULT_TEST_WARN),
-        fail: Some(DEFAULT_TEST_FAIL),
-    });
-    Ok(build_evaluations(
-        &mut parser,
-        &relevant,
-        &source_by_path,
-        &thresholds,
-        &test_thresholds,
-    ))
+    Ok(evaluations)
 }
 
 fn filter_by_focus<'a>(
@@ -192,22 +179,33 @@ fn detect_clones(
     })
 }
 
-fn build_evaluations(
-    parser: &mut dyn AstParser,
+/// Evaluate clone groups by context: exclude same-contract groups,
+/// apply test thresholds to test-only groups, standard thresholds
+/// to everything else.
+fn evaluate_groups(
     groups: &[&CloneGroup],
-    source_by_path: &HashMap<&str, (&str, &'static LanguageConfig)>,
+    sources: &[(String, String, &'static LanguageConfig)],
     thresholds: &Thresholds,
     test_thresholds: &Thresholds,
 ) -> Vec<Evaluation> {
+    let mut parser = TreeSitterParser::new();
+    let source_by_path: HashMap<&str, (&str, &'static LanguageConfig)> = sources
+        .iter()
+        .map(|(path, content, lang)| (path.as_str(), (content.as_str(), *lang)))
+        .collect();
+
     groups
         .iter()
-        .map(|group| {
-            let effective = if is_test_only_group(parser, group, source_by_path) {
+        .filter_map(|group| {
+            if is_same_contract_group(&mut parser, group, &source_by_path) {
+                return None;
+            }
+            let effective = if is_test_only_group(&mut parser, group, &source_by_path) {
                 test_thresholds
             } else {
                 thresholds
             };
-            to_evaluation(group, effective, source_by_path)
+            Some(to_evaluation(group, effective, &source_by_path))
         })
         .collect()
 }
