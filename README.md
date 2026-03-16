@@ -121,11 +121,38 @@ checks:
 
 ## Guide Your Agents
 
-Scute ships an MCP server so coding agents can run checks as tool calls.
-When a check fails, the agent gets structured evidence (exact locations, exact
-rules) and can fix the issue before you ever review it.
+Scute ships with both a CLI and an MCP server, so it works with any coding
+agent. When a check fails, the agent gets structured evidence (exact locations,
+exact rules) and can fix the issue before you ever review it.
 
-### 1. Register the MCP server
+### Tell your agent when to check
+
+Add instructions to your agent config (`CLAUDE.md`, cursor rules, etc.):
+
+```markdown
+## Scute Checks
+
+Run proactively, not only when asked:
+
+| Check              | When to run                           |
+| ------------------ | ------------------------------------- |
+| code-complexity    | After changing or adding a function   |
+| code-similarity    | After changing or adding a function   |
+| commit-message     | Before committing                     |
+| dependency-freshness | After adding or updating a dependency |
+
+When a check returns warnings or failures, read the evidence, fix the issue,
+and rerun until it passes. Don't defer warnings you've just introduced.
+```
+
+The agent runs a check, it fails, the evidence says exactly what's wrong and
+where. The agent fixes it, reruns, passes. No human in the loop in most cases.
+
+### Connect via MCP
+
+If your agent supports [MCP](https://modelcontextprotocol.io), register
+Scute's server. The agent gets check tools it can call directly, plus built-in
+guidance on how to interpret results.
 
 Add to your project's `.mcp.json`:
 
@@ -137,21 +164,15 @@ Add to your project's `.mcp.json`:
 }
 ```
 
-### 2. Tell your agent when to check
+### Or use the CLI
 
-Add instructions to your agent config (`CLAUDE.md`, cursor rules, etc.):
+Agents that don't support MCP can run Scute as shell commands. The output
+is the same structured JSON either way.
 
-```markdown
-## Scute Checks
-
-- `check_commit_message` — before committing
-- `check_code_complexity` — after changing or adding a function
-- `check_code_similarity` — after changing or adding a function
-- `check_dependency_freshness` — after adding or updating a dependency
+```sh
+scute check code-complexity src/
+scute check commit-message "feat: add caching layer"
 ```
-
-The agent runs a check, it fails, the evidence says exactly what's wrong and
-where. The agent fixes it, reruns, passes. No human in the loop in most cases.
 
 ## Guide Your Commits
 
