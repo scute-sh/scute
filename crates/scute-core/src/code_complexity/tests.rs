@@ -264,3 +264,28 @@ impl S {
 fn scores_method(rules: &dyn LanguageRules, source: &str, expected: u64) {
     expect_score(source, rules, expected);
 }
+
+#[test_case(&Rust, "trait Service { fn process(&self, input: &str) -> bool; fn save(&self, data: &str); }" ; "rust_trait")]
+#[test_case(&ts(), "interface Service { process(input: string): boolean; save(data: any): void; }" ; "typescript_interface")]
+fn type_declarations_with_method_signatures_return_no_functions(
+    rules: &dyn LanguageRules,
+    source: &str,
+) {
+    let results = score_functions(source, rules);
+    assert!(results.is_empty());
+}
+
+// if: +1, else: +1. other.count() is NOT recursion.
+#[test]
+fn ignores_non_this_member_call_as_recursion() {
+    expect_score(
+        "class C {
+            count(n: number): number {
+                if (n <= 1) { return 1; }
+                else { return n * other.count(n - 1); }
+            }
+        }",
+        &ts(),
+        2,
+    );
+}
