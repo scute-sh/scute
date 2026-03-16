@@ -70,12 +70,12 @@ your agent, and your CI all consume it identically.
 
 | Check                                                         | What it catches                        | Supports             |
 | ------------------------------------------------------------- | -------------------------------------- | -------------------- |
-| [`code-complexity`](docs/checks/code-complexity.md)           | Functions that are hard to understand  | Rust                 |
+| [`code-complexity`](docs/checks/code-complexity.md)           | Functions that are hard to understand  | Rust, TS             |
 | [`code-similarity`](docs/checks/code-similarity.md)           | Copy-paste and structural duplication  | Rust, JS, TS         |
 | [`commit-message`](docs/checks/commit-message.md)             | Sloppy or non-standard commit messages | Conventional commits |
 | [`dependency-freshness`](docs/checks/dependency-freshness.md) | Dependencies drifting behind           | Cargo, npm, pnpm     |
 
-JS/TS support for code-complexity is next. More checks and ecosystems are on
+JS support for code-complexity is next. More checks and ecosystems are on
 the [roadmap](handbook/roadmap.md).
 
 ## Install
@@ -230,7 +230,7 @@ For the full set of project values, see the [project handbook](handbook/).
 Early and moving fast. Four checks, CLI, MCP server, and structured output are
 shipping today.
 
-**Next:** code complexity for JS/TS, more package managers (Deno, Bun, Yarn),
+**Next:** code complexity for JS, more package managers (Deno, Bun, Yarn),
 trend tracking (delta-from-baseline, direction over time), new checks (circular
 dependencies, layer violations).
 
