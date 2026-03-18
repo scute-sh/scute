@@ -1,0 +1,5 @@
+---
+source: scute-core/tests/code_similarity/normalization.rs
+expression: "normalized_texts(\"\\\n/// This is a doc comment.\n///\n/// With multiple lines.\nfn documented() {}\",\n\"a.rs\", & Rust)"
+---
+fn $ID ( ) { }

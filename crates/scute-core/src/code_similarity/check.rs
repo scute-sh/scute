@@ -1,13 +1,16 @@
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use super::language::{self, LanguageConfig};
-use super::{CloneGroup, Occurrence, SourceEntry, TreeSitterParser, find_clones};
-use crate::parser::AstParser;
+use super::detect::{CloneGroup, detect_clones as run_detection};
+use super::evaluate::{SourceContext, evaluate_groups};
+use super::javascript::JsFamily;
+use super::parse_source;
+use super::rules::SimilarityRules;
+use super::rust::Rust;
+use super::tree::SourceTree;
 use serde::Deserialize;
 
 use crate::files;
-use crate::{Evaluation, Evidence, ExecutionError, Thresholds};
+use crate::{Evaluation, ExecutionError, Thresholds};
 
 pub const CHECK_NAME: &str = "code-similarity";
 
@@ -96,9 +99,10 @@ pub fn check(
         message: e.to_string(),
         recovery: "check that the path exists and is a directory".into(),
     })?;
+    let languages = languages();
     let focus_files = match files::validate_focus_files(
         focus_files,
-        &["rs", "js", "jsx", "mjs", "cjs", "ts", "tsx"],
+        &languages.supported_extensions(),
         "only Rust, JavaScript, and TypeScript files are supported",
     ) {
         Ok(files) => files,
@@ -107,15 +111,32 @@ pub fn check(
 
     let skip_ignored = definition.skip_ignored_files.unwrap_or(true);
     let exclude = definition.exclude.as_deref().unwrap_or_default();
-    let sources = read_sources(&canonical_dir, skip_ignored, exclude);
-    let clone_groups = detect_clones(&sources, min_tokens)?;
-    let relevant = filter_by_focus(&clone_groups, &focus_files);
+    let sources = read_sources(&canonical_dir, skip_ignored, exclude, &languages);
+
+    // Step 1: Parse
+    let trees = build_trees(&sources)?;
+    let tokens_per_source: Vec<Vec<_>> = trees.iter().map(SourceTree::tokens).collect();
+    let contexts: Vec<SourceContext> = trees
+        .iter()
+        .zip(&tokens_per_source)
+        .zip(&sources)
+        .map(|((tree, tokens), (_, content, _))| SourceContext {
+            tree,
+            tokens,
+            content,
+        })
+        .collect();
+
+    // Step 2: Detect
+    let clone_groups = run_detection(&tokens_per_source, min_tokens);
+    let relevant = filter_by_focus(&clone_groups, &focus_files, &contexts);
+
+    // Step 3: Evaluate + Step 4: Format
     let test_thresholds = definition.test_thresholds.clone().unwrap_or(Thresholds {
         warn: Some(DEFAULT_TEST_WARN),
         fail: Some(DEFAULT_TEST_FAIL),
     });
-
-    let evaluations = evaluate_groups(&relevant, &sources, &thresholds, &test_thresholds);
+    let evaluations = evaluate_groups(&relevant, &contexts, &thresholds, &test_thresholds);
 
     if evaluations.is_empty() {
         return Ok(vec![Evaluation::completed(
@@ -132,6 +153,7 @@ pub fn check(
 fn filter_by_focus<'a>(
     clone_groups: &'a [CloneGroup],
     focus_files: &[PathBuf],
+    sources: &[SourceContext],
 ) -> Vec<&'a CloneGroup> {
     let focus_strings: Vec<String> = focus_files
         .iter()
@@ -142,222 +164,72 @@ fn filter_by_focus<'a>(
         .iter()
         .filter(|group| {
             focus_strings.is_empty()
-                || group
-                    .occurrences
-                    .iter()
-                    .any(|occ| focus_strings.contains(&occ.source_id))
+                || group.occurrences.iter().any(|occ| {
+                    focus_strings.contains(&sources[occ.source_idx].tree.source_id().to_string())
+                })
         })
         .collect()
 }
 
-fn read_sources(
+fn read_sources<'a>(
     dir: &Path,
     skip_ignored: bool,
     exclude: &[String],
-) -> Vec<(String, String, &'static LanguageConfig)> {
-    discover_files(dir, skip_ignored, exclude)
-        .into_iter()
-        .filter_map(|(path, lang)| {
-            let content = std::fs::read_to_string(&path).ok()?;
-            Some((path.display().to_string(), content, lang))
-        })
-        .collect()
-}
-
-fn detect_clones(
-    sources: &[(String, String, &'static LanguageConfig)],
-    min_tokens: usize,
-) -> Result<Vec<CloneGroup>, ExecutionError> {
-    let entries: Vec<SourceEntry<'_>> = sources
-        .iter()
-        .map(|(path, content, lang)| SourceEntry::new(content, path, lang))
-        .collect();
-    find_clones(&entries, min_tokens).map_err(|e| ExecutionError {
-        code: "detection_failed".into(),
-        message: e.to_string(),
-        recovery: "check that source files are valid".into(),
-    })
-}
-
-/// Evaluate clone groups by context: exclude same-contract groups,
-/// apply test thresholds to test-only groups, standard thresholds
-/// to everything else.
-fn evaluate_groups(
-    groups: &[&CloneGroup],
-    sources: &[(String, String, &'static LanguageConfig)],
-    thresholds: &Thresholds,
-    test_thresholds: &Thresholds,
-) -> Vec<Evaluation> {
-    let mut parser = TreeSitterParser::new();
-    let source_by_path: HashMap<&str, (&str, &'static LanguageConfig)> = sources
-        .iter()
-        .map(|(path, content, lang)| (path.as_str(), (content.as_str(), *lang)))
-        .collect();
-
-    groups
-        .iter()
-        .filter_map(|group| {
-            if is_same_contract_group(&mut parser, group, &source_by_path) {
-                return None;
-            }
-            let effective = if is_test_only_group(&mut parser, group, &source_by_path) {
-                test_thresholds
-            } else {
-                thresholds
-            };
-            Some(to_evaluation(group, effective, &source_by_path))
-        })
-        .collect()
-}
-
-/// Returns `true` if every occurrence in this group lives inside an
-/// implementation of the same contract (trait/interface). Groups where
-/// any occurrence is outside a contract impl, or where occurrences span
-/// different contracts, return `false`.
-fn is_same_contract_group(
-    parser: &mut dyn AstParser,
-    group: &CloneGroup,
-    sources: &HashMap<&str, (&str, &'static LanguageConfig)>,
-) -> bool {
-    let mut contract: Option<String> = None;
-    for occ in &group.occurrences {
-        let Some((content, lang)) = sources.get(occ.source_id.as_str()) else {
-            return false;
-        };
-        let Some(name) = lang.contract_name(parser, content, occ.start_line, occ.end_line) else {
-            return false;
-        };
-        match &contract {
-            None => contract = Some(name),
-            Some(existing) if *existing == name => {}
-            Some(_) => return false,
-        }
-    }
-    contract.is_some()
-}
-
-fn is_test_only_group(
-    parser: &mut dyn AstParser,
-    group: &CloneGroup,
-    sources: &HashMap<&str, (&str, &'static LanguageConfig)>,
-) -> bool {
-    group.occurrences.iter().all(|occ| {
-        sources
-            .get(occ.source_id.as_str())
-            .is_some_and(|(content, lang)| {
-                lang.is_test_context(
-                    parser,
-                    Path::new(&occ.source_id),
-                    content,
-                    occ.start_line,
-                    occ.end_line,
-                )
+    languages: &'a crate::files::LanguageRegistry<dyn SimilarityRules>,
+) -> Vec<(String, String, &'a dyn SimilarityRules)> {
+    let mut result: Vec<(String, String, &dyn SimilarityRules)> =
+        files::walk_source_files(dir, skip_ignored, exclude)
+            .filter_map(|e| {
+                let rules = languages.for_path(e.path())?;
+                let content = std::fs::read_to_string(e.path()).ok()?;
+                Some((e.into_path().display().to_string(), content, rules))
             })
-    })
-}
-
-fn discover_files(
-    dir: &Path,
-    skip_ignored: bool,
-    exclude: &[String],
-) -> Vec<(PathBuf, &'static LanguageConfig)> {
-    let mut result: Vec<_> = files::walk_source_files(dir, skip_ignored, exclude)
-        .filter_map(|e| {
-            let lang = language_for_path(e.path())?;
-            Some((e.into_path(), lang))
-        })
-        .collect();
-    result.sort_by(|(a, _), (b, _)| a.cmp(b));
+            .collect();
+    result.sort_by(|(a, _, _), (b, _, _)| a.cmp(b));
     result
 }
 
-fn language_for_path(path: &Path) -> Option<&'static LanguageConfig> {
-    static RUST: std::sync::LazyLock<LanguageConfig> = std::sync::LazyLock::new(language::rust);
-    static JAVASCRIPT: std::sync::LazyLock<LanguageConfig> =
-        std::sync::LazyLock::new(language::javascript);
-    static TYPESCRIPT: std::sync::LazyLock<LanguageConfig> =
-        std::sync::LazyLock::new(language::typescript);
-    static TYPESCRIPT_TSX: std::sync::LazyLock<LanguageConfig> =
-        std::sync::LazyLock::new(language::typescript_tsx);
-
-    match path.extension()?.to_str()? {
-        "rs" => Some(&RUST),
-        "js" | "jsx" | "mjs" | "cjs" => Some(&JAVASCRIPT),
-        "ts" => Some(&TYPESCRIPT),
-        "tsx" => Some(&TYPESCRIPT_TSX),
-        _ => None,
-    }
-}
-
-/// A line is "trivial" if it's only punctuation and whitespace (closing braces,
-/// semicolons, etc.). We skip these when picking a representative snippet.
-fn is_trivial_line(line: &str) -> bool {
-    let trimmed = line.trim();
-    trimmed.is_empty() || trimmed.chars().all(|c| c.is_ascii_punctuation())
-}
-
-fn occurrence_evidence(
-    occ: &Occurrence,
-    token_count: usize,
-    sources: &HashMap<&str, (&str, &'static LanguageConfig)>,
-) -> Evidence {
-    let line_count = occ.end_line.saturating_sub(occ.start_line) + 1;
-    let snippet = sources
-        .get(occ.source_id.as_str())
-        .and_then(|(content, _)| {
-            content
-                .lines()
-                .skip(occ.start_line.saturating_sub(1))
-                .take(line_count)
-                .map(str::trim)
-                .find(|line| !is_trivial_line(line))
-        });
-
-    let found = match snippet {
-        Some(line) => format!("{token_count} duplicated tokens, e.g. `{line}`"),
-        None => format!("{token_count} duplicated tokens"),
-    };
-
-    Evidence {
-        rule: None,
-        location: Some(format!(
-            "{}:{}-{}",
-            occ.source_id, occ.start_line, occ.end_line
-        )),
-        found,
-        expected: None,
-    }
-}
-
-fn to_evaluation(
-    group: &CloneGroup,
-    thresholds: &Thresholds,
-    sources: &HashMap<&str, (&str, &'static LanguageConfig)>,
-) -> Evaluation {
-    let evidence = group
-        .occurrences
+fn build_trees(
+    sources: &[(String, String, &dyn SimilarityRules)],
+) -> Result<Vec<SourceTree>, ExecutionError> {
+    sources
         .iter()
-        .map(|occ| occurrence_evidence(occ, group.token_count, sources))
-        .collect();
+        .map(|(path, content, rules)| {
+            parse_source(content, path, Path::new(path), *rules).map_err(|e| ExecutionError {
+                code: "detection_failed".into(),
+                message: e.to_string(),
+                recovery: "check that source files are valid".into(),
+            })
+        })
+        .collect()
+}
 
-    let observed = u64::try_from(group.token_count).unwrap_or(u64::MAX);
-
-    Evaluation::completed(
-        group
-            .occurrences
-            .first()
-            .map(|occ| format!("{}:{}", occ.source_id, occ.start_line))
-            .unwrap_or_default(),
-        observed,
-        thresholds.clone(),
-        evidence,
-    )
+fn languages() -> crate::files::LanguageRegistry<dyn SimilarityRules> {
+    use crate::files::{LanguageRegistry, LanguageRegistryEntry};
+    LanguageRegistry::new(vec![
+        LanguageRegistryEntry {
+            extensions: &["rs"],
+            rules: Box::new(Rust),
+        },
+        LanguageRegistryEntry {
+            extensions: &["js", "jsx", "mjs", "cjs"],
+            rules: Box::new(JsFamily::javascript()),
+        },
+        LanguageRegistryEntry {
+            extensions: &["ts"],
+            rules: Box::new(JsFamily::typescript()),
+        },
+        LanguageRegistryEntry {
+            extensions: &["tsx"],
+            rules: Box::new(JsFamily::typescript_tsx()),
+        },
+    ])
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::Outcome;
+    use crate::{Evidence, Outcome};
     use googletest::prelude::*;
     use scute_test_utils::TestDir;
 
@@ -468,7 +340,8 @@ mod tests {
         let Outcome::Completed { observed, .. } = &evals[0].outcome else {
             panic!("expected completed evaluation")
         };
-        assert_that!(*observed, eq(14)); // fn $ID ( $ID : $ID ) -> $ID { $ID + $LIT } = 14 tokens
+        // fn $ID ( $ID : $ID ) -> $ID { $ID + $LIT } = 14 tokens
+        assert_that!(*observed, eq(14));
     }
 
     #[test]
@@ -714,6 +587,8 @@ mod tests {
 
         let evals = check_dir(&dir.root());
 
+        // Clone pair produces 14 tokens. Test thresholds: warn=10, fail=30.
+        // 14 > 10 (warn) but 14 < 30 (fail), so the result should be warn.
         assert!(
             evals[0].is_warn(),
             "expected warn (test thresholds), got: {evals:?}"
@@ -822,12 +697,10 @@ impl Render for Html {
     #[test]
     fn excludes_clone_groups_inside_same_rust_trait_impls() {
         let dir = TestDir::new()
-            .source_file("a.rs", &format!("use crate::Render;\n\n{TRAIT_IMPL_A}"))
+            .source_file("a.rs", TRAIT_IMPL_A)
             .source_file(
                 "b.rs",
                 "\
-use crate::Render;
-
 impl Render for Xml {
     fn render(&self) -> String {
         let mut buf = String::new();

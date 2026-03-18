@@ -1,0 +1,5 @@
+---
+source: scute-core/tests/code_similarity/normalization.rs
+expression: "normalized_texts(\"\\\n#![allow(unused)]\nfn main() {}\", \"a.rs\", & Rust)"
+---
+fn $ID ( ) { }

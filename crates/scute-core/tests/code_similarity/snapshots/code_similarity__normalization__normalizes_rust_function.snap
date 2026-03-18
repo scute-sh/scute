@@ -1,0 +1,5 @@
+---
+source: scute-core/tests/code_similarity/normalization.rs
+expression: "normalized_texts(\"\\\nfn add(a: i32, b: i32) -> i32 {\n    a + b\n}\", \"a.rs\", &\nRust)"
+---
+fn $ID ( $ID : $ID , $ID : $ID ) -> $ID { $ID + $ID }

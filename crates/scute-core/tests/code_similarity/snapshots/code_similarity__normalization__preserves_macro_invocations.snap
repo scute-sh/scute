@@ -1,0 +1,5 @@
+---
+source: scute-core/tests/code_similarity/normalization.rs
+expression: "normalized_texts(\"\\\nfn example() {\n    let v = vec![1, 2, 3];\n    assert_eq!(v.len(), 3);\n}\",\n\"a.rs\", & Rust)"
+---
+fn $ID ( ) { let $ID = $ID ! [ $LIT , $LIT , $LIT ] ; $ID ! ( $ID . $ID ( ) , $LIT ) ; }

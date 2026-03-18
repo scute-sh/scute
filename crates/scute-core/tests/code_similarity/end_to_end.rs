@@ -1,15 +1,15 @@
-use scute_core::code_similarity::{CloneGroup, LanguageConfig, SourceEntry, find_clones, language};
+use scute_core::code_similarity::{
+    detect_clones, javascript::JsFamily, rules::SimilarityRules, rust::Rust,
+};
 
-use super::helpers::snapshot;
+use super::helpers::{parse_and_detect, snapshot};
 
 const LOW_TOKEN_THRESHOLD: usize = 10;
 
-fn find_clone_groups(files: &[(&str, &str, &LanguageConfig)]) -> Vec<CloneGroup> {
-    let entries: Vec<_> = files
-        .iter()
-        .map(|(content, path, lang)| SourceEntry::new(content, path, lang))
-        .collect();
-    find_clones(&entries, LOW_TOKEN_THRESHOLD).unwrap()
+fn find_clone_groups(
+    files: &[(&str, &str, &dyn SimilarityRules)],
+) -> super::helpers::DetectionResult {
+    parse_and_detect(files, LOW_TOKEN_THRESHOLD)
 }
 
 #[test]
@@ -38,13 +38,12 @@ fn validate_username(name: &str) -> Result<String, Error> {
     Ok(cleaned.to_string())
 }";
 
-    let rust = language::rust();
-    let groups = find_clone_groups(&[
-        (file_a, "validators/email.rs", &rust),
-        (file_b, "validators/username.rs", &rust),
+    let result = find_clone_groups(&[
+        (file_a, "validators/email.rs", &Rust),
+        (file_b, "validators/username.rs", &Rust),
     ]);
 
-    insta::assert_snapshot!(snapshot(&groups));
+    insta::assert_snapshot!(snapshot(&result));
 }
 
 #[test]
@@ -67,38 +66,33 @@ export async function fetchOrder(orderId: number): Promise<Order> {
   return res.json();
 }";
 
-    let ts = language::typescript();
-    let groups = find_clone_groups(&[
+    let ts = JsFamily::typescript();
+    let result = find_clone_groups(&[
         (file_a, "api/users.ts", &ts),
         (file_b, "api/orders.ts", &ts),
     ]);
 
-    insta::assert_snapshot!(snapshot(&groups));
+    insta::assert_snapshot!(snapshot(&result));
 }
 
 #[test]
-fn mixed_languages_detect_within_same_language() {
+fn ignores_cross_language_matches() {
     let rust_a = "fn process(x: i32) -> i32 { x * 2 + 1 }";
     let rust_b = "fn transform(y: u64) -> u64 { y * 2 + 1 }";
     let ts_code = "function compute(n: number): number { return n * 2 + 1; }";
 
-    let rust = language::rust();
-    let ts = language::typescript();
-    // Rust files should match each other; TS has different token structure
-    // so it may or may not match (cross-language is out of scope, but tokens
-    // might coincidentally align). Snapshot captures the actual behavior.
-    let groups = find_clone_groups(&[
-        (rust_a, "a.rs", &rust),
-        (rust_b, "b.rs", &rust),
+    let ts = JsFamily::typescript();
+    let result = find_clone_groups(&[
+        (rust_a, "a.rs", &Rust),
+        (rust_b, "b.rs", &Rust),
         (ts_code, "c.ts", &ts),
     ]);
 
-    insta::assert_snapshot!(snapshot(&groups));
+    insta::assert_snapshot!(snapshot(&result));
 }
 
 #[test]
 fn multi_file_project_with_mixed_duplication() {
-    // Two validators share full structure (cross-file clone)
     let validate_email = "\
 fn validate_email(input: &str) -> Result<String, Error> {
     let trimmed = input.trim();
@@ -123,7 +117,6 @@ fn validate_phone(raw: &str) -> Result<String, Error> {
     Ok(cleaned.to_string())
 }";
 
-    // One file has within-file duplication (two similar handlers)
     let handlers = "\
 fn handle_create(input: &str) -> Result<String, Error> {
     let parsed = input.trim();
@@ -141,7 +134,6 @@ fn handle_update(data: &str) -> Result<String, Error> {
     Ok(cleaned.to_string())
 }";
 
-    // Unique file: completely different structure, should NOT appear
     let config = "\
 struct Config {
     host: String,
@@ -159,19 +151,18 @@ impl Config {
     }
 }";
 
-    let rust = language::rust();
-    let groups = find_clone_groups(&[
-        (validate_email, "validators/email.rs", &rust),
-        (validate_phone, "validators/phone.rs", &rust),
-        (handlers, "handlers.rs", &rust),
-        (config, "config.rs", &rust),
+    let result = find_clone_groups(&[
+        (validate_email, "validators/email.rs", &Rust),
+        (validate_phone, "validators/phone.rs", &Rust),
+        (handlers, "handlers.rs", &Rust),
+        (config, "config.rs", &Rust),
     ]);
 
-    insta::assert_snapshot!(snapshot(&groups));
+    insta::assert_snapshot!(snapshot(&result));
 }
 
 #[test]
 fn empty_entries_returns_no_clones() {
-    let groups = find_clones(&[], LOW_TOKEN_THRESHOLD).unwrap();
+    let groups = detect_clones(&[], LOW_TOKEN_THRESHOLD);
     assert!(groups.is_empty());
 }
