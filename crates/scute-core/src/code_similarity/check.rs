@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use serde::Deserialize;
+
 use super::detect::{CloneGroup, detect_clones as run_detection};
 use super::evaluate::{SourceContext, evaluate_groups};
 use super::javascript::JsFamily;
@@ -7,8 +9,6 @@ use super::parse_source;
 use super::rules::SimilarityRules;
 use super::rust::Rust;
 use super::tree::SourceTree;
-use serde::Deserialize;
-
 use crate::files;
 use crate::{Evaluation, ExecutionError, Thresholds};
 
@@ -57,6 +57,40 @@ pub struct Definition {
     pub exclude: Option<Vec<String>>,
 }
 
+impl Definition {
+    fn min_tokens(&self) -> usize {
+        self.min_tokens.unwrap_or(DEFAULT_MIN_TOKENS)
+    }
+
+    fn thresholds(&self) -> Thresholds {
+        self.thresholds.clone().unwrap_or(Thresholds {
+            warn: Some(DEFAULT_WARN),
+            fail: Some(DEFAULT_FAIL),
+        })
+    }
+
+    fn test_thresholds(&self) -> Thresholds {
+        self.test_thresholds.clone().unwrap_or(Thresholds {
+            warn: Some(DEFAULT_TEST_WARN),
+            fail: Some(DEFAULT_TEST_FAIL),
+        })
+    }
+
+    fn skip_ignored(&self) -> bool {
+        self.skip_ignored_files.unwrap_or(true)
+    }
+
+    fn exclude_patterns(&self) -> &[String] {
+        self.exclude.as_deref().unwrap_or_default()
+    }
+}
+
+struct SourceFile<'a> {
+    path: String,
+    content: String,
+    rules: &'a dyn SimilarityRules,
+}
+
 /// Check a directory for code duplication.
 ///
 /// Discovers supported source files (Rust, JavaScript, TypeScript), runs
@@ -88,12 +122,6 @@ pub fn check(
     focus_files: &[PathBuf],
     definition: &Definition,
 ) -> Result<Vec<Evaluation>, ExecutionError> {
-    let min_tokens = definition.min_tokens.unwrap_or(DEFAULT_MIN_TOKENS);
-    let thresholds = definition.thresholds.clone().unwrap_or(Thresholds {
-        warn: Some(DEFAULT_WARN),
-        fail: Some(DEFAULT_FAIL),
-    });
-
     let canonical_dir = files::validate_source_dir(source_dir).map_err(|e| ExecutionError {
         code: "invalid_target".into(),
         message: e.to_string(),
@@ -109,40 +137,25 @@ pub fn check(
         Err(errors) => return Ok(errors),
     };
 
-    let skip_ignored = definition.skip_ignored_files.unwrap_or(true);
-    let exclude = definition.exclude.as_deref().unwrap_or_default();
-    let sources = read_sources(&canonical_dir, skip_ignored, exclude, &languages);
+    let source_files = read_sources(&canonical_dir, definition, &languages);
+    let trees = parse_trees(&source_files)?;
+    let token_sets: Vec<Vec<_>> = trees.iter().map(SourceTree::tokens).collect();
+    let contexts = build_contexts(&trees, &token_sets, &source_files);
 
-    // Step 1: Parse
-    let trees = build_trees(&sources)?;
-    let tokens_per_source: Vec<Vec<_>> = trees.iter().map(SourceTree::tokens).collect();
-    let contexts: Vec<SourceContext> = trees
-        .iter()
-        .zip(&tokens_per_source)
-        .zip(&sources)
-        .map(|((tree, tokens), (_, content, _))| SourceContext {
-            tree,
-            tokens,
-            content,
-        })
-        .collect();
-
-    // Step 2: Detect
-    let clone_groups = run_detection(&tokens_per_source, min_tokens);
+    let clone_groups = run_detection(&token_sets, definition.min_tokens());
     let relevant = filter_by_focus(&clone_groups, &focus_files, &contexts);
-
-    // Step 3: Evaluate + Step 4: Format
-    let test_thresholds = definition.test_thresholds.clone().unwrap_or(Thresholds {
-        warn: Some(DEFAULT_TEST_WARN),
-        fail: Some(DEFAULT_TEST_FAIL),
-    });
-    let evaluations = evaluate_groups(&relevant, &contexts, &thresholds, &test_thresholds);
+    let evaluations = evaluate_groups(
+        &relevant,
+        &contexts,
+        &definition.thresholds(),
+        &definition.test_thresholds(),
+    );
 
     if evaluations.is_empty() {
         return Ok(vec![Evaluation::completed(
             source_dir.display().to_string(),
             0,
-            thresholds,
+            definition.thresholds(),
             vec![],
         )]);
     }
@@ -150,10 +163,27 @@ pub fn check(
     Ok(evaluations)
 }
 
+fn build_contexts<'a>(
+    trees: &'a [SourceTree],
+    token_sets: &'a [Vec<super::tree::Token>],
+    sources: &'a [SourceFile<'_>],
+) -> Vec<SourceContext<'a>> {
+    trees
+        .iter()
+        .zip(token_sets)
+        .zip(sources)
+        .map(|((tree, tokens), source)| SourceContext {
+            tree,
+            tokens,
+            content: &source.content,
+        })
+        .collect()
+}
+
 fn filter_by_focus<'a>(
     clone_groups: &'a [CloneGroup],
     focus_files: &[PathBuf],
-    sources: &[SourceContext],
+    contexts: &[SourceContext],
 ) -> Vec<&'a CloneGroup> {
     let focus_strings: Vec<String> = focus_files
         .iter()
@@ -165,7 +195,7 @@ fn filter_by_focus<'a>(
         .filter(|group| {
             focus_strings.is_empty()
                 || group.occurrences.iter().any(|occ| {
-                    focus_strings.contains(&sources[occ.source_idx].tree.source_id().to_string())
+                    focus_strings.contains(&contexts[occ.source_idx].tree.source_id().to_string())
                 })
         })
         .collect()
@@ -173,29 +203,33 @@ fn filter_by_focus<'a>(
 
 fn read_sources<'a>(
     dir: &Path,
-    skip_ignored: bool,
-    exclude: &[String],
+    definition: &Definition,
     languages: &'a crate::files::LanguageRegistry<dyn SimilarityRules>,
-) -> Vec<(String, String, &'a dyn SimilarityRules)> {
-    let mut result: Vec<(String, String, &dyn SimilarityRules)> =
-        files::walk_source_files(dir, skip_ignored, exclude)
-            .filter_map(|e| {
-                let rules = languages.for_path(e.path())?;
-                let content = std::fs::read_to_string(e.path()).ok()?;
-                Some((e.into_path().display().to_string(), content, rules))
-            })
-            .collect();
-    result.sort_by(|(a, _, _), (b, _, _)| a.cmp(b));
+) -> Vec<SourceFile<'a>> {
+    let mut result: Vec<SourceFile> = files::walk_source_files(
+        dir,
+        definition.skip_ignored(),
+        definition.exclude_patterns(),
+    )
+    .filter_map(|entry| {
+        let rules = languages.for_path(entry.path())?;
+        let content = std::fs::read_to_string(entry.path()).ok()?;
+        Some(SourceFile {
+            path: entry.into_path().display().to_string(),
+            content,
+            rules,
+        })
+    })
+    .collect();
+    result.sort_by(|a, b| a.path.cmp(&b.path));
     result
 }
 
-fn build_trees(
-    sources: &[(String, String, &dyn SimilarityRules)],
-) -> Result<Vec<SourceTree>, ExecutionError> {
+fn parse_trees(sources: &[SourceFile]) -> Result<Vec<SourceTree>, ExecutionError> {
     sources
         .iter()
-        .map(|(path, content, rules)| {
-            parse_source(content, path, Path::new(path), *rules).map_err(|e| ExecutionError {
+        .map(|source| {
+            parse_source(&source.content, &source.path, source.rules).map_err(|e| ExecutionError {
                 code: "detection_failed".into(),
                 message: e.to_string(),
                 recovery: "check that source files are valid".into(),

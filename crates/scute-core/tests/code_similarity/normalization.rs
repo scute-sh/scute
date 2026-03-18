@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use scute_core::code_similarity::rules::SimilarityRules;
 use scute_core::code_similarity::{javascript::JsFamily, parse_source, rust::Rust};
 
@@ -10,7 +8,7 @@ fn foo() {
     let x = 1;
 }";
 
-    let tree = parse_source(source, "a.rs", Path::new("a.rs"), &Rust).unwrap();
+    let tree = parse_source(source, "a.rs", &Rust).unwrap();
     let tokens = tree.tokens();
 
     assert_eq!(tokens.first().unwrap().start_line, 1);
@@ -18,7 +16,7 @@ fn foo() {
 }
 
 fn normalized_texts(source: &str, file: &str, rules: &dyn SimilarityRules) -> String {
-    let tree = parse_source(source, file, Path::new(file), rules).unwrap();
+    let tree = parse_source(source, file, rules).unwrap();
     tree.tokens()
         .iter()
         .map(|t| t.text.as_str())

@@ -25,8 +25,7 @@ impl std::error::Error for ParseError {}
 /// Returns `ParseError` if the parser fails to produce a parse tree.
 pub fn parse_source(
     source: &str,
-    source_id: &str,
-    path: &Path,
+    path: &str,
     rules: &dyn SimilarityRules,
 ) -> Result<SourceTree, ParseError> {
     let mut parser = TreeSitterParser::new();
@@ -34,9 +33,9 @@ pub fn parse_source(
         .parse(source, &rules.language())
         .map_err(|_| ParseError)?;
 
-    let mut builder = SourceTreeBuilder::new(source_id.to_string());
+    let mut builder = SourceTreeBuilder::new(path.to_string());
 
-    let has_file_context = if let Some(kind) = rules.classify_file(path) {
+    let has_file_context = if let Some(kind) = rules.classify_file(Path::new(path)) {
         builder.open_container(kind);
         true
     } else {
@@ -140,12 +139,7 @@ mod tests {
 
     #[test]
     fn syntax_errors_do_not_panic() {
-        let result = parse_source(
-            "fn f(x: i32 -> { x + }",
-            "broken.rs",
-            Path::new("broken.rs"),
-            &Rust,
-        );
+        let result = parse_source("fn f(x: i32 -> { x + }", "broken.rs", &Rust);
 
         assert!(result.is_ok()); // tree-sitter recovers, never errors
     }

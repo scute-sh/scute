@@ -102,8 +102,6 @@ mod tests {
         parse_with(source, path, &Rust)
     }
 
-    // -- classify_file --
-
     #[test]
     fn classify_file_marks_tests_directory_as_test_region() {
         let (tree, tokens) = parse("fn f() {}", "tests/a.rs");
@@ -115,8 +113,6 @@ mod tests {
         let (tree, tokens) = parse("fn f() {}", "src/a.rs");
         assert!(!tree.is_in_test_region(tokens[0].node_index));
     }
-
-    // -- contract detection --
 
     #[test]
     fn trait_impl_creates_contract_container() {
@@ -144,8 +140,6 @@ mod tests {
         let (tree, tokens) = parse("fn render() -> String { String::new() }", "a.rs");
         assert_eq!(tree.enclosing_contract(tokens[0].node_index), None);
     }
-
-    // -- test region detection --
 
     #[test]
     fn cfg_test_module_creates_test_region() {
@@ -217,8 +211,6 @@ mod tests {
         );
         assert!(tree.is_in_test_region(tokens.last().unwrap().node_index));
     }
-
-    // -- token classification --
 
     #[test]
     fn normalizes_identifiers_and_literals() {

@@ -3,9 +3,6 @@ use super::tree::{SourceTree, Token};
 use crate::{Evaluation, Thresholds};
 
 /// One source file's parsed tree, tokens, and raw content, bundled together.
-///
-/// Replaces the parallel-array pattern where `trees[i]`, `tokens[i]`, and
-/// `contents[i]` were passed separately and indexed by `source_idx`.
 pub(super) struct SourceContext<'a> {
     pub tree: &'a SourceTree,
     pub tokens: &'a [Token],
@@ -57,37 +54,35 @@ pub fn occurrence_tokens<'a>(
     &tokens[occ.token_start..end.min(tokens.len())]
 }
 
-/// Returns `true` if every occurrence's tokens all live inside an
-/// implementation of the same contract.
 fn is_same_contract_group(group: &CloneGroup, sources: &[SourceContext]) -> bool {
-    let mut contract: Option<&str> = None;
-    for occ in &group.occurrences {
-        let src = &sources[occ.source_idx];
+    all_same(group.occurrences.iter().map(|occ| {
         let matched_tokens = occurrence_tokens(occ, group.token_count, sources);
-        let Some(name) = all_same_contract(src.tree, matched_tokens) else {
-            return false;
-        };
-        match contract {
-            None => contract = Some(name),
-            Some(existing) if existing == name => {}
-            Some(_) => return false,
-        }
-    }
-    contract.is_some()
+        all_same_contract(sources[occ.source_idx].tree, matched_tokens)
+    }))
+    .is_some()
 }
 
-/// If all tokens are inside the same contract, return its name.
 fn all_same_contract<'a>(tree: &'a SourceTree, tokens: &[Token]) -> Option<&'a str> {
-    let mut name: Option<&str> = None;
-    for tok in tokens {
-        let contract = tree.enclosing_contract(tok.node_index)?;
-        match name {
-            None => name = Some(contract),
-            Some(existing) if existing == contract => {}
+    all_same(
+        tokens
+            .iter()
+            .map(|tok| tree.enclosing_contract(tok.node_index)),
+    )
+}
+
+/// Returns `Some(value)` if all items produce the same value.
+/// Returns `None` if any item produces `None`, or if values differ.
+fn all_same<V: PartialEq>(iter: impl Iterator<Item = Option<V>>) -> Option<V> {
+    let mut result: Option<V> = None;
+    for item in iter {
+        let value = item?;
+        match &result {
+            None => result = Some(value),
+            Some(previous) if *previous == value => {}
             Some(_) => return None,
         }
     }
-    name
+    result
 }
 
 fn is_test_only_group(group: &CloneGroup, sources: &[SourceContext]) -> bool {

@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use scute_core::code_similarity::{
     CloneGroup, Token, detect_clones, parse_source, rules::SimilarityRules, tree::SourceTree,
 };
@@ -17,7 +15,7 @@ pub fn parse_and_detect(
     let mut trees = Vec::new();
 
     for (source, path, rules) in files {
-        let tree = parse_source(source, path, Path::new(path), *rules).unwrap();
+        let tree = parse_source(source, path, *rules).unwrap();
         trees.push(tree);
     }
 

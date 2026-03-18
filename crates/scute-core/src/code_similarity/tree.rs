@@ -155,28 +155,27 @@ impl SourceTree {
     /// Walk up from a node to find the enclosing Contract name, if any.
     #[must_use]
     pub fn enclosing_contract(&self, node_index: usize) -> Option<&str> {
-        let mut idx = node_index;
-        loop {
-            match &self.nodes[idx].kind {
-                NodeKind::Contract { name } => return Some(name),
-                _ => idx = self.nodes[idx].parent?,
-            }
-        }
+        self.ancestors(node_index).find_map(|kind| match kind {
+            NodeKind::Contract { name } => Some(name.as_str()),
+            _ => None,
+        })
     }
 
     /// Walk up from a node to check if it's inside a `TestRegion`.
     #[must_use]
     pub fn is_in_test_region(&self, node_index: usize) -> bool {
-        let mut idx = node_index;
-        loop {
-            if matches!(&self.nodes[idx].kind, NodeKind::TestRegion) {
-                return true;
-            }
-            let Some(parent) = self.nodes[idx].parent else {
-                return false;
-            };
-            idx = parent;
-        }
+        self.ancestors(node_index)
+            .any(|kind| matches!(kind, NodeKind::TestRegion))
+    }
+
+    fn ancestors(&self, node_index: usize) -> impl Iterator<Item = &NodeKind> {
+        let mut idx = Some(node_index);
+        std::iter::from_fn(move || {
+            let i = idx?;
+            let node = &self.nodes[i];
+            idx = node.parent;
+            Some(&node.kind)
+        })
     }
 
     fn collect_tokens(&self, idx: usize, result: &mut Vec<Token>) {

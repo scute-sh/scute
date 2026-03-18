@@ -18,14 +18,13 @@ pub use tree::Token;
 pub(crate) mod test_support {
     use super::rules::SimilarityRules;
     use super::tree::{SourceTree, Token};
-    use std::path::Path;
 
     pub fn parse_with(
         source: &str,
         path: &str,
         rules: &dyn SimilarityRules,
     ) -> (SourceTree, Vec<Token>) {
-        let tree = super::parse_source(source, path, Path::new(path), rules).unwrap();
+        let tree = super::parse_source(source, path, rules).unwrap();
         let tokens = tree.tokens();
         (tree, tokens)
     }

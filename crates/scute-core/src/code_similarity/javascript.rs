@@ -39,12 +39,12 @@ impl SimilarityRules for JsFamily {
 
     fn classify_file(&self, path: &Path) -> Option<NodeKind> {
         let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
-        let is_test = Path::new(stem)
-            .extension()
-            .is_some_and(|ext| ext == "test" || ext == "spec")
-            || path.components().any(|c| c.as_os_str() == "__tests__");
+        let has_test_suffix = stem
+            .rsplit_once('.')
+            .is_some_and(|(_, suffix)| suffix == "test" || suffix == "spec");
+        let in_tests_directory = path.components().any(|c| c.as_os_str() == "__tests__");
 
-        if is_test {
+        if has_test_suffix || in_tests_directory {
             Some(NodeKind::TestRegion)
         } else {
             None
@@ -96,8 +96,6 @@ mod tests {
         parse_with(source, path, &lang)
     }
 
-    // -- classify_file --
-
     #[test]
     fn classify_file_marks_dot_test_ts_as_test_region() {
         let (tree, tokens) = parse("function f() {}", "src/app.test.ts");
@@ -127,8 +125,6 @@ mod tests {
         let (tree, tokens) = parse("function f() {}", "src/Button.test.tsx");
         assert!(tree.is_in_test_region(tokens[0].node_index));
     }
-
-    // -- token classification: identifiers --
 
     #[test]
     fn normalizes_identifiers_to_id_placeholder() {
@@ -170,8 +166,6 @@ mod tests {
         );
     }
 
-    // -- token classification: literals --
-
     #[test_case::test_case("\"hello\"", "a.ts" ; "string")]
     #[test_case::test_case("`hello`", "a.ts" ; "template string")]
     #[test_case::test_case("42", "a.ts" ; "number")]
@@ -188,8 +182,6 @@ mod tests {
         let (_, tokens) = parse("const r = /abc/g;", "a.js");
         assert!(token_texts(&tokens).contains(&"$LIT"));
     }
-
-    // -- token classification: stripped nodes --
 
     #[test]
     fn strips_comments() {

@@ -26,31 +26,36 @@ fn format_target(occ: &Occurrence, sources: &[SourceContext]) -> String {
 }
 
 fn format_evidence(occ: &Occurrence, token_count: usize, sources: &[SourceContext]) -> Evidence {
-    let src = &sources[occ.source_idx];
+    let source = &sources[occ.source_idx];
     let matched_tokens = occurrence_tokens(occ, token_count, sources);
 
     let start_line = matched_tokens.first().map_or(0, |t| t.start_line);
     let end_line = matched_tokens.last().map_or(0, |t| t.end_line);
 
-    let snippet = src
-        .content
-        .lines()
-        .skip(start_line.saturating_sub(1))
-        .take(end_line.saturating_sub(start_line) + 1)
-        .map(str::trim)
-        .find(|line| !is_trivial_line(line));
-
-    let found = match snippet {
+    let found = match representative_line(source.content, start_line, end_line) {
         Some(line) => format!("{token_count} duplicated tokens, e.g. `{line}`"),
         None => format!("{token_count} duplicated tokens"),
     };
 
     Evidence {
         rule: None,
-        location: Some(format!("{}:{start_line}-{end_line}", src.tree.source_id())),
+        location: Some(format!(
+            "{}:{start_line}-{end_line}",
+            source.tree.source_id()
+        )),
         found,
         expected: None,
     }
+}
+
+/// Pick the first non-trivial line from the given range as a representative snippet.
+fn representative_line(content: &str, start_line: usize, end_line: usize) -> Option<&str> {
+    content
+        .lines()
+        .skip(start_line.saturating_sub(1))
+        .take(end_line.saturating_sub(start_line) + 1)
+        .map(str::trim)
+        .find(|line| !is_trivial_line(line))
 }
 
 /// A line is "trivial" if it's only punctuation and whitespace (closing braces,
@@ -65,8 +70,6 @@ mod tests {
     use super::*;
     use crate::Outcome;
     use crate::code_similarity::tree::SourceTreeBuilder;
-
-    // -- is_trivial_line --
 
     #[test]
     fn empty_string_is_trivial() {
@@ -92,8 +95,6 @@ mod tests {
     fn fn_declaration_is_not_trivial() {
         assert!(!is_trivial_line("fn foo()"));
     }
-
-    // -- format_evaluation --
 
     /// Format a single-source clone and return (observed, evidence).
     fn format_single_source(
