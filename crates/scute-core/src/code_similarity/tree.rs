@@ -25,7 +25,7 @@ pub enum NodeKind {
     },
     TestRegion,
     Contract {
-        name: String,
+        names: Vec<String>,
     },
     Token {
         text: String,
@@ -155,9 +155,9 @@ impl SourceTree {
     }
 
     fn ancestor_contracts(&self, node_index: usize) -> impl Iterator<Item = &str> {
-        self.ancestors(node_index).filter_map(|kind| match kind {
-            NodeKind::Contract { name } => Some(name.as_str()),
-            _ => None,
+        self.ancestors(node_index).flat_map(|kind| match kind {
+            NodeKind::Contract { names } => names.iter().map(String::as_str).collect(),
+            _ => Vec::new(),
         })
     }
 
@@ -264,7 +264,7 @@ mod tests {
         let mut b = SourceTreeBuilder::new("a.rs".to_string());
         b.add_token("fn".to_string(), 1, 1);
         b.open_container(NodeKind::Contract {
-            name: "Render".to_string(),
+            names: vec!["Render".to_string()],
         });
         b.add_token("impl".to_string(), 2, 2);
         b.close_container();
@@ -298,7 +298,7 @@ mod tests {
         let mut b = SourceTreeBuilder::new("a.rs".to_string());
         b.open_container(NodeKind::TestRegion);
         b.open_container(NodeKind::Contract {
-            name: "Render".to_string(),
+            names: vec!["Render".to_string()],
         });
         b.add_token("fn".to_string(), 1, 1);
         b.add_token("$ID".to_string(), 1, 1);
@@ -321,10 +321,10 @@ mod tests {
         let _tree = b.build();
     }
 
-    fn contract_tree(path: &str, contract: &str, token_texts: &[&str]) -> SourceTree {
+    fn contract_tree(path: &str, contracts: &[&str], token_texts: &[&str]) -> SourceTree {
         let mut b = SourceTreeBuilder::new(path.to_string());
         b.open_container(NodeKind::Contract {
-            name: contract.to_string(),
+            names: contracts.iter().map(ToString::to_string).collect(),
         });
         for (i, text) in token_texts.iter().enumerate() {
             b.add_token(text.to_string(), i + 1, i + 1);
@@ -335,8 +335,8 @@ mod tests {
 
     #[test]
     fn all_share_contract_true_when_same_contract_across_trees() {
-        let tree_a = contract_tree("a.rs", "Render", &["fn", "$ID"]);
-        let tree_b = contract_tree("b.rs", "Render", &["fn", "$ID"]);
+        let tree_a = contract_tree("a.rs", &["Render"], &["fn", "$ID"]);
+        let tree_b = contract_tree("b.rs", &["Render"], &["fn", "$ID"]);
         let tokens_a = tree_a.tokens();
         let tokens_b = tree_b.tokens();
 
@@ -348,8 +348,8 @@ mod tests {
 
     #[test]
     fn all_share_contract_false_when_different_contracts() {
-        let tree_a = contract_tree("a.rs", "Render", &["fn", "$ID"]);
-        let tree_b = contract_tree("b.rs", "Format", &["fn", "$ID"]);
+        let tree_a = contract_tree("a.rs", &["Render"], &["fn", "$ID"]);
+        let tree_b = contract_tree("b.rs", &["Format"], &["fn", "$ID"]);
         let tokens_a = tree_a.tokens();
         let tokens_b = tree_b.tokens();
 
@@ -361,8 +361,34 @@ mod tests {
 
     #[test]
     fn all_share_contract_false_when_no_contract() {
-        let tree_a = contract_tree("a.rs", "Render", &["fn", "$ID"]);
+        let tree_a = contract_tree("a.rs", &["Render"], &["fn", "$ID"]);
         let tree_b = source_with_tokens("b.rs", &[("fn", 1), ("$ID", 1)]);
+        let tokens_a = tree_a.tokens();
+        let tokens_b = tree_b.tokens();
+
+        assert!(!all_share_contract(&[
+            (&tree_a, &tokens_a),
+            (&tree_b, &tokens_b),
+        ]));
+    }
+
+    #[test]
+    fn all_share_contract_true_when_overlapping_multi_contract() {
+        let tree_a = contract_tree("a.ts", &["Renderer", "Base"], &["fn", "$ID"]);
+        let tree_b = contract_tree("b.ts", &["Formatter", "Base"], &["fn", "$ID"]);
+        let tokens_a = tree_a.tokens();
+        let tokens_b = tree_b.tokens();
+
+        assert!(all_share_contract(&[
+            (&tree_a, &tokens_a),
+            (&tree_b, &tokens_b),
+        ]));
+    }
+
+    #[test]
+    fn all_share_contract_false_when_no_overlap_in_multi_contract() {
+        let tree_a = contract_tree("a.ts", &["Renderer", "Serializable"], &["fn", "$ID"]);
+        let tree_b = contract_tree("b.ts", &["Formatter", "Disposable"], &["fn", "$ID"]);
         let tokens_a = tree_a.tokens();
         let tokens_b = tree_b.tokens();
 

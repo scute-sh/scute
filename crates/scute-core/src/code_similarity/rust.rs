@@ -58,7 +58,7 @@ impl SimilarityRules for Rust {
 fn classify_impl(node: &tree_sitter::Node, src: &[u8]) -> Option<NodeKind> {
     let trait_node = node.child_by_field_name("trait")?;
     let name = trait_node.utf8_text(src).ok()?.to_string();
-    Some(NodeKind::Contract { name })
+    Some(NodeKind::Contract { names: vec![name] })
 }
 
 /// Matches `#[cfg(test)]` and compound forms like `#[cfg(all(test, ...))]`,

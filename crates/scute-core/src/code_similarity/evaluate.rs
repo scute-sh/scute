@@ -112,7 +112,7 @@ mod tests {
     #[allow(clippy::unnecessary_wraps)]
     fn contract(name: &str) -> Option<NodeKind> {
         Some(NodeKind::Contract {
-            name: name.to_string(),
+            names: vec![name.to_string()],
         })
     }
 

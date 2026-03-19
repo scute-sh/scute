@@ -86,57 +86,83 @@ impl SimilarityRules for JsFamily {
 /// (expression). Returns None for classes without heritage, which the
 /// walker treats as unclassified (recurse into body).
 ///
-/// Prioritizes `implements` over `extends` when both are present.
 fn classify_class(node: &tree_sitter::Node, src: &[u8]) -> Option<NodeKind> {
     let mut cursor = node.walk();
     let heritage = node
         .children(&mut cursor)
         .find(|c| c.kind() == "class_heritage")?;
 
-    let mut h_cursor = heritage.walk();
-    // TS path: look for implements_clause first, then extends_clause
-    let clause = heritage
-        .children(&mut h_cursor)
-        .find(|c| c.kind() == "implements_clause")
-        .or_else(|| {
-            let mut c2 = heritage.walk();
-            heritage
-                .children(&mut c2)
-                .find(|c| c.kind() == "extends_clause")
-        });
-
-    let name = if let Some(clause) = clause {
-        first_type_name(&clause, src)?
-    } else {
-        // JS path: class_heritage directly contains the identifier
-        first_type_name(&heritage, src)?
-    };
-
-    Some(NodeKind::Contract { name })
+    let names = collect_contract_names(&heritage, src);
+    if names.is_empty() {
+        return None;
+    }
+    Some(NodeKind::Contract { names })
 }
 
-/// Extract the base type name from the first named child of a node.
+fn is_heritage_clause(kind: &str) -> bool {
+    kind == "implements_clause" || kind == "extends_clause"
+}
+
+fn collect_contract_names(heritage: &tree_sitter::Node, src: &[u8]) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut cursor = heritage.walk();
+
+    // TS path: collect names from implements_clause and extends_clause
+    for child in heritage.children(&mut cursor) {
+        if is_heritage_clause(child.kind()) {
+            collect_type_names(&child, src, &mut names);
+        }
+    }
+
+    // JS path: class_heritage directly contains the identifier
+    if names.is_empty()
+        && let Some(name) = first_type_name(heritage, src)
+    {
+        names.push(name);
+    }
+
+    names
+}
+
+/// Collect all type names from a clause (`implements_clause` or `extends_clause`).
 ///
-/// Handles both plain identifiers (`Renderer`) and generic types
-/// (`Renderer<string>`) by stripping type parameters.
+/// Handles `implements A, B` by iterating all named children.
+/// Strips generic type parameters so `Renderer<string>` becomes `Renderer`.
+fn collect_type_names(clause: &tree_sitter::Node, src: &[u8], out: &mut Vec<String>) {
+    let mut cursor = clause.walk();
+    for child in clause.children(&mut cursor) {
+        if !child.is_named() {
+            continue;
+        }
+        if let Some(name) = extract_type_name(&child, src) {
+            out.push(name);
+        }
+    }
+}
+
+/// Extract a type name from a single node, stripping generic parameters.
+///
+/// `Renderer` → "Renderer", `Renderer<string>` → "Renderer".
+fn extract_type_name(node: &tree_sitter::Node, src: &[u8]) -> Option<String> {
+    if node.kind() == "generic_type" {
+        let mut cursor = node.walk();
+        let base = node
+            .children(&mut cursor)
+            .find(tree_sitter::Node::is_named)?;
+        return base.utf8_text(src).ok().map(String::from);
+    }
+    node.utf8_text(src).ok().map(String::from)
+}
+
+/// Extract the first type name from a node's named children.
+///
+/// Used for JS `class_heritage` which directly contains the identifier.
 fn first_type_name(node: &tree_sitter::Node, src: &[u8]) -> Option<String> {
     let mut cursor = node.walk();
     let name_node = node
         .children(&mut cursor)
         .find(tree_sitter::Node::is_named)?;
-
-    // Generic types (e.g. `Renderer<string>`) wrap the base name in a
-    // nested `type_identifier` or `identifier`. Extract the base name
-    // so that `Renderer<string>` and `Renderer<number>` match.
-    if name_node.kind() == "generic_type" {
-        let mut gc = name_node.walk();
-        let base = name_node
-            .children(&mut gc)
-            .find(tree_sitter::Node::is_named)?;
-        return base.utf8_text(src).ok().map(String::from);
-    }
-
-    name_node.utf8_text(src).ok().map(String::from)
+    extract_type_name(&name_node, src)
 }
 
 #[cfg(test)]
