@@ -80,12 +80,12 @@ impl SimilarityRules for JsFamily {
     }
 }
 
-/// Extract the contract name from a class's heritage clause.
+/// Extract contract names from a class's heritage clause.
 ///
 /// Covers `class_declaration`, `abstract_class_declaration`, and `class`
-/// (expression). Returns None for classes without heritage, which the
-/// walker treats as unclassified (recurse into body).
-///
+/// (expression). Collects all names from `implements` and `extends` clauses.
+/// Returns None for classes without heritage, which the walker treats as
+/// unclassified (recurse into body).
 fn classify_class(node: &tree_sitter::Node, src: &[u8]) -> Option<NodeKind> {
     let mut cursor = node.walk();
     let heritage = node
@@ -332,16 +332,24 @@ mod tests {
         assert_eq!(all_share_contract(&[(&tree, &tokens)]), has_contract);
     }
 
-    #[test]
-    fn generic_type_params_ignored_in_contract_name() {
-        let (tree_a, tokens_a) = parse(
-            "class A implements Renderer<string> { render(): string { return ''; } }",
-            "a.ts",
-        );
-        let (tree_b, tokens_b) = parse(
-            "class B implements Renderer<number> { render(): number { return 0; } }",
-            "b.ts",
-        );
+    #[test_case::test_case(
+        "class A implements Renderer, Serializable { render(): string { return ''; } }",
+        "class B implements Renderer { render(): string { return ''; } }"
+        ; "multiple implements shares contract with single"
+    )]
+    #[test_case::test_case(
+        "class A extends Base implements Renderer { render(): string { return ''; } }",
+        "class B extends Base implements Formatter { format(): string { return ''; } }"
+        ; "extends plus implements shares contract via either"
+    )]
+    #[test_case::test_case(
+        "class A implements Renderer<string> { render(): string { return ''; } }",
+        "class B implements Renderer<number> { render(): number { return 0; } }"
+        ; "generic type params ignored in contract name"
+    )]
+    fn recognizes_shared_contract_across_files(source_a: &str, source_b: &str) {
+        let (tree_a, tokens_a) = parse(source_a, "a.ts");
+        let (tree_b, tokens_b) = parse(source_b, "b.ts");
         assert!(all_share_contract(&[
             (&tree_a, &tokens_a),
             (&tree_b, &tokens_b),

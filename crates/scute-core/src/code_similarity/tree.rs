@@ -155,10 +155,12 @@ impl SourceTree {
     }
 
     fn ancestor_contracts(&self, node_index: usize) -> impl Iterator<Item = &str> {
-        self.ancestors(node_index).flat_map(|kind| match kind {
-            NodeKind::Contract { names } => names.iter().map(String::as_str).collect(),
-            _ => Vec::new(),
-        })
+        self.ancestors(node_index)
+            .filter_map(|kind| match kind {
+                NodeKind::Contract { names } => Some(names),
+                _ => None,
+            })
+            .flat_map(|names| names.iter().map(String::as_str))
     }
 
     /// Walk up from a node to check if it's inside a `TestRegion`.
