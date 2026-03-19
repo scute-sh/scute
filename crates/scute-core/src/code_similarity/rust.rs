@@ -58,7 +58,7 @@ impl SimilarityRules for Rust {
 fn classify_impl(node: &tree_sitter::Node, src: &[u8]) -> Option<NodeKind> {
     let trait_node = node.child_by_field_name("trait")?;
     let name = trait_node.utf8_text(src).ok()?.to_string();
-    Some(NodeKind::Contract { name })
+    Some(NodeKind::Contract { names: vec![name] })
 }
 
 /// Matches `#[cfg(test)]` and compound forms like `#[cfg(all(test, ...))]`,
@@ -91,6 +91,7 @@ fn has_preceding_attr(node: &tree_sitter::Node, src: &[u8], pred: impl Fn(&str) 
 mod tests {
     use super::*;
     use crate::code_similarity::test_support::{parse_with, token_texts};
+    use crate::code_similarity::tree::all_share_contract;
 
     fn parse(
         source: &str,
@@ -120,10 +121,7 @@ mod tests {
             "impl Render for Html {\n    fn render(&self) -> String { String::new() }\n}",
             "a.rs",
         );
-        assert_eq!(
-            tree.enclosing_contract(tokens[0].node_index),
-            Some("Render")
-        );
+        assert!(all_share_contract(&[(&tree, &tokens)]));
     }
 
     #[test]
@@ -132,13 +130,13 @@ mod tests {
             "impl Html {\n    fn render(&self) -> String { String::new() }\n}",
             "a.rs",
         );
-        assert_eq!(tree.enclosing_contract(tokens[0].node_index), None);
+        assert!(!all_share_contract(&[(&tree, &tokens)]));
     }
 
     #[test]
     fn free_function_has_no_contract() {
         let (tree, tokens) = parse("fn render() -> String { String::new() }", "a.rs");
-        assert_eq!(tree.enclosing_contract(tokens[0].node_index), None);
+        assert!(!all_share_contract(&[(&tree, &tokens)]));
     }
 
     #[test]

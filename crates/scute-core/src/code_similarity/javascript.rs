@@ -51,8 +51,14 @@ impl SimilarityRules for JsFamily {
         }
     }
 
-    fn classify_node(&self, node: tree_sitter::Node, _src: &[u8]) -> Option<NodeKind> {
+    fn classify_node(&self, node: tree_sitter::Node, src: &[u8]) -> Option<NodeKind> {
         match node.kind() {
+            // Returns None for classes without heritage, letting the walker
+            // recurse into the class body as unclassified tokens.
+            "class_declaration" | "abstract_class_declaration" | "class" => {
+                classify_class(&node, src)
+            }
+
             // Identifiers
             "identifier"
             | "shorthand_property_identifier"
@@ -74,12 +80,98 @@ impl SimilarityRules for JsFamily {
     }
 }
 
+/// Extract contract names from a class's heritage clause.
+///
+/// Covers `class_declaration`, `abstract_class_declaration`, and `class`
+/// (expression). Collects all names from `implements` and `extends` clauses.
+/// Returns None for classes without heritage, which the walker treats as
+/// unclassified (recurse into body).
+fn classify_class(node: &tree_sitter::Node, src: &[u8]) -> Option<NodeKind> {
+    let mut cursor = node.walk();
+    let heritage = node
+        .children(&mut cursor)
+        .find(|c| c.kind() == "class_heritage")?;
+
+    let names = collect_contract_names(&heritage, src);
+    if names.is_empty() {
+        return None;
+    }
+    Some(NodeKind::Contract { names })
+}
+
+fn is_heritage_clause(kind: &str) -> bool {
+    kind == "implements_clause" || kind == "extends_clause"
+}
+
+fn collect_contract_names(heritage: &tree_sitter::Node, src: &[u8]) -> Vec<String> {
+    let mut names = Vec::new();
+    let mut cursor = heritage.walk();
+
+    // TS path: collect names from implements_clause and extends_clause
+    for child in heritage.children(&mut cursor) {
+        if is_heritage_clause(child.kind()) {
+            collect_type_names(&child, src, &mut names);
+        }
+    }
+
+    // JS path: class_heritage directly contains the identifier
+    if names.is_empty()
+        && let Some(name) = first_type_name(heritage, src)
+    {
+        names.push(name);
+    }
+
+    names
+}
+
+/// Collect all type names from a clause (`implements_clause` or `extends_clause`).
+///
+/// Handles `implements A, B` by iterating all named children.
+/// Strips generic type parameters so `Renderer<string>` becomes `Renderer`.
+fn collect_type_names(clause: &tree_sitter::Node, src: &[u8], out: &mut Vec<String>) {
+    let mut cursor = clause.walk();
+    for child in clause.children(&mut cursor) {
+        if !child.is_named() {
+            continue;
+        }
+        if let Some(name) = extract_type_name(&child, src) {
+            out.push(name);
+        }
+    }
+}
+
+/// Extract a type name from a single node, stripping generic parameters.
+///
+/// `Renderer` → "Renderer", `Renderer<string>` → "Renderer".
+fn extract_type_name(node: &tree_sitter::Node, src: &[u8]) -> Option<String> {
+    if node.kind() == "generic_type" {
+        let mut cursor = node.walk();
+        let base = node
+            .children(&mut cursor)
+            .find(tree_sitter::Node::is_named)?;
+        return base.utf8_text(src).ok().map(String::from);
+    }
+    node.utf8_text(src).ok().map(String::from)
+}
+
+/// Extract the first type name from a node's named children.
+///
+/// Used for JS `class_heritage` which directly contains the identifier.
+fn first_type_name(node: &tree_sitter::Node, src: &[u8]) -> Option<String> {
+    let mut cursor = node.walk();
+    let name_node = node
+        .children(&mut cursor)
+        .find(tree_sitter::Node::is_named)?;
+    extract_type_name(&name_node, src)
+}
+
 #[cfg(test)]
 mod tests {
     use std::path::Path;
 
     use super::*;
     use crate::code_similarity::test_support::{parse_with, token_texts};
+    use crate::code_similarity::tree::all_share_contract;
 
     fn parse(
         source: &str,
@@ -201,5 +293,66 @@ mod tests {
         let texts = token_texts(&tokens);
         assert!(!texts.contains(&"@"));
         assert!(texts.contains(&"class"));
+    }
+
+    #[test_case::test_case(
+        "class Html implements Renderer { render(): string { return ''; } }",
+        "a.ts", true ; "ts implements"
+    )]
+    #[test_case::test_case(
+        "class Html extends AbstractRenderer { render(): string { return ''; } }",
+        "a.ts", true ; "ts extends"
+    )]
+    #[test_case::test_case(
+        "class Html extends Base { render() { return ''; } }",
+        "a.js", true ; "js extends"
+    )]
+    #[test_case::test_case(
+        "abstract class Base implements Renderer { abstract render(): string; }",
+        "a.ts", true ; "ts abstract class"
+    )]
+    #[test_case::test_case(
+        "class Html implements Renderer { render(): string { return ''; } }",
+        "a.tsx", true ; "tsx implements"
+    )]
+    #[test_case::test_case(
+        "class Html implements Renderer<string> { render(): string { return ''; } }",
+        "a.ts", true ; "ts generic implements"
+    )]
+    #[test_case::test_case(
+        "class Foo { bar(): string { return ''; } }",
+        "a.ts", false ; "plain class"
+    )]
+    #[test_case::test_case(
+        "function render(): string { return ''; }",
+        "a.ts", false ; "free function"
+    )]
+    fn extracts_contract_from_class(source: &str, path: &str, has_contract: bool) {
+        let (tree, tokens) = parse(source, path);
+        assert_eq!(all_share_contract(&[(&tree, &tokens)]), has_contract);
+    }
+
+    #[test_case::test_case(
+        "class A implements Renderer, Serializable { render(): string { return ''; } }",
+        "class B implements Renderer { render(): string { return ''; } }"
+        ; "multiple implements shares contract with single"
+    )]
+    #[test_case::test_case(
+        "class A extends Base implements Renderer { render(): string { return ''; } }",
+        "class B extends Base implements Formatter { format(): string { return ''; } }"
+        ; "extends plus implements shares contract via either"
+    )]
+    #[test_case::test_case(
+        "class A implements Renderer<string> { render(): string { return ''; } }",
+        "class B implements Renderer<number> { render(): number { return 0; } }"
+        ; "generic type params ignored in contract name"
+    )]
+    fn recognizes_shared_contract_across_files(source_a: &str, source_b: &str) {
+        let (tree_a, tokens_a) = parse(source_a, "a.ts");
+        let (tree_b, tokens_b) = parse(source_b, "b.ts");
+        assert!(all_share_contract(&[
+            (&tree_a, &tokens_a),
+            (&tree_b, &tokens_b),
+        ]));
     }
 }

@@ -1,3 +1,5 @@
+use std::collections::BTreeSet;
+
 /// A language-agnostic source tree for code similarity analysis.
 ///
 /// Arena-based: nodes live in a flat `Vec`, linked by indices. Tokens are
@@ -23,7 +25,7 @@ pub enum NodeKind {
     },
     TestRegion,
     Contract {
-        name: String,
+        names: Vec<String>,
     },
     Token {
         text: String,
@@ -152,13 +154,13 @@ impl SourceTree {
         result
     }
 
-    /// Walk up from a node to find the enclosing Contract name, if any.
-    #[must_use]
-    pub fn enclosing_contract(&self, node_index: usize) -> Option<&str> {
-        self.ancestors(node_index).find_map(|kind| match kind {
-            NodeKind::Contract { name } => Some(name.as_str()),
-            _ => None,
-        })
+    fn ancestor_contracts(&self, node_index: usize) -> impl Iterator<Item = &str> {
+        self.ancestors(node_index)
+            .filter_map(|kind| match kind {
+                NodeKind::Contract { names } => Some(names),
+                _ => None,
+            })
+            .flat_map(|names| names.iter().map(String::as_str))
     }
 
     /// Walk up from a node to check if it's inside a `TestRegion`.
@@ -200,6 +202,43 @@ impl SourceTree {
     }
 }
 
+/// Returns true if all (tree, tokens) pairs share at least one common contract.
+///
+/// Each pair's tokens must all be enclosed by the same contract(s).
+/// Then across pairs, there must be at least one contract name in common.
+/// Returns false if any pair has tokens outside a contract.
+#[must_use]
+pub fn all_share_contract(pairs: &[(&SourceTree, &[Token])]) -> bool {
+    let mut common: Option<BTreeSet<&str>> = None;
+    for &(tree, tokens) in pairs {
+        let contracts = contracts_enclosing(tree, tokens);
+        if contracts.is_empty() {
+            return false;
+        }
+        common = Some(match common {
+            None => contracts,
+            Some(prev) => prev.intersection(&contracts).copied().collect(),
+        });
+    }
+    common.is_some_and(|c| !c.is_empty())
+}
+
+/// Returns the contracts that enclose ALL given tokens within a single tree.
+fn contracts_enclosing<'a>(tree: &'a SourceTree, tokens: &[Token]) -> BTreeSet<&'a str> {
+    let mut result: Option<BTreeSet<&str>> = None;
+    for tok in tokens {
+        let tok_contracts: BTreeSet<&str> = tree.ancestor_contracts(tok.node_index).collect();
+        if tok_contracts.is_empty() {
+            return BTreeSet::new();
+        }
+        result = Some(match result {
+            None => tok_contracts,
+            Some(prev) => prev.intersection(&tok_contracts).copied().collect(),
+        });
+    }
+    result.unwrap_or_default()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -227,7 +266,7 @@ mod tests {
         let mut b = SourceTreeBuilder::new("a.rs".to_string());
         b.add_token("fn".to_string(), 1, 1);
         b.open_container(NodeKind::Contract {
-            name: "Render".to_string(),
+            names: vec!["Render".to_string()],
         });
         b.add_token("impl".to_string(), 2, 2);
         b.close_container();
@@ -261,7 +300,7 @@ mod tests {
         let mut b = SourceTreeBuilder::new("a.rs".to_string());
         b.open_container(NodeKind::TestRegion);
         b.open_container(NodeKind::Contract {
-            name: "Render".to_string(),
+            names: vec!["Render".to_string()],
         });
         b.add_token("fn".to_string(), 1, 1);
         b.add_token("$ID".to_string(), 1, 1);
@@ -282,5 +321,82 @@ mod tests {
         b.open_container(NodeKind::TestRegion);
         b.add_token("fn".to_string(), 1, 1);
         let _tree = b.build();
+    }
+
+    fn contract_tree(path: &str, contracts: &[&str], token_texts: &[&str]) -> SourceTree {
+        let mut b = SourceTreeBuilder::new(path.to_string());
+        b.open_container(NodeKind::Contract {
+            names: contracts.iter().map(ToString::to_string).collect(),
+        });
+        for (i, text) in token_texts.iter().enumerate() {
+            b.add_token(text.to_string(), i + 1, i + 1);
+        }
+        b.close_container();
+        b.build()
+    }
+
+    #[test]
+    fn all_share_contract_true_when_same_contract_across_trees() {
+        let tree_a = contract_tree("a.rs", &["Render"], &["fn", "$ID"]);
+        let tree_b = contract_tree("b.rs", &["Render"], &["fn", "$ID"]);
+        let tokens_a = tree_a.tokens();
+        let tokens_b = tree_b.tokens();
+
+        assert!(all_share_contract(&[
+            (&tree_a, &tokens_a),
+            (&tree_b, &tokens_b),
+        ]));
+    }
+
+    #[test]
+    fn all_share_contract_false_when_different_contracts() {
+        let tree_a = contract_tree("a.rs", &["Render"], &["fn", "$ID"]);
+        let tree_b = contract_tree("b.rs", &["Format"], &["fn", "$ID"]);
+        let tokens_a = tree_a.tokens();
+        let tokens_b = tree_b.tokens();
+
+        assert!(!all_share_contract(&[
+            (&tree_a, &tokens_a),
+            (&tree_b, &tokens_b),
+        ]));
+    }
+
+    #[test]
+    fn all_share_contract_false_when_no_contract() {
+        let tree_a = contract_tree("a.rs", &["Render"], &["fn", "$ID"]);
+        let tree_b = source_with_tokens("b.rs", &[("fn", 1), ("$ID", 1)]);
+        let tokens_a = tree_a.tokens();
+        let tokens_b = tree_b.tokens();
+
+        assert!(!all_share_contract(&[
+            (&tree_a, &tokens_a),
+            (&tree_b, &tokens_b),
+        ]));
+    }
+
+    #[test]
+    fn all_share_contract_true_when_overlapping_multi_contract() {
+        let tree_a = contract_tree("a.ts", &["Renderer", "Base"], &["fn", "$ID"]);
+        let tree_b = contract_tree("b.ts", &["Formatter", "Base"], &["fn", "$ID"]);
+        let tokens_a = tree_a.tokens();
+        let tokens_b = tree_b.tokens();
+
+        assert!(all_share_contract(&[
+            (&tree_a, &tokens_a),
+            (&tree_b, &tokens_b),
+        ]));
+    }
+
+    #[test]
+    fn all_share_contract_false_when_no_overlap_in_multi_contract() {
+        let tree_a = contract_tree("a.ts", &["Renderer", "Serializable"], &["fn", "$ID"]);
+        let tree_b = contract_tree("b.ts", &["Formatter", "Disposable"], &["fn", "$ID"]);
+        let tokens_a = tree_a.tokens();
+        let tokens_b = tree_b.tokens();
+
+        assert!(!all_share_contract(&[
+            (&tree_a, &tokens_a),
+            (&tree_b, &tokens_b),
+        ]));
     }
 }

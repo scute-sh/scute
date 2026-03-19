@@ -718,7 +718,7 @@ mod tests {
         );
     }
 
-    const TRAIT_IMPL_A: &str = "\
+    const RUST_TRAIT_RENDER_HTML: &str = "\
 impl Render for Html {
     fn render(&self) -> String {
         let mut buf = String::new();
@@ -728,13 +728,7 @@ impl Render for Html {
     }
 }";
 
-    #[test]
-    fn excludes_clone_groups_inside_same_rust_trait_impls() {
-        let dir = TestDir::new()
-            .source_file("a.rs", TRAIT_IMPL_A)
-            .source_file(
-                "b.rs",
-                "\
+    const RUST_TRAIT_RENDER_XML: &str = "\
 impl Render for Xml {
     fn render(&self) -> String {
         let mut buf = String::new();
@@ -742,46 +736,136 @@ impl Render for Xml {
         buf.push_str(\"</root>\");
         buf
     }
-}",
-            );
+}";
+
+    const TS_IMPLEMENTS_RENDERER_HTML: &str = "\
+class HtmlRenderer implements Renderer {
+    render(): string {
+        let buf = '';
+        buf += '<div>';
+        buf += '</div>';
+        return buf;
+    }
+}";
+
+    const TS_IMPLEMENTS_RENDERER_XML: &str = "\
+class XmlRenderer implements Renderer {
+    render(): string {
+        let buf = '';
+        buf += '<root>';
+        buf += '</root>';
+        return buf;
+    }
+}";
+
+    const JS_EXTENDS_ABSTRACT_HTML: &str = "\
+class HtmlRenderer extends AbstractRenderer {
+    render() {
+        let buf = '';
+        buf += '<div>';
+        buf += '</div>';
+        return buf;
+    }
+}";
+
+    const JS_EXTENDS_ABSTRACT_XML: &str = "\
+class XmlRenderer extends AbstractRenderer {
+    render() {
+        let buf = '';
+        buf += '<root>';
+        buf += '</root>';
+        return buf;
+    }
+}";
+
+    #[test_case::test_case("a.rs", RUST_TRAIT_RENDER_HTML, "b.rs", RUST_TRAIT_RENDER_XML
+        ; "same rust traits")]
+    #[test_case::test_case("a.ts", TS_IMPLEMENTS_RENDERER_HTML, "b.ts", TS_IMPLEMENTS_RENDERER_XML
+        ; "same ts interfaces")]
+    #[test_case::test_case("a.tsx", TS_IMPLEMENTS_RENDERER_HTML, "b.tsx", TS_IMPLEMENTS_RENDERER_XML
+        ; "same tsx interfaces")]
+    #[test_case::test_case("a.js", JS_EXTENDS_ABSTRACT_HTML, "b.js", JS_EXTENDS_ABSTRACT_XML
+        ; "same js extends")]
+    #[test_case::test_case(
+        "a.ts", TS_IMPLEMENTS_RENDERER_HTML,
+        "b.js", "\
+class XmlRenderer extends Renderer {
+    render() {
+        let buf = '';
+        buf += '<root>';
+        buf += '</root>';
+        return buf;
+    }
+}"
+        ; "cross language ts implements and js extends same contract")]
+    fn excludes_same_contract_clone_groups(
+        file_a: &str,
+        content_a: &str,
+        file_b: &str,
+        content_b: &str,
+    ) {
+        let dir = TestDir::new()
+            .source_file(file_a, content_a)
+            .source_file(file_b, content_b);
 
         let evals = check_dir(&dir.root());
 
         assert!(
             evals.iter().all(Evaluation::is_pass),
-            "same-trait impls should be excluded, got: {evals:?}"
+            "same-contract impls should be excluded, got: {evals:?}"
         );
     }
 
-    #[test]
-    fn reports_clone_groups_mixing_rust_trait_impl_and_free_code() {
-        let dir = TestDir::new()
-            .source_file("a.rs", TRAIT_IMPL_A)
-            .source_file(
-                "b.rs",
-                "\
+    #[test_case::test_case(
+        "a.rs", RUST_TRAIT_RENDER_HTML,
+        "b.rs", "\
+impl Format for Xml {
+    fn render(&self) -> String {
+        let mut buf = String::new();
+        buf.push_str(\"<root>\");
+        buf.push_str(\"</root>\");
+        buf
+    }
+}"
+        ; "different rust traits"
+    )]
+    #[test_case::test_case(
+        "a.ts", TS_IMPLEMENTS_RENDERER_HTML,
+        "b.ts", "\
+class XmlFormatter implements Formatter {
+    render(): string {
+        let buf = '';
+        buf += '<root>';
+        buf += '</root>';
+        return buf;
+    }
+}"
+        ; "different ts interfaces"
+    )]
+    #[test_case::test_case(
+        "a.rs", RUST_TRAIT_RENDER_HTML,
+        "b.rs", "\
 fn standalone_render() -> String {
     let mut buf = String::new();
     buf.push_str(\"<section>\");
     buf.push_str(\"</section>\");
     buf
-}",
-            );
-
-        let evals = check_dir(&dir.root());
-
-        assert!(
-            evals.iter().any(|e| !e.is_pass()),
-            "mixed trait-impl and free code should still be reported, got: {evals:?}"
-        );
-    }
-
-    #[test]
-    fn reports_clone_groups_inside_rust_inherent_impls() {
-        let dir = TestDir::new()
-            .source_file(
-                "a.rs",
-                "\
+}"
+        ; "rust trait vs free function"
+    )]
+    #[test_case::test_case(
+        "a.ts", TS_IMPLEMENTS_RENDERER_HTML,
+        "b.ts", "\
+function standaloneRender(): string {
+    let buf = '';
+    buf += '<section>';
+    buf += '</section>';
+    return buf;
+}"
+        ; "ts contract vs free function"
+    )]
+    #[test_case::test_case(
+        "a.rs", "\
 impl Html {
     fn render(&self) -> String {
         let mut buf = String::new();
@@ -790,10 +874,7 @@ impl Html {
         buf
     }
 }",
-            )
-            .source_file(
-                "b.rs",
-                "\
+        "b.rs", "\
 impl Xml {
     fn render(&self) -> String {
         let mut buf = String::new();
@@ -801,39 +882,45 @@ impl Xml {
         buf.push_str(\"</root>\");
         buf
     }
-}",
-            );
-
-        let evals = check_dir(&dir.root());
-
-        assert!(
-            evals.iter().any(|e| !e.is_pass()),
-            "inherent impls (no trait) should still be reported, got: {evals:?}"
-        );
+}"
+        ; "rust inherent impls"
+    )]
+    #[test_case::test_case(
+        "a.ts", "\
+class HtmlRenderer {
+    render(): string {
+        let buf = '';
+        buf += '<div>';
+        buf += '</div>';
+        return buf;
     }
-
-    #[test]
-    fn reports_clone_groups_across_different_rust_trait_impls() {
+}",
+        "b.ts", "\
+class XmlRenderer {
+    render(): string {
+        let buf = '';
+        buf += '<root>';
+        buf += '</root>';
+        return buf;
+    }
+}"
+        ; "plain ts classes"
+    )]
+    fn reports_non_contract_duplication(
+        file_a: &str,
+        content_a: &str,
+        file_b: &str,
+        content_b: &str,
+    ) {
         let dir = TestDir::new()
-            .source_file("a.rs", TRAIT_IMPL_A)
-            .source_file(
-                "b.rs",
-                "\
-impl Format for Xml {
-    fn render(&self) -> String {
-        let mut buf = String::new();
-        buf.push_str(\"<root>\");
-        buf.push_str(\"</root>\");
-        buf
-    }
-}",
-            );
+            .source_file(file_a, content_a)
+            .source_file(file_b, content_b);
 
         let evals = check_dir(&dir.root());
 
         assert!(
             evals.iter().any(|e| !e.is_pass()),
-            "different-trait impls should still be reported, got: {evals:?}"
+            "expected duplication reported, got: {evals:?}"
         );
     }
 
