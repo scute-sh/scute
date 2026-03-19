@@ -718,7 +718,7 @@ mod tests {
         );
     }
 
-    const RUST_RENDER_HTML: &str = "\
+    const RUST_TRAIT_RENDER_HTML: &str = "\
 impl Render for Html {
     fn render(&self) -> String {
         let mut buf = String::new();
@@ -728,7 +728,7 @@ impl Render for Html {
     }
 }";
 
-    const RUST_RENDER_XML: &str = "\
+    const RUST_TRAIT_RENDER_XML: &str = "\
 impl Render for Xml {
     fn render(&self) -> String {
         let mut buf = String::new();
@@ -738,7 +738,7 @@ impl Render for Xml {
     }
 }";
 
-    const TS_RENDERER_HTML: &str = "\
+    const TS_IMPLEMENTS_RENDERER_HTML: &str = "\
 class HtmlRenderer implements Renderer {
     render(): string {
         let buf = '';
@@ -748,7 +748,7 @@ class HtmlRenderer implements Renderer {
     }
 }";
 
-    const TS_RENDERER_XML: &str = "\
+    const TS_IMPLEMENTS_RENDERER_XML: &str = "\
 class XmlRenderer implements Renderer {
     render(): string {
         let buf = '';
@@ -758,7 +758,7 @@ class XmlRenderer implements Renderer {
     }
 }";
 
-    const JS_ABSTRACT_HTML: &str = "\
+    const JS_EXTENDS_ABSTRACT_HTML: &str = "\
 class HtmlRenderer extends AbstractRenderer {
     render() {
         let buf = '';
@@ -768,7 +768,7 @@ class HtmlRenderer extends AbstractRenderer {
     }
 }";
 
-    const JS_ABSTRACT_XML: &str = "\
+    const JS_EXTENDS_ABSTRACT_XML: &str = "\
 class XmlRenderer extends AbstractRenderer {
     render() {
         let buf = '';
@@ -778,16 +778,46 @@ class XmlRenderer extends AbstractRenderer {
     }
 }";
 
-    // same contract → excluded
-    #[test_case::test_case("a.rs", RUST_RENDER_HTML, "b.rs", RUST_RENDER_XML, true
-        ; "same rust traits excluded")]
-    #[test_case::test_case("a.ts", TS_RENDERER_HTML, "b.ts", TS_RENDERER_XML, true
-        ; "same ts interfaces excluded")]
-    #[test_case::test_case("a.js", JS_ABSTRACT_HTML, "b.js", JS_ABSTRACT_XML, true
-        ; "same js extends excluded")]
-    // different contracts → reported
+    #[test_case::test_case("a.rs", RUST_TRAIT_RENDER_HTML, "b.rs", RUST_TRAIT_RENDER_XML
+        ; "same rust traits")]
+    #[test_case::test_case("a.ts", TS_IMPLEMENTS_RENDERER_HTML, "b.ts", TS_IMPLEMENTS_RENDERER_XML
+        ; "same ts interfaces")]
+    #[test_case::test_case("a.tsx", TS_IMPLEMENTS_RENDERER_HTML, "b.tsx", TS_IMPLEMENTS_RENDERER_XML
+        ; "same tsx interfaces")]
+    #[test_case::test_case("a.js", JS_EXTENDS_ABSTRACT_HTML, "b.js", JS_EXTENDS_ABSTRACT_XML
+        ; "same js extends")]
     #[test_case::test_case(
-        "a.rs", RUST_RENDER_HTML,
+        "a.ts", TS_IMPLEMENTS_RENDERER_HTML,
+        "b.js", "\
+class XmlRenderer extends Renderer {
+    render() {
+        let buf = '';
+        buf += '<root>';
+        buf += '</root>';
+        return buf;
+    }
+}"
+        ; "cross language ts implements and js extends same contract")]
+    fn excludes_same_contract_clone_groups(
+        file_a: &str,
+        content_a: &str,
+        file_b: &str,
+        content_b: &str,
+    ) {
+        let dir = TestDir::new()
+            .source_file(file_a, content_a)
+            .source_file(file_b, content_b);
+
+        let evals = check_dir(&dir.root());
+
+        assert!(
+            evals.iter().all(Evaluation::is_pass),
+            "same-contract impls should be excluded, got: {evals:?}"
+        );
+    }
+
+    #[test_case::test_case(
+        "a.rs", RUST_TRAIT_RENDER_HTML,
         "b.rs", "\
 impl Format for Xml {
     fn render(&self) -> String {
@@ -796,11 +826,11 @@ impl Format for Xml {
         buf.push_str(\"</root>\");
         buf
     }
-}",
-        false ; "different rust traits reported"
+}"
+        ; "different rust traits"
     )]
     #[test_case::test_case(
-        "a.ts", TS_RENDERER_HTML,
+        "a.ts", TS_IMPLEMENTS_RENDERER_HTML,
         "b.ts", "\
 class XmlFormatter implements Formatter {
     render(): string {
@@ -809,33 +839,31 @@ class XmlFormatter implements Formatter {
         buf += '</root>';
         return buf;
     }
-}",
-        false ; "different ts interfaces reported"
+}"
+        ; "different ts interfaces"
     )]
-    // contract vs free code → reported
     #[test_case::test_case(
-        "a.rs", RUST_RENDER_HTML,
+        "a.rs", RUST_TRAIT_RENDER_HTML,
         "b.rs", "\
 fn standalone_render() -> String {
     let mut buf = String::new();
     buf.push_str(\"<section>\");
     buf.push_str(\"</section>\");
     buf
-}",
-        false ; "rust trait vs free function reported"
+}"
+        ; "rust trait vs free function"
     )]
     #[test_case::test_case(
-        "a.ts", TS_RENDERER_HTML,
+        "a.ts", TS_IMPLEMENTS_RENDERER_HTML,
         "b.ts", "\
 function standaloneRender(): string {
     let buf = '';
     buf += '<section>';
     buf += '</section>';
     return buf;
-}",
-        false ; "ts contract vs free function reported"
+}"
+        ; "ts contract vs free function"
     )]
-    // no contract → reported
     #[test_case::test_case(
         "a.rs", "\
 impl Html {
@@ -854,8 +882,8 @@ impl Xml {
         buf.push_str(\"</root>\");
         buf
     }
-}",
-        false ; "rust inherent impls reported"
+}"
+        ; "rust inherent impls"
     )]
     #[test_case::test_case(
         "a.ts", "\
@@ -875,15 +903,14 @@ class XmlRenderer {
         buf += '</root>';
         return buf;
     }
-}",
-        false ; "plain ts classes reported"
+}"
+        ; "plain ts classes"
     )]
-    fn contract_exclusion(
+    fn reports_non_contract_duplication(
         file_a: &str,
         content_a: &str,
         file_b: &str,
         content_b: &str,
-        should_exclude: bool,
     ) {
         let dir = TestDir::new()
             .source_file(file_a, content_a)
@@ -891,17 +918,10 @@ class XmlRenderer {
 
         let evals = check_dir(&dir.root());
 
-        if should_exclude {
-            assert!(
-                evals.iter().all(Evaluation::is_pass),
-                "expected exclusion, got: {evals:?}"
-            );
-        } else {
-            assert!(
-                evals.iter().any(|e| !e.is_pass()),
-                "expected duplication reported, got: {evals:?}"
-            );
-        }
+        assert!(
+            evals.iter().any(|e| !e.is_pass()),
+            "expected duplication reported, got: {evals:?}"
+        );
     }
 
     #[test]
