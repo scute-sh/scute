@@ -1,6 +1,6 @@
 ---
 source: scute-core/tests/code_similarity/end_to_end.rs
-expression: snapshot(&groups)
+expression: snapshot(&result)
 ---
 Group 1 (68 tokens):
   validators/email.rs:1-10
@@ -11,21 +11,21 @@ Group 2 (50 tokens):
   handlers.rs:9-15
 
 Group 3 (41 tokens):
-  handlers.rs:1-5
-  handlers.rs:9-13
   validators/email.rs:1-5
   validators/phone.rs:1-5
+  handlers.rs:1-5
+  handlers.rs:9-13
 
 Group 4 (20 tokens):
-  handlers.rs:3-7
-  handlers.rs:11-15
   validators/email.rs:6-10
   validators/phone.rs:6-10
+  handlers.rs:3-7
+  handlers.rs:11-15
 
 Group 5 (11 tokens):
-  handlers.rs:3-5
-  handlers.rs:11-13
   validators/email.rs:3-5
   validators/email.rs:6-8
   validators/phone.rs:3-5
   validators/phone.rs:6-8
+  handlers.rs:3-5
+  handlers.rs:11-13

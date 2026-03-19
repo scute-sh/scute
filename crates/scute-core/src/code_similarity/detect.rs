@@ -1,129 +1,163 @@
-use super::SourceTokens;
 use std::collections::HashMap;
 
+use super::tree::Token;
+
 /// A group of code regions that share the same normalized token sequence.
+///
+/// Invariant: `occurrences` always has at least 2 entries (a clone requires
+/// at least two locations).
 #[derive(Debug, Clone, PartialEq)]
 pub struct CloneGroup {
     pub token_count: usize,
     pub occurrences: Vec<Occurrence>,
 }
 
-/// A single occurrence of a clone within a source file.
+/// A single occurrence of a clone within a source.
+///
+/// Identifies exactly which tokens belong to this occurrence via
+/// `source_idx` (index into the sources array) and `token_start`
+/// (index into that source's token sequence). The token range is
+/// `token_start..token_start + group.token_count`.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Occurrence {
-    pub source_id: String,
-    pub start_line: usize,
-    pub end_line: usize,
+    pub source_idx: usize,
+    pub token_start: usize,
+}
+
+#[derive(Clone, Copy)]
+struct TokenPosition {
+    source_idx: usize,
+    token_idx: usize,
+}
+
+struct LcpInterval {
+    depth: usize,
+    left: usize,
+    right: usize,
+}
+
+struct StackEntry {
+    depth: usize,
+    left_bound: usize,
 }
 
 struct TokenSequence {
     concat: Vec<usize>,
-    /// Maps each position in `concat` to `(file_index, token_index)`.
-    /// `None` for sentinel positions.
-    pos_map: Vec<Option<(usize, usize)>>,
+    pos_map: Vec<Option<TokenPosition>>,
 }
 
-/// Detect clone groups across the given source token sequences.
+/// Detect clone groups across the given token sequences.
 ///
-/// Builds a generalized suffix array over the concatenated (normalized) token
-/// streams, then walks the LCP array to find all maximal repeated regions
-/// of at least `min_tokens` length.
+/// Builds a generalized suffix array over the concatenated normalized
+/// token texts, then walks the LCP array to find all maximal repeated
+/// regions of at least `min_tokens` length.
+///
+/// Occurrences reference sources by index and carry token positions.
+/// Each position maps directly to the `Token` it came from.
 #[must_use]
-pub fn detect_clones(sources: &[SourceTokens], min_tokens: usize) -> Vec<CloneGroup> {
+pub fn detect_clones(sources: &[Vec<Token>], min_tokens: usize) -> Vec<CloneGroup> {
     if sources.is_empty() || min_tokens == 0 {
         return vec![];
     }
 
-    let seq = build_token_sequence(sources);
-    if seq.concat.len() < 2 {
+    let sequence = build_token_sequence(sources);
+    if sequence.concat.len() < 2 {
         return vec![];
     }
 
-    let sa = build_suffix_array(&seq.concat);
-    let lcp = build_lcp_array(&seq.concat, &sa);
-    let intervals = extract_lcp_intervals(&sa, &lcp, min_tokens);
+    let suffix_array = build_suffix_array(&sequence.concat);
+    let lcp = build_lcp_array(&sequence.concat, &suffix_array);
+    let intervals = extract_lcp_intervals(&suffix_array, &lcp, min_tokens);
 
-    let groups = intervals_to_groups(&intervals, &sa, &seq.pos_map, sources);
+    let groups = intervals_to_groups(&intervals, &suffix_array, &sequence.pos_map, sources);
     filter_maximal_groups(groups)
 }
 
 /// Concatenate all token streams with unique sentinels between them,
-/// mapping each position back to its source file and token index.
-fn build_token_sequence(sources: &[SourceTokens]) -> TokenSequence {
+/// mapping each position back to its source and token index.
+fn build_token_sequence(sources: &[Vec<Token>]) -> TokenSequence {
     // Real token IDs start at 0. Sentinels use the high end of usize
     // (usize::MAX, usize::MAX-1, …) so they never collide with real IDs.
     let mut vocab: HashMap<&str, usize> = HashMap::new();
     let mut concat: Vec<usize> = Vec::new();
-    let mut pos_map: Vec<Option<(usize, usize)>> = Vec::new();
+    let mut pos_map: Vec<Option<TokenPosition>> = Vec::new();
 
-    for (file_idx, source) in sources.iter().enumerate() {
-        for (tok_idx, token) in source.tokens.iter().enumerate() {
+    for (source_idx, tokens) in sources.iter().enumerate() {
+        for (token_idx, tok) in tokens.iter().enumerate() {
             let next_id = vocab.len();
-            let id = *vocab.entry(token.text.as_str()).or_insert(next_id);
+            let id = *vocab.entry(tok.text.as_str()).or_insert(next_id);
             concat.push(id);
-            pos_map.push(Some((file_idx, tok_idx)));
+            pos_map.push(Some(TokenPosition {
+                source_idx,
+                token_idx,
+            }));
         }
-        concat.push(usize::MAX - file_idx); // unique sentinel per file
+        concat.push(usize::MAX - source_idx); // unique sentinel per source
         pos_map.push(None);
     }
 
     TokenSequence { concat, pos_map }
 }
 
-/// Convert LCP intervals into clone groups by resolving positions back to
-/// source files and line numbers.
 fn intervals_to_groups(
-    intervals: &[(usize, usize, usize)],
-    sa: &[usize],
-    pos_map: &[Option<(usize, usize)>],
-    sources: &[SourceTokens],
+    intervals: &[LcpInterval],
+    suffix_array: &[usize],
+    pos_map: &[Option<TokenPosition>],
+    sources: &[Vec<Token>],
 ) -> Vec<CloneGroup> {
-    let mut groups: Vec<CloneGroup> = Vec::new();
-
-    for &(depth, left, right) in intervals {
-        let mut occurrences: Vec<Occurrence> = Vec::new();
-
-        for &pos in &sa[left..=right] {
-            let Some((file_idx, tok_idx)) = pos_map[pos] else {
-                continue; // sentinel
-            };
-
-            let source = &sources[file_idx];
-            let end_tok = (tok_idx + depth - 1).min(source.tokens.len() - 1);
-            occurrences.push(Occurrence {
-                source_id: source.source_id.clone(),
-                start_line: source.tokens[tok_idx].start_line,
-                end_line: source.tokens[end_tok].end_line,
-            });
-        }
-
-        occurrences.sort_by(|a, b| {
-            a.source_id
-                .cmp(&b.source_id)
-                .then(a.start_line.cmp(&b.start_line))
-        });
-        occurrences.dedup();
-
-        if occurrences.len() >= 2 {
-            groups.push(CloneGroup {
-                token_count: depth,
+    intervals
+        .iter()
+        .filter_map(|interval| {
+            let occurrences = collect_occurrences(
+                &suffix_array[interval.left..=interval.right],
+                pos_map,
+                sources,
+                interval.depth,
+            );
+            (occurrences.len() >= 2).then_some(CloneGroup {
+                token_count: interval.depth,
                 occurrences,
-            });
-        }
-    }
-
-    groups
+            })
+        })
+        .collect()
 }
 
-/// Check if every occurrence in `candidate` is spatially contained within
-/// some occurrence of `accepted`.
+fn collect_occurrences(
+    sa_slice: &[usize],
+    pos_map: &[Option<TokenPosition>],
+    sources: &[Vec<Token>],
+    depth: usize,
+) -> Vec<Occurrence> {
+    let mut occurrences: Vec<Occurrence> = sa_slice
+        .iter()
+        .filter_map(|&pos| {
+            let tp = pos_map[pos]?;
+            (tp.token_idx + depth <= sources[tp.source_idx].len()).then_some(Occurrence {
+                source_idx: tp.source_idx,
+                token_start: tp.token_idx,
+            })
+        })
+        .collect();
+
+    occurrences.sort_by(|a, b| {
+        a.source_idx
+            .cmp(&b.source_idx)
+            .then(a.token_start.cmp(&b.token_start))
+    });
+    occurrences.dedup();
+    occurrences
+}
+
+/// Check if every occurrence in `candidate` is contained within
+/// some occurrence of `accepted` (token-range containment).
 fn is_subsumed_by(candidate: &CloneGroup, accepted: &[CloneGroup]) -> bool {
     accepted.iter().any(|prev| {
         candidate.occurrences.iter().all(|occ| {
+            let occ_end = occ.token_start + candidate.token_count;
             prev.occurrences.iter().any(|p| {
-                p.source_id == occ.source_id
-                    && p.start_line <= occ.start_line
-                    && p.end_line >= occ.end_line
+                p.source_idx == occ.source_idx
+                    && p.token_start <= occ.token_start
+                    && p.token_start + prev.token_count >= occ_end
             })
         })
     })
@@ -168,10 +202,10 @@ fn count_common_prefix(text: &[usize], i: usize, j: usize, start: usize) -> usiz
     len
 }
 
-fn build_lcp_array(text: &[usize], sa: &[usize]) -> Vec<usize> {
+fn build_lcp_array(text: &[usize], suffix_array: &[usize]) -> Vec<usize> {
     let n = text.len();
     let mut rank = vec![0usize; n];
-    for (i, &s) in sa.iter().enumerate() {
+    for (i, &s) in suffix_array.iter().enumerate() {
         rank[s] = i;
     }
 
@@ -183,7 +217,7 @@ fn build_lcp_array(text: &[usize], sa: &[usize]) -> Vec<usize> {
             h = 0;
             continue;
         }
-        let j = sa[rank[i] - 1];
+        let j = suffix_array[rank[i] - 1];
         h += count_common_prefix(text, i, j, h);
         lcp[rank[i]] = h;
         h = h.saturating_sub(1);
@@ -192,53 +226,265 @@ fn build_lcp_array(text: &[usize], sa: &[usize]) -> Vec<usize> {
     lcp
 }
 
-/// Pop stack entries with depth > `cur`, recording valid intervals.
-/// Returns the leftmost bound seen during popping.
-fn pop_and_record(
-    stack: &mut Vec<(usize, usize)>,
-    intervals: &mut Vec<(usize, usize, usize)>,
-    cur: usize,
-    i: usize,
+/// Collapse stack entries deeper than `current_depth`, recording completed intervals.
+/// Returns the leftmost bound from collapsed entries.
+fn collapse_deeper(
+    stack: &mut Vec<StackEntry>,
+    intervals: &mut Vec<LcpInterval>,
+    current_depth: usize,
+    right_bound: usize,
     min_tokens: usize,
 ) -> usize {
-    let mut lb = i - 1;
-    while stack.last().is_some_and(|&(d, _)| d > cur) {
-        let (depth, left) = stack.pop().unwrap();
-        lb = left;
-        if depth >= min_tokens && i - 1 > left {
-            intervals.push((depth, left, i - 1));
+    let mut left_bound = right_bound;
+    while stack
+        .last()
+        .is_some_and(|entry| entry.depth > current_depth)
+    {
+        let entry = stack.pop().unwrap();
+        left_bound = entry.left_bound;
+        if entry.depth >= min_tokens && right_bound > entry.left_bound {
+            intervals.push(LcpInterval {
+                depth: entry.depth,
+                left: entry.left_bound,
+                right: right_bound,
+            });
         }
     }
-    lb
+    left_bound
 }
 
-/// Enumerate all maximal LCP intervals with depth >= `min_tokens`.
-/// Returns `(depth, left_bound, right_bound)` for each interval.
 fn extract_lcp_intervals(
-    sa: &[usize],
+    suffix_array: &[usize],
     lcp: &[usize],
     min_tokens: usize,
-) -> Vec<(usize, usize, usize)> {
-    let n = sa.len();
+) -> Vec<LcpInterval> {
+    let n = suffix_array.len();
     let mut intervals = Vec::new();
-    let mut stack: Vec<(usize, usize)> = Vec::new(); // (depth, left_bound)
+    let mut stack: Vec<StackEntry> = Vec::new();
 
-    // Standard LCP interval traversal — `i` tracks position for boundary
-    // arithmetic, not just array indexing. Rewriting as an iterator obscures
-    // the algorithm.
-    #[allow(clippy::needless_range_loop)]
+    #[allow(clippy::needless_range_loop)] // i used for boundary arithmetic
     for i in 1..=n {
-        let cur = lcp.get(i).copied().unwrap_or(0);
-        let lb = pop_and_record(&mut stack, &mut intervals, cur, i, min_tokens);
+        let current_depth = lcp.get(i).copied().unwrap_or(0);
+        let right_bound = i - 1;
+        let left_bound = collapse_deeper(
+            &mut stack,
+            &mut intervals,
+            current_depth,
+            right_bound,
+            min_tokens,
+        );
 
-        if should_push_interval(cur, min_tokens, &stack) {
-            stack.push((cur, lb));
+        if current_depth >= min_tokens
+            && stack.last().is_none_or(|entry| current_depth > entry.depth)
+        {
+            stack.push(StackEntry {
+                depth: current_depth,
+                left_bound,
+            });
         }
     }
 
     intervals
 }
 
-fn should_push_interval(cur: usize, min_tokens: usize, stack: &[(usize, usize)]) -> bool {
-    cur >= min_tokens && stack.last().is_none_or(|&(d, _)| cur > d)
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::code_similarity::{parse_source, rust};
+
+    const LOW_TOKEN_THRESHOLD: usize = 5;
+    const IMPOSSIBLY_HIGH_THRESHOLD: usize = 1000;
+
+    fn parse_tokens(source: &str, path: &str) -> Vec<Token> {
+        parse_source(source, path, &rust::Rust).unwrap().tokens()
+    }
+
+    /// fn $ID ( $ID : $ID ) -> $ID { $ID + $LIT } = 14 tokens
+    const CLONE_PAIR_TOKEN_COUNT: usize = 14;
+
+    /// Two single-line functions with identical structure but different names/types.
+    fn rust_clone_pair() -> [Vec<Token>; 2] {
+        [
+            parse_tokens("fn f(x: i32) -> i32 { x + 1 }", "a.rs"),
+            parse_tokens("fn g(y: u32) -> u32 { y + 1 }", "b.rs"),
+        ]
+    }
+
+    /// Detect clones in the standard clone pair with the given threshold.
+    fn detect_pair(min_tokens: usize) -> Vec<CloneGroup> {
+        let [a, b] = rust_clone_pair();
+        detect_clones(&[a, b], min_tokens)
+    }
+
+    #[test]
+    fn detects_within_file_duplication() {
+        let source = "fn foo(x: i32) -> i32 { x + 1 }\nfn bar(y: i32) -> i32 { y + 1 }";
+        let tokens = parse_tokens(source, "same.rs");
+
+        let groups = detect_clones(&[tokens], LOW_TOKEN_THRESHOLD);
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].occurrences.len(), 2);
+        assert_eq!(groups[0].occurrences[0].source_idx, 0);
+        assert_eq!(groups[0].occurrences[1].source_idx, 0);
+    }
+
+    #[test]
+    fn detects_cross_file_duplication() {
+        let a = parse_tokens("fn calc(x: f64, y: f64) -> f64 { x + y }", "a.rs");
+        let b = parse_tokens("fn add(a: i32, b: i32) -> i32 { a + b }", "b.rs");
+
+        let groups = detect_clones(&[a, b], LOW_TOKEN_THRESHOLD);
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].occurrences[0].source_idx, 0);
+        assert_eq!(groups[0].occurrences[1].source_idx, 1);
+    }
+
+    #[test]
+    fn groups_three_identical_regions_into_one_group() {
+        let [a, b] = rust_clone_pair();
+        let c = parse_tokens("fn h(z: f64) -> f64 { z + 1 }", "c.rs");
+
+        let groups = detect_clones(&[a, b, c], LOW_TOKEN_THRESHOLD);
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].occurrences.len(), 3);
+    }
+
+    #[test]
+    fn no_clones_in_distinct_code() {
+        let a = parse_tokens("let x = 1 + 2;", "a.rs");
+        let b = parse_tokens("if true { return false; }", "b.rs");
+
+        let groups = detect_clones(&[a, b], LOW_TOKEN_THRESHOLD);
+
+        assert!(groups.is_empty());
+    }
+
+    #[test]
+    fn filters_matches_below_min_tokens() {
+        assert!(detect_pair(IMPOSSIBLY_HIGH_THRESHOLD).is_empty());
+    }
+
+    #[test]
+    fn reports_token_count_at_least_min_tokens() {
+        let groups = detect_pair(LOW_TOKEN_THRESHOLD);
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].token_count, CLONE_PAIR_TOKEN_COUNT);
+    }
+
+    #[test]
+    fn occurrences_carry_token_positions() {
+        let groups = detect_pair(LOW_TOKEN_THRESHOLD);
+
+        assert_eq!(groups[0].occurrences[0].source_idx, 0);
+        assert_eq!(groups[0].occurrences[0].token_start, 0);
+        assert_eq!(groups[0].occurrences[1].source_idx, 1);
+        assert_eq!(groups[0].occurrences[1].token_start, 0);
+    }
+
+    #[test]
+    fn same_input_produces_identical_output() {
+        assert_eq!(
+            detect_pair(LOW_TOKEN_THRESHOLD),
+            detect_pair(LOW_TOKEN_THRESHOLD),
+        );
+    }
+
+    #[test]
+    fn empty_source_produces_no_clones() {
+        let a = parse_tokens("", "a.rs");
+        let b = parse_tokens("fn f(x: i32) -> i32 { x + 1 }", "b.rs");
+
+        let groups = detect_clones(&[a, b], LOW_TOKEN_THRESHOLD);
+
+        assert!(groups.is_empty());
+    }
+
+    #[test]
+    fn min_tokens_zero_returns_empty() {
+        assert!(detect_pair(0).is_empty());
+    }
+
+    #[test]
+    fn single_source_without_duplication_produces_no_clones() {
+        let a = parse_tokens("fn f(x: i32) -> i32 { x + 1 }", "a.rs");
+
+        let groups = detect_clones(&[a], LOW_TOKEN_THRESHOLD);
+
+        assert!(groups.is_empty());
+    }
+
+    #[test]
+    fn comment_only_source_produces_no_clones() {
+        let a = parse_tokens("// just a comment\n/* block comment */", "a.rs");
+        let b = parse_tokens("// another comment\n/* block */", "b.rs");
+
+        let groups = detect_clones(&[a, b], LOW_TOKEN_THRESHOLD);
+
+        assert!(groups.is_empty());
+    }
+
+    #[test]
+    fn clone_at_exact_min_tokens_is_detected() {
+        let groups = detect_pair(CLONE_PAIR_TOKEN_COUNT);
+
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].token_count, CLONE_PAIR_TOKEN_COUNT);
+    }
+
+    #[test]
+    fn clone_one_below_min_tokens_is_not_detected() {
+        assert!(detect_pair(CLONE_PAIR_TOKEN_COUNT + 1).is_empty());
+    }
+
+    #[test]
+    fn preserves_line_ranges_for_multi_line_clones() {
+        let src_a = "\
+fn process(
+    x: i32,
+    y: i32,
+) -> i32 {
+    x + y
+}";
+        let src_b = "\
+fn compute(
+    a: u64,
+    b: u64,
+) -> u64 {
+    a + b
+}";
+
+        let tokens_a = parse_tokens(src_a, "a.rs");
+        let tokens_b = parse_tokens(src_b, "b.rs");
+        let sources = [tokens_a.clone(), tokens_b.clone()];
+
+        let groups = detect_clones(&sources, LOW_TOKEN_THRESHOLD);
+
+        assert_eq!(groups.len(), 1);
+        let group = &groups[0];
+
+        for occ in &group.occurrences {
+            let tokens = &sources[occ.source_idx];
+            let first = &tokens[occ.token_start];
+            let last = &tokens[occ.token_start + group.token_count - 1];
+
+            assert_eq!(first.start_line, 1, "clone should start at line 1");
+            assert_eq!(last.end_line, 6, "clone should end at line 6");
+        }
+    }
+
+    #[test]
+    fn discards_groups_subsumed_by_a_longer_match() {
+        let a = parse_tokens("fn f(x: i32, y: i32) -> i32 { x + y + 1 }", "a.rs");
+        let b = parse_tokens("fn g(a: u32, b: u32) -> u32 { a + b + 1 }", "b.rs");
+
+        let groups = detect_clones(&[a, b], LOW_TOKEN_THRESHOLD);
+
+        // The suffix array finds many overlapping sub-sequences, but only
+        // the longest match should survive — shorter ones are fully contained.
+        assert_eq!(groups.len(), 1);
+    }
 }

@@ -1,0 +1,5 @@
+---
+source: scute-core/tests/code_similarity/normalization.rs
+expression: "normalized_texts(\"\\\n@Injectable()\n@Component({ selector: 'app-root' })\nclass AppComponent {\n  name: string = 'hello';\n}\",\n\"a.ts\", & JsFamily::typescript())"
+---
+class $ID { $ID : $ID = $LIT ; }

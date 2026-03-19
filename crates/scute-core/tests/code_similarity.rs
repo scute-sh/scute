@@ -4,5 +4,5 @@ mod clone_detection;
 mod end_to_end;
 #[path = "code_similarity/helpers.rs"]
 mod helpers;
-#[path = "code_similarity/tokenizer.rs"]
-mod tokenizer;
+#[path = "code_similarity/normalization.rs"]
+mod normalization;

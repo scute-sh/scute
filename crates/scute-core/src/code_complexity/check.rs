@@ -69,7 +69,7 @@ pub fn check(
     definition: &Definition,
 ) -> Result<Vec<Evaluation>, ExecutionError> {
     let thresholds = definition.thresholds();
-    let languages = Languages::new();
+    let languages = languages();
     let files = resolve_files(paths, definition, &languages)?;
 
     let evaluations: Vec<Evaluation> = files
@@ -102,7 +102,7 @@ fn with_fallback(
 fn resolve_files(
     paths: &[PathBuf],
     definition: &Definition,
-    languages: &Languages,
+    languages: &crate::files::LanguageRegistry<dyn LanguageRules>,
 ) -> Result<Vec<PathBuf>, ExecutionError> {
     let exclude = definition.exclude.as_deref().unwrap_or_default();
     let extensions = languages.supported_extensions();
@@ -113,53 +113,26 @@ fn resolve_files(
     })
 }
 
-struct LanguageEntry {
-    extensions: &'static [&'static str],
-    rules: Box<dyn LanguageRules>,
-}
-
-struct Languages {
-    entries: Vec<LanguageEntry>,
-}
-
-impl Languages {
-    fn new() -> Self {
-        Self {
-            entries: vec![
-                LanguageEntry {
-                    extensions: &["rs"],
-                    rules: Box::new(rust::Rust),
-                },
-                LanguageEntry {
-                    extensions: &["ts"],
-                    rules: Box::new(typescript::TypeScript::new(
-                        tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-                    )),
-                },
-                LanguageEntry {
-                    extensions: &["tsx"],
-                    rules: Box::new(typescript::TypeScript::new(
-                        tree_sitter_typescript::LANGUAGE_TSX.into(),
-                    )),
-                },
-            ],
-        }
-    }
-
-    fn for_path(&self, path: &Path) -> Option<&dyn LanguageRules> {
-        let ext = path.extension()?.to_str()?;
-        self.entries
-            .iter()
-            .find(|e| e.extensions.contains(&ext))
-            .map(|e| e.rules.as_ref())
-    }
-
-    fn supported_extensions(&self) -> Vec<&str> {
-        self.entries
-            .iter()
-            .flat_map(|e| e.extensions.iter().copied())
-            .collect()
-    }
+fn languages() -> crate::files::LanguageRegistry<dyn LanguageRules> {
+    use crate::files::{LanguageRegistry, LanguageRegistryEntry};
+    LanguageRegistry::new(vec![
+        LanguageRegistryEntry {
+            extensions: &["rs"],
+            rules: Box::new(rust::Rust),
+        },
+        LanguageRegistryEntry {
+            extensions: &["ts"],
+            rules: Box::new(typescript::TypeScript::new(
+                tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+            )),
+        },
+        LanguageRegistryEntry {
+            extensions: &["tsx"],
+            rules: Box::new(typescript::TypeScript::new(
+                tree_sitter_typescript::LANGUAGE_TSX.into(),
+            )),
+        },
+    ])
 }
 
 fn score_file(

@@ -59,7 +59,7 @@ value.
 
 ## Code Quality
 
-- **Clean code violations.** (×2) General readability and maintainability rules
+- **Clean code violations.** (×3) General readability and maintainability rules
   broken: long functions, deep nesting, unclear control flow. Applies equally
   to test code: bloated test bodies with repetitive setup ceremony.
 - **Complex conditions.** Compound boolean expressions, especially negated
@@ -162,7 +162,7 @@ value.
   explore options or understand behavior, agent interprets it as a directive
   and starts making changes. Questions with question marks are for discussion,
   not action. Wait for explicit direction.
-- **Checklists skipped under momentum.** (×16) Established workflows and
+- **Checklists skipped under momentum.** (×17) Established workflows and
   checklists exist but get bypassed when focus is on "just get the thing done."
   The process is known, the trigger is clear, but urgency wins over discipline.
   Especially common with agents who optimize for task completion over process

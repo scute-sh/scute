@@ -1,17 +1,40 @@
-use scute_core::code_similarity::{CloneGroup, SourceTokens, language, tokenize};
-use scute_core::parser::TreeSitterParser;
+use scute_core::code_similarity::{
+    CloneGroup, Token, detect_clones, parse_source, rules::SimilarityRules, tree::SourceTree,
+};
 
-pub fn tokenize_rust(source: &str, source_id: &str) -> SourceTokens {
-    let mut parser = TreeSitterParser::new();
-    let tokens = tokenize(&mut parser, source, &language::rust()).unwrap();
-    SourceTokens::new(source_id.to_string(), tokens)
+pub struct DetectionResult {
+    pub trees: Vec<SourceTree>,
+    pub tokens: Vec<Vec<Token>>,
+    pub groups: Vec<CloneGroup>,
 }
 
-pub fn snapshot(groups: &[CloneGroup]) -> String {
-    if groups.is_empty() {
+pub fn parse_and_detect(
+    files: &[(&str, &str, &dyn SimilarityRules)],
+    min_tokens: usize,
+) -> DetectionResult {
+    let mut trees = Vec::new();
+
+    for (source, path, rules) in files {
+        let tree = parse_source(source, path, *rules).unwrap();
+        trees.push(tree);
+    }
+
+    let tokens: Vec<Vec<Token>> = trees.iter().map(SourceTree::tokens).collect();
+    let groups = detect_clones(&tokens, min_tokens);
+
+    DetectionResult {
+        trees,
+        tokens,
+        groups,
+    }
+}
+
+pub fn snapshot(result: &DetectionResult) -> String {
+    if result.groups.is_empty() {
         return "(no clones)".to_string();
     }
-    groups
+    result
+        .groups
         .iter()
         .enumerate()
         .map(|(i, g)| {
@@ -19,7 +42,14 @@ pub fn snapshot(groups: &[CloneGroup]) -> String {
             let occs: Vec<String> = g
                 .occurrences
                 .iter()
-                .map(|o| format!("  {}:{}-{}", o.source_id, o.start_line, o.end_line))
+                .map(|o| {
+                    let tokens = &result.tokens[o.source_idx];
+                    let start_line = tokens[o.token_start].start_line;
+                    let end_idx = (o.token_start + g.token_count - 1).min(tokens.len() - 1);
+                    let end_line = tokens[end_idx].end_line;
+                    let source_id = result.trees[o.source_idx].source_id();
+                    format!("  {source_id}:{start_line}-{end_line}")
+                })
                 .collect();
             format!("{header}\n{}", occs.join("\n"))
         })

@@ -1,0 +1,5 @@
+---
+source: scute-core/tests/code_similarity/normalization.rs
+expression: "normalized_texts(\"\\\n// helper function\nconst greet = (name: string) => {\n  console.log(\\\"hello\\\", name);\n  return 42;\n}\",\n\"a.ts\", & JsFamily::typescript())"
+---
+const $ID = ( $ID : $ID ) => { $ID . $ID ( $LIT , $ID ) ; return $LIT ; }

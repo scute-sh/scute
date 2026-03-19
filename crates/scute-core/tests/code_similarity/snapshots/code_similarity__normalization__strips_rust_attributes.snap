@@ -1,0 +1,5 @@
+---
+source: scute-core/tests/code_similarity/normalization.rs
+expression: "normalized_texts(\"\\\n#[derive(Debug, Clone)]\n#[serde(rename_all = \\\"camelCase\\\")]\nstruct Foo {\n    bar: String,\n}\",\n\"a.rs\", & Rust)"
+---
+struct $ID { $ID : $ID , }

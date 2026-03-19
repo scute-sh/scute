@@ -182,8 +182,8 @@ Wire Scute into git hooks so every commit gets checked automatically.
 # .git/hooks/pre-commit
 #!/bin/sh
 set -e
-git diff --cached --name-only | scute check code-complexity
-git diff --cached --name-only | scute check code-similarity
+git diff --cached --diff-filter=d --name-only | scute check code-complexity
+git diff --cached --diff-filter=d --name-only | scute check code-similarity
 ```
 
 ```sh
@@ -204,8 +204,8 @@ Exit codes are designed for automation: `0` pass, `1` fail, `2` error.
 
 ```yaml
 # GitHub Actions — runs on pull requests
-- run: git diff --name-only origin/main...HEAD | scute check code-complexity
-- run: git diff --name-only origin/main...HEAD | scute check code-similarity
+- run: git diff --diff-filter=d --name-only origin/main...HEAD | scute check code-complexity
+- run: git diff --diff-filter=d --name-only origin/main...HEAD | scute check code-similarity
 - run: scute check commit-message "${{ github.event.pull_request.title }}"
 ```
 
