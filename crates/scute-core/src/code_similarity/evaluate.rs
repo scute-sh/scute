@@ -1,5 +1,5 @@
 use super::detect::{CloneGroup, Occurrence};
-use super::tree::{SourceTree, Token};
+use super::tree::{SourceTree, Token, all_share_contract};
 use crate::{Evaluation, Thresholds};
 
 /// One source file's parsed tree, tokens, and raw content, bundled together.
@@ -55,34 +55,15 @@ pub fn occurrence_tokens<'a>(
 }
 
 fn is_same_contract_group(group: &CloneGroup, sources: &[SourceContext]) -> bool {
-    all_same(group.occurrences.iter().map(|occ| {
-        let matched_tokens = occurrence_tokens(occ, group.token_count, sources);
-        all_same_contract(sources[occ.source_idx].tree, matched_tokens)
-    }))
-    .is_some()
-}
-
-fn all_same_contract<'a>(tree: &'a SourceTree, tokens: &[Token]) -> Option<&'a str> {
-    all_same(
-        tokens
-            .iter()
-            .map(|tok| tree.enclosing_contract(tok.node_index)),
-    )
-}
-
-/// Returns `Some(value)` if all items produce the same value.
-/// Returns `None` if any item produces `None`, or if values differ.
-fn all_same<V: PartialEq>(iter: impl Iterator<Item = Option<V>>) -> Option<V> {
-    let mut result: Option<V> = None;
-    for item in iter {
-        let value = item?;
-        match &result {
-            None => result = Some(value),
-            Some(previous) if *previous == value => {}
-            Some(_) => return None,
-        }
-    }
-    result
+    let pairs: Vec<(&SourceTree, &[Token])> = group
+        .occurrences
+        .iter()
+        .map(|occ| {
+            let tokens = occurrence_tokens(occ, group.token_count, sources);
+            (sources[occ.source_idx].tree, tokens)
+        })
+        .collect();
+    all_share_contract(&pairs)
 }
 
 fn is_test_only_group(group: &CloneGroup, sources: &[SourceContext]) -> bool {

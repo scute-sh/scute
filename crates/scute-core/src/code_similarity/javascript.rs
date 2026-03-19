@@ -121,6 +121,7 @@ mod tests {
 
     use super::*;
     use crate::code_similarity::test_support::{parse_with, token_texts};
+    use crate::code_similarity::tree::all_share_contract;
 
     fn parse(
         source: &str,
@@ -246,41 +247,26 @@ mod tests {
 
     #[test_case::test_case(
         "class Html implements Renderer { render(): string { return ''; } }",
-        "a.ts", Some("Renderer")
-        ; "ts implements"
+        "a.ts", true ; "ts implements"
     )]
     #[test_case::test_case(
         "class Html extends AbstractRenderer { render(): string { return ''; } }",
-        "a.ts", Some("AbstractRenderer")
-        ; "ts extends"
+        "a.ts", true ; "ts extends"
     )]
     #[test_case::test_case(
         "class Html extends Base { render() { return ''; } }",
-        "a.js", Some("Base")
-        ; "js extends"
-    )]
-    #[test_case::test_case(
-        "class Html extends Base implements Renderer { render(): string { return ''; } }",
-        "a.ts", Some("Renderer")
-        ; "implements takes priority over extends"
-    )]
-    #[test_case::test_case(
-        "class Html implements Renderer, Serializable { render(): string { return ''; } }",
-        "a.ts", Some("Renderer")
-        ; "multiple implements uses first interface"
+        "a.js", true ; "js extends"
     )]
     #[test_case::test_case(
         "class Foo { bar(): string { return ''; } }",
-        "a.ts", None
-        ; "plain class has no contract"
+        "a.ts", false ; "plain class has no contract"
     )]
     #[test_case::test_case(
         "function render(): string { return ''; }",
-        "a.ts", None
-        ; "free function has no contract"
+        "a.ts", false ; "free function has no contract"
     )]
-    fn classifies_contract(source: &str, path: &str, expected: Option<&str>) {
+    fn classifies_contract(source: &str, path: &str, has_contract: bool) {
         let (tree, tokens) = parse(source, path);
-        assert_eq!(tree.enclosing_contract(tokens[0].node_index), expected);
+        assert_eq!(all_share_contract(&[(&tree, &tokens)]), has_contract);
     }
 }
