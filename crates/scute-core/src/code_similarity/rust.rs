@@ -171,6 +171,15 @@ mod tests {
     }
 
     #[test]
+    fn cfg_any_test_creates_test_region() {
+        let (tree, tokens) = parse(
+            "#[cfg(any(test))]\nmod tests {\n    fn helper(x: i32) -> i32 { x + 1 }\n}\n",
+            "src/lib.rs",
+        );
+        assert!(tree.is_in_test_region(tokens.last().unwrap().node_index));
+    }
+
+    #[test]
     fn cfg_not_test_is_not_a_test_region() {
         let (tree, tokens) = parse(
             "#[cfg(not(test))]\nmod prod_only {\n    fn helper() -> i32 { 42 }\n}\n",

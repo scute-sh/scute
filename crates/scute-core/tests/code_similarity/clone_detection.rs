@@ -3,7 +3,7 @@ use scute_core::code_similarity::rust::Rust;
 use super::helpers::{parse_and_detect, snapshot};
 
 #[test]
-fn partial_overlap_reports_both_groups() {
+fn partial_overlap_reports_non_subsumed_groups() {
     let result = parse_and_detect(
         &[
             (

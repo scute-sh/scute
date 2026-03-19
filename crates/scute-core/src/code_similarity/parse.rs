@@ -62,11 +62,12 @@ fn walk_node(
     }
 
     if !node.is_named() {
-        return walk_unnamed(node, src, rules, builder);
+        return walk_leaf_or_recurse(node, node.kind().to_string(), src, rules, builder);
     }
 
     let Some(kind) = rules.classify_node(node, src) else {
-        return walk_unclassified(node, src, rules, builder);
+        let text = node.utf8_text(src).unwrap_or("").to_string();
+        return walk_leaf_or_recurse(node, text, src, rules, builder);
     };
 
     match kind {
@@ -84,34 +85,16 @@ fn walk_node(
     }
 }
 
-/// Named node the language didn't classify: emit as token or recurse.
-fn walk_unclassified(
+fn walk_leaf_or_recurse(
     node: tree_sitter::Node,
-    src: &[u8],
-    rules: &dyn SimilarityRules,
-    builder: &mut SourceTreeBuilder,
-) {
-    if node.child_count() == 0 {
-        let text = node.utf8_text(src).unwrap_or("");
-        builder.add_token(
-            text.to_string(),
-            node.start_position().row + 1,
-            node.end_position().row + 1,
-        );
-    } else {
-        walk_children(node, src, rules, builder);
-    }
-}
-
-fn walk_unnamed(
-    node: tree_sitter::Node,
+    text: String,
     src: &[u8],
     rules: &dyn SimilarityRules,
     builder: &mut SourceTreeBuilder,
 ) {
     if node.child_count() == 0 {
         builder.add_token(
-            node.kind().to_string(),
+            text,
             node.start_position().row + 1,
             node.end_position().row + 1,
         );
@@ -135,12 +118,35 @@ fn walk_children(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::code_similarity::javascript::JsFamily;
     use crate::code_similarity::rust::Rust;
 
     #[test]
-    fn syntax_errors_do_not_panic() {
-        let result = parse_source("fn f(x: i32 -> { x + }", "broken.rs", &Rust);
+    fn rust_syntax_errors_do_not_panic() {
+        assert!(parse_source("fn f(x: i32 -> { x + }", "broken.rs", &Rust).is_ok());
+    }
 
-        assert!(result.is_ok()); // tree-sitter recovers, never errors
+    #[test]
+    fn javascript_syntax_errors_do_not_panic() {
+        assert!(
+            parse_source(
+                "function f(x { return +; }",
+                "broken.js",
+                &JsFamily::javascript()
+            )
+            .is_ok()
+        );
+    }
+
+    #[test]
+    fn typescript_syntax_errors_do_not_panic() {
+        assert!(
+            parse_source(
+                "function f(x: number { return +; }",
+                "broken.ts",
+                &JsFamily::typescript()
+            )
+            .is_ok()
+        );
     }
 }

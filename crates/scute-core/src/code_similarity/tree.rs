@@ -90,13 +90,13 @@ impl SourceTreeBuilder {
 
     /// Consume the builder and produce a `SourceTree`.
     ///
-    /// # Panics (debug)
+    /// # Panics
     ///
-    /// Debug-asserts that all containers have been closed (only the root
-    /// Source node remains on the stack).
+    /// Panics if not all containers have been closed (only the root
+    /// Source node should remain on the stack).
     #[must_use]
     pub fn build(self) -> SourceTree {
-        debug_assert!(
+        assert!(
             self.stack.len() == 1,
             "unclosed containers: expected stack depth 1, got {}",
             self.stack.len()
@@ -273,5 +273,14 @@ mod tests {
         let texts: Vec<&str> = tokens.iter().map(|t| t.text.as_str()).collect();
 
         assert_eq!(texts, vec!["fn", "$ID"]);
+    }
+
+    #[test]
+    #[should_panic(expected = "unclosed containers")]
+    fn build_panics_on_unclosed_container() {
+        let mut b = SourceTreeBuilder::new("a.rs".to_string());
+        b.open_container(NodeKind::TestRegion);
+        b.add_token("fn".to_string(), 1, 1);
+        let _tree = b.build();
     }
 }

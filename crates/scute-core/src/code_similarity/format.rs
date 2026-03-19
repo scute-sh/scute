@@ -2,7 +2,7 @@ use super::detect::{CloneGroup, Occurrence};
 use super::evaluate::{SourceContext, occurrence_tokens};
 use crate::{Evaluation, Evidence, Thresholds};
 
-pub fn format_evaluation(
+pub(super) fn format_evaluation(
     group: &CloneGroup,
     thresholds: &Thresholds,
     sources: &[SourceContext],

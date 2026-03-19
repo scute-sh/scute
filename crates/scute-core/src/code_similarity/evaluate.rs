@@ -45,13 +45,13 @@ pub fn occurrence_tokens<'a>(
 ) -> &'a [Token] {
     let tokens = sources[occ.source_idx].tokens;
     let end = occ.token_start + token_count;
-    debug_assert!(
+    assert!(
         end <= tokens.len(),
         "occurrence range {start}..{end} exceeds token count {len}",
         start = occ.token_start,
         len = tokens.len(),
     );
-    &tokens[occ.token_start..end.min(tokens.len())]
+    &tokens[occ.token_start..end]
 }
 
 fn is_same_contract_group(group: &CloneGroup, sources: &[SourceContext]) -> bool {
