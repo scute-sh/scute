@@ -51,8 +51,11 @@ impl SimilarityRules for JsFamily {
         }
     }
 
-    fn classify_node(&self, node: tree_sitter::Node, _src: &[u8]) -> Option<NodeKind> {
+    fn classify_node(&self, node: tree_sitter::Node, src: &[u8]) -> Option<NodeKind> {
         match node.kind() {
+            // Structural containers
+            "class_declaration" => classify_class(&node, src),
+
             // Identifiers
             "identifier"
             | "shorthand_property_identifier"
@@ -72,6 +75,44 @@ impl SimilarityRules for JsFamily {
             _ => None,
         }
     }
+}
+
+/// Extract the contract name from a class declaration's heritage clause.
+///
+/// Handles three AST shapes:
+/// - TS `implements`: `class_heritage` → `implements_clause` → `type_identifier`
+/// - TS `extends`: `class_heritage` → `extends_clause` → first named child
+/// - JS `extends`: `class_heritage` → first `identifier` child (no clause wrapper)
+///
+/// Prioritizes `implements` over `extends` when both are present.
+fn classify_class(node: &tree_sitter::Node, src: &[u8]) -> Option<NodeKind> {
+    let mut cursor = node.walk();
+    let heritage = node
+        .children(&mut cursor)
+        .find(|c| c.kind() == "class_heritage")?;
+
+    let mut heritage_cursor = heritage.walk();
+    let children: Vec<_> = heritage.children(&mut heritage_cursor).collect();
+
+    // TS path: look for implements_clause first, then extends_clause
+    let clause = children
+        .iter()
+        .find(|c| c.kind() == "implements_clause")
+        .or_else(|| children.iter().find(|c| c.kind() == "extends_clause"));
+
+    if let Some(clause) = clause {
+        let mut clause_cursor = clause.walk();
+        let name_node = clause
+            .children(&mut clause_cursor)
+            .find(tree_sitter::Node::is_named)?;
+        let name = name_node.utf8_text(src).ok()?.to_string();
+        return Some(NodeKind::Contract { name });
+    }
+
+    // JS path: class_heritage directly contains the identifier (no clause wrapper)
+    let name_node = children.iter().find(|c| c.is_named())?;
+    let name = name_node.utf8_text(src).ok()?.to_string();
+    Some(NodeKind::Contract { name })
 }
 
 #[cfg(test)]
@@ -201,5 +242,45 @@ mod tests {
         let texts = token_texts(&tokens);
         assert!(!texts.contains(&"@"));
         assert!(texts.contains(&"class"));
+    }
+
+    #[test_case::test_case(
+        "class Html implements Renderer { render(): string { return ''; } }",
+        "a.ts", Some("Renderer")
+        ; "ts implements"
+    )]
+    #[test_case::test_case(
+        "class Html extends AbstractRenderer { render(): string { return ''; } }",
+        "a.ts", Some("AbstractRenderer")
+        ; "ts extends"
+    )]
+    #[test_case::test_case(
+        "class Html extends Base { render() { return ''; } }",
+        "a.js", Some("Base")
+        ; "js extends"
+    )]
+    #[test_case::test_case(
+        "class Html extends Base implements Renderer { render(): string { return ''; } }",
+        "a.ts", Some("Renderer")
+        ; "implements takes priority over extends"
+    )]
+    #[test_case::test_case(
+        "class Html implements Renderer, Serializable { render(): string { return ''; } }",
+        "a.ts", Some("Renderer")
+        ; "multiple implements uses first interface"
+    )]
+    #[test_case::test_case(
+        "class Foo { bar(): string { return ''; } }",
+        "a.ts", None
+        ; "plain class has no contract"
+    )]
+    #[test_case::test_case(
+        "function render(): string { return ''; }",
+        "a.ts", None
+        ; "free function has no contract"
+    )]
+    fn classifies_contract(source: &str, path: &str, expected: Option<&str>) {
+        let (tree, tokens) = parse(source, path);
+        assert_eq!(tree.enclosing_contract(tokens[0].node_index), expected);
     }
 }
