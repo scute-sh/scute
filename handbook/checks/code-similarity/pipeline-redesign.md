@@ -6,10 +6,10 @@ The code-similarity check finds structurally similar code. But similarity alone
 isn't the verdict. The same similarity score means different things depending on
 the structural context: where the code lives, what role it plays.
 
-Today, the pipeline produces context-free clone groups ("these regions share N
-tokens"), then evaluation reconstructs context from scratch by re-parsing. Each
-context type is a hardcoded path. The pipeline doesn't carry structural
-information forward.
+Without a structural model, the pipeline would produce context-free clone groups
+("these regions share N tokens"), then evaluation would have to reconstruct
+context from scratch by re-parsing. Each context type becomes a hardcoded path.
+The pipeline wouldn't carry structural information forward.
 
 ## Core insight
 
@@ -27,7 +27,7 @@ away.
 
 ```
 Source("a.rs")
-  └── Contract("Render")
+  └── Contract(["Render"])
         ├── Token("fn")
         ├── Token("$ID")
         ├── Token("(")
@@ -64,7 +64,7 @@ The walker is language-agnostic. It handles unnamed nodes (operators,
 punctuation) and default recursion. Languages only classify named nodes
 they have an opinion about.
 
-After this step: one `StructuralTree` per file. All structural context
+After this step: one `SourceTree` per file. All structural context
 is captured. No re-parsing happens downstream.
 
 #### 2. Detect
@@ -86,10 +86,10 @@ Lines are never computed here. Detection works with tokens.
 Matched token ranges + structural trees → verdicts.
 
 For each occurrence in a clone group, read the tree node indices of its
-tokens. Walk up to find structural context (contract name, test region).
+tokens. Walk up to find structural context (contract names, test region).
 Rules inspect context and decide:
 
-- All occurrences inside the same contract → exclude
+- All occurrences share a contract (set intersection) → exclude
 - All occurrences in test regions → apply test thresholds
 - Otherwise → apply production thresholds
 
@@ -116,16 +116,18 @@ display concern, not an algorithmic one.
 
 These represent structural roles that matter for similarity judgment:
 
-| Node       | Data           | Role                                    |
-| ---------- | -------------- | --------------------------------------- |
-| Source     | file path      | Root per file                           |
-| TestRegion | —              | Test code boundary                      |
-| Contract   | contract names | Contract implementation (trait, iface)  |
-| Token      | text, line     | Leaf: normalized token for detection    |
+| Node       | Data           | Role                                         |
+| ---------- | -------------- | -------------------------------------------- |
+| Source     | file path      | Root per file                                |
+| TestRegion | —              | Test code boundary                           |
+| Contract   | contract names | Contract implementation (trait, iface, base) |
+| Token      | text, line     | Leaf: normalized token for detection         |
+| Comment    | —              | Stripped from detection                      |
+| Decoration | —              | Stripped from detection (attributes, etc.)   |
 
-**Assumption:** plain classes (no contract) and impl blocks are transparent
-containers. Our model looks through them. A class only becomes a Contract node
-when it implements a contract. May need revisiting.
+Plain classes (no contract) and inherent impl blocks are transparent containers.
+The model looks through them. A class only becomes a Contract node when it has
+an `implements` or `extends` clause (or `impl Trait for Type` in Rust).
 
 ### Representation: arena with parent indices
 
@@ -134,7 +136,7 @@ The tree is stored as a flat `Vec<Node>` (arena). Each node holds its
 indices.
 
 ```rust
-struct StructuralTree {
+struct SourceTree {
     nodes: Vec<Node>,
 }
 
@@ -149,6 +151,8 @@ enum NodeKind {
     TestRegion,
     Contract { names: Vec<String> },
     Token { text: String, start_line: usize, end_line: usize },
+    Comment,
+    Decoration,
 }
 ```
 
@@ -156,7 +160,7 @@ Walk-up: follow `parent` indices until root. 2-4 hops per token.
 
 **Alternatives considered:**
 
-- **Flat context on tokens** (`token.contract: Option<String>`,
+- **Flat context on tokens** (`token.contracts: Vec<String>`,
   `token.in_test: bool`). Simplest for today's two context types, but every
   new context type adds another field + evaluation branch. Same scaling
   problem we're trying to escape.
