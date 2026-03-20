@@ -5,7 +5,7 @@ use ignore::WalkBuilder;
 
 /// Source code with its file path, ready for check processing.
 pub struct SourceFile {
-    pub path: String,
+    pub path: PathBuf,
     pub content: String,
 }
 

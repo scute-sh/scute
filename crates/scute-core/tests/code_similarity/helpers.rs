@@ -18,7 +18,7 @@ pub fn parse_and_detect(files: &[(&str, &str)], min_tokens: usize) -> DetectionR
 
     for (source, path) in files {
         let file = SourceFile {
-            path: path.to_string(),
+            path: (*path).into(),
             content: source.to_string(),
         };
         let tree = parse_source(&file, &languages).unwrap();

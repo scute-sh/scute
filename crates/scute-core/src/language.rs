@@ -94,3 +94,67 @@ pub fn typescript_tsx() -> Language {
         extensions: &["tsx"],
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    fn test_registry() -> LanguageRegistry<&'static str> {
+        LanguageRegistry::new(vec![
+            LanguageRegistryEntry {
+                language: Language {
+                    grammar: tree_sitter_rust::LANGUAGE.into(),
+                    extensions: &["rs"],
+                },
+                rules: Box::new("rust"),
+            },
+            LanguageRegistryEntry {
+                language: Language {
+                    grammar: tree_sitter_javascript::LANGUAGE.into(),
+                    extensions: &["js", "jsx"],
+                },
+                rules: Box::new("js"),
+            },
+        ])
+    }
+
+    #[test]
+    fn resolves_matching_extension() {
+        let reg = test_registry();
+        let (_, rules) = reg.for_path(Path::new("main.rs")).unwrap();
+        assert_eq!(*rules, "rust");
+    }
+
+    #[test]
+    fn resolves_second_extension_in_list() {
+        let reg = test_registry();
+        let (_, rules) = reg.for_path(Path::new("app.jsx")).unwrap();
+        assert_eq!(*rules, "js");
+    }
+
+    #[test]
+    fn returns_none_for_unsupported_extension() {
+        let reg = test_registry();
+        assert!(reg.for_path(Path::new("style.css")).is_none());
+    }
+
+    #[test]
+    fn returns_none_for_no_extension() {
+        let reg = test_registry();
+        assert!(reg.for_path(Path::new("Makefile")).is_none());
+    }
+
+    #[test]
+    fn empty_registry_returns_none() {
+        let reg: LanguageRegistry<&str> = LanguageRegistry::new(vec![]);
+        assert!(reg.for_path(Path::new("main.rs")).is_none());
+    }
+
+    #[test]
+    fn supported_extensions_collects_all() {
+        let reg = test_registry();
+        let exts = reg.supported_extensions();
+        assert_eq!(exts, vec!["rs", "js", "jsx"]);
+    }
+}

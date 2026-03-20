@@ -29,17 +29,15 @@ pub fn parse_source(
     file: &SourceFile,
     languages: &LanguageRegistry<dyn SimilarityRules>,
 ) -> Result<SourceTree, ParseError> {
-    let (lang, rules) = languages
-        .for_path(Path::new(&file.path))
-        .ok_or(ParseError)?;
+    let (lang, rules) = languages.for_path(&file.path).ok_or(ParseError)?;
     let mut parser = TreeSitterParser::new();
     let tree = parser
         .parse(&file.content, &lang.grammar)
         .map_err(|_| ParseError)?;
 
-    let mut builder = SourceTreeBuilder::new(file.path.clone());
+    let mut builder = SourceTreeBuilder::new(file.path.display().to_string());
 
-    let has_file_context = if let Some(kind) = rules.classify_file(Path::new(&file.path)) {
+    let has_file_context = if let Some(kind) = rules.classify_file(&file.path) {
         builder.open_container(kind);
         true
     } else {

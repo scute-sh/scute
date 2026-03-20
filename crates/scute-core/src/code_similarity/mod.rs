@@ -21,7 +21,7 @@ pub(crate) mod test_support {
 
     pub fn parse_file(source: &str, path: &str) -> (SourceTree, Vec<Token>) {
         let file = SourceFile {
-            path: path.to_string(),
+            path: path.into(),
             content: source.to_string(),
         };
         let tree = super::parse_source(&file, &super::check::languages()).unwrap();

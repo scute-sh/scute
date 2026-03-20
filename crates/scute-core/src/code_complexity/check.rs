@@ -79,10 +79,10 @@ pub fn check(
         .filter_map(|path| {
             let content = std::fs::read_to_string(path).ok()?;
             let file = SourceFile {
-                path: path.display().to_string(),
+                path: path.clone(),
                 content,
             };
-            Some(score_file(path, &file, &languages, &thresholds))
+            Some(score_file(&file, &languages, &thresholds))
         })
         .flatten()
         .collect();
@@ -142,11 +142,11 @@ pub(crate) fn languages() -> LanguageRegistry<dyn ComplexityRules> {
 }
 
 fn score_file(
-    path: &Path,
     file: &SourceFile,
     languages: &LanguageRegistry<dyn ComplexityRules>,
     thresholds: &Thresholds,
 ) -> Vec<Evaluation> {
+    let path = Path::new(&file.path);
     score::score_functions(file, languages)
         .into_iter()
         .map(|func| {

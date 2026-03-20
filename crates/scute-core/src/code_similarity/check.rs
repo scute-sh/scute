@@ -204,7 +204,7 @@ fn read_sources(
         languages.for_path(entry.path())?;
         let content = std::fs::read_to_string(entry.path()).ok()?;
         Some(SourceFile {
-            path: entry.into_path().display().to_string(),
+            path: entry.into_path(),
             content,
         })
     })

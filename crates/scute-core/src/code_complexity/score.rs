@@ -110,7 +110,7 @@ pub fn score_functions(
     file: &SourceFile,
     languages: &LanguageRegistry<dyn ComplexityRules>,
 ) -> Vec<FunctionScore> {
-    let Some((lang, rules)) = languages.for_path(std::path::Path::new(&file.path)) else {
+    let Some((lang, rules)) = languages.for_path(&file.path) else {
         return vec![];
     };
     let mut parser = TreeSitterParser::new();
