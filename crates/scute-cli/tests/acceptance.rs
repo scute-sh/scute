@@ -48,7 +48,8 @@ mod commit_message {
     #[test_case(Mcp)]
     fn valid_message_passes(interface: Interface) {
         Scute::new(interface)
-            .check(&["commit-message", "feat: add login"])
+            .commit_message("feat: add login")
+            .run()
             .expect_pass();
     }
 
@@ -57,7 +58,8 @@ mod commit_message {
     #[test_case(Mcp)]
     fn invalid_message_fails(interface: Interface) {
         Scute::new(interface)
-            .check(&["commit-message", "not conventional"])
+            .commit_message("not conventional")
+            .run()
             .expect_fail();
     }
 
@@ -66,7 +68,8 @@ mod commit_message {
     #[test_case(Mcp)]
     fn invalid_message_shows_subject_line_as_target(interface: Interface) {
         Scute::new(interface)
-            .check(&["commit-message", "not conventional"])
+            .commit_message("not conventional")
+            .run()
             .expect_target("not conventional");
     }
 
@@ -82,7 +85,8 @@ checks:
     types: [hotfix]
 ",
             )
-            .check(&["commit-message", "hotfix: urgent patch"])
+            .commit_message("hotfix: urgent patch")
+            .run()
             .expect_pass();
     }
 
@@ -91,7 +95,8 @@ checks:
     #[test_case(Mcp)]
     fn passing_check_omits_evidence(interface: Interface) {
         Scute::new(interface)
-            .check(&["commit-message", "feat: add login"])
+            .commit_message("feat: add login")
+            .run()
             .expect_pass()
             .expect_no_findings();
     }
@@ -427,7 +432,8 @@ mod config {
     fn malformed_config_produces_error(interface: Interface) {
         Scute::new(interface)
             .scute_config("not: valid: yaml: [")
-            .check(&["commit-message", "feat: add login"])
+            .commit_message("feat: add login")
+            .run()
             .expect_error("invalid_config");
     }
 
@@ -436,7 +442,8 @@ mod config {
     fn empty_config_uses_defaults(interface: Interface) {
         Scute::new(interface)
             .scute_config("")
-            .check(&["commit-message", "feat: add login"])
+            .commit_message("feat: add login")
+            .run()
             .expect_pass();
     }
 
@@ -452,7 +459,8 @@ checks:
       types: [hotfix]
 ",
             )
-            .check(&["commit-message", "hotfix: urgent patch"])
+            .commit_message("hotfix: urgent patch")
+            .run()
             .expect_error("invalid_config");
     }
 
@@ -468,7 +476,8 @@ checks:
 ",
             )
             .cwd("nested")
-            .check(&["commit-message", "hotfix: urgent patch"])
+            .commit_message("hotfix: urgent patch")
+            .run()
             .expect_pass();
     }
 }

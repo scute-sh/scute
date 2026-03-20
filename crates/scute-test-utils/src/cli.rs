@@ -2,23 +2,14 @@ use std::path::Path;
 
 use tempfile::TempDir;
 
-use crate::{Backend, CheckResult, ExitStatus, ListChecksResult, target_bin};
+use crate::{Backend, CheckInput, CheckResult, ExitStatus, ListChecksResult, target_bin};
 
 pub(crate) struct CliBackend {
     pub(crate) stdin: bool,
 }
 
-impl Backend for CliBackend {
-    fn check(&self, dir: TempDir, working_dir: &Path, args: &[&str]) -> CheckResult {
-        let mut cmd = assert_cmd::Command::new(target_bin("scute"));
-        cmd.current_dir(working_dir);
-        if self.stdin {
-            let message = args.last().expect("CliStdin requires message in args");
-            cmd.args(&args[..args.len() - 1])
-                .write_stdin(message.to_string());
-        } else {
-            cmd.args(args);
-        }
+impl CliBackend {
+    fn run_cmd(mut cmd: assert_cmd::Command, dir: TempDir, working_dir: &Path) -> CheckResult {
         let output = cmd.output().unwrap();
         let exit_code = output.status.code().unwrap_or(-1);
         let stdout = String::from_utf8_lossy(&output.stdout);
@@ -37,6 +28,37 @@ impl Backend for CliBackend {
             debug_info: format!("exit: {exit_code}\nstderr: {stderr}"),
             _dir: dir,
         }
+    }
+}
+
+impl Backend for CliBackend {
+    fn check(&self, dir: TempDir, working_dir: &Path, args: &[&str]) -> CheckResult {
+        let mut cmd = assert_cmd::Command::new(target_bin("scute"));
+        cmd.current_dir(working_dir);
+        if self.stdin {
+            let message = args.last().expect("CliStdin requires message in args");
+            cmd.args(&args[..args.len() - 1])
+                .write_stdin(message.to_string());
+        } else {
+            cmd.args(args);
+        }
+        Self::run_cmd(cmd, dir, working_dir)
+    }
+
+    fn run_check(&self, dir: TempDir, working_dir: &Path, input: &CheckInput) -> CheckResult {
+        let mut cmd = assert_cmd::Command::new(target_bin("scute"));
+        cmd.current_dir(working_dir);
+        match input {
+            CheckInput::CommitMessage { message } => {
+                if self.stdin {
+                    cmd.args(["check", "commit-message"])
+                        .write_stdin(message.clone());
+                } else {
+                    cmd.args(["check", "commit-message", message]);
+                }
+            }
+        }
+        Self::run_cmd(cmd, dir, working_dir)
     }
 
     fn list_checks(&self, dir: TempDir) -> ListChecksResult {

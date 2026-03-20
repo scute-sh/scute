@@ -12,19 +12,20 @@ use rmcp::{
 use tempfile::TempDir;
 use tokio::process::Command;
 
-use crate::{Backend, CheckResult, ExitStatus, ListChecksResult, target_bin};
+use crate::{Backend, CheckInput, CheckResult, ExitStatus, ListChecksResult, target_bin};
 
 pub(crate) struct McpBackend;
 
-impl Backend for McpBackend {
-    fn check(&self, dir: TempDir, working_dir: &Path, args: &[&str]) -> CheckResult {
-        let check_name = args.get(1).expect("check name required");
-        let tool_name = format!("check_{}", check_name.replace('-', "_"));
-        let tool_args = build_tool_args(check_name, &args[2..]);
+impl McpBackend {
+    fn call(
+        dir: TempDir,
+        working_dir: &Path,
+        tool_name: &str,
+        tool_args: &serde_json::Value,
+    ) -> CheckResult {
         let project_dir = working_dir.canonicalize().unwrap();
-
         let client = McpTestClient::connect(&project_dir);
-        let result = client.call_tool(&tool_name, &tool_args);
+        let result = client.call_tool(tool_name, tool_args);
 
         let json = result
             .structured_content
@@ -47,6 +48,25 @@ impl Backend for McpBackend {
             exit_status,
             debug_info,
         }
+    }
+}
+
+impl Backend for McpBackend {
+    fn check(&self, dir: TempDir, working_dir: &Path, args: &[&str]) -> CheckResult {
+        let check_name = args.get(1).expect("check name required");
+        let tool_name = format!("check_{}", check_name.replace('-', "_"));
+        let tool_args = build_tool_args(check_name, &args[2..]);
+        Self::call(dir, working_dir, &tool_name, &tool_args)
+    }
+
+    fn run_check(&self, dir: TempDir, working_dir: &Path, input: &CheckInput) -> CheckResult {
+        let (tool_name, tool_args) = match input {
+            CheckInput::CommitMessage { message } => (
+                "check_commit_message",
+                serde_json::json!({ "message": message }),
+            ),
+        };
+        Self::call(dir, working_dir, tool_name, &tool_args)
     }
 
     fn list_checks(&self, dir: TempDir) -> ListChecksResult {
