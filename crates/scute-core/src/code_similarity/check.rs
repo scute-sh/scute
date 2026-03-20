@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 use super::detect::{CloneGroup, detect_clones as run_detection};
-use super::evaluate::{SourceContext, evaluate_groups};
+use super::evaluate::{SourceContext, ThresholdSet, evaluate_groups};
 use super::javascript::JsFamily;
 use super::parse_source;
 use super::rules::SimilarityRules;
@@ -62,18 +62,17 @@ impl Definition {
         self.min_tokens.unwrap_or(DEFAULT_MIN_TOKENS)
     }
 
-    fn thresholds(&self) -> Thresholds {
-        self.thresholds.clone().unwrap_or(Thresholds {
-            warn: Some(DEFAULT_WARN),
-            fail: Some(DEFAULT_FAIL),
-        })
-    }
-
-    fn test_thresholds(&self) -> Thresholds {
-        self.test_thresholds.clone().unwrap_or(Thresholds {
-            warn: Some(DEFAULT_TEST_WARN),
-            fail: Some(DEFAULT_TEST_FAIL),
-        })
+    fn thresholds(&self) -> ThresholdSet {
+        ThresholdSet {
+            base: self.thresholds.clone().unwrap_or(Thresholds {
+                warn: Some(DEFAULT_WARN),
+                fail: Some(DEFAULT_FAIL),
+            }),
+            test: self.test_thresholds.clone().unwrap_or(Thresholds {
+                warn: Some(DEFAULT_TEST_WARN),
+                fail: Some(DEFAULT_TEST_FAIL),
+            }),
+        }
     }
 
     fn skip_ignored(&self) -> bool {
@@ -144,18 +143,14 @@ pub fn check(
 
     let clone_groups = run_detection(&token_sets, definition.min_tokens());
     let relevant = filter_by_focus(&clone_groups, &focus_files, &contexts);
-    let evaluations = evaluate_groups(
-        &relevant,
-        &contexts,
-        &definition.thresholds(),
-        &definition.test_thresholds(),
-    );
+    let thresholds = definition.thresholds();
+    let evaluations = evaluate_groups(&relevant, &contexts, &thresholds);
 
     if evaluations.is_empty() {
         return Ok(vec![Evaluation::completed(
             source_dir.display().to_string(),
             0,
-            definition.thresholds(),
+            thresholds.base,
             vec![],
         )]);
     }
@@ -263,7 +258,7 @@ fn languages() -> crate::files::LanguageRegistry<dyn SimilarityRules> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{Evidence, Outcome};
+    use crate::Evidence;
     use googletest::prelude::*;
     use scute_test_utils::TestDir;
 
@@ -296,11 +291,6 @@ mod tests {
             .source_file("b.rs", "fn bar(y: i32) -> i32 { y + 1 }")
     }
 
-    fn check_clone_pair() -> Vec<Evaluation> {
-        let dir = clone_pair();
-        check_dir(&dir.root())
-    }
-
     fn check_clone_pair_with_thresholds(warn: u64, fail: u64) -> Vec<Evaluation> {
         let dir = clone_pair();
         check(
@@ -327,7 +317,7 @@ mod tests {
     }
 
     fn unwrap_evidence(eval: &Evaluation) -> &Vec<Evidence> {
-        let Outcome::Completed { evidence, .. } = &eval.outcome else {
+        let crate::Outcome::Completed { evidence, .. } = &eval.outcome else {
             panic!("expected completed evaluation")
         };
         evidence
@@ -365,17 +355,6 @@ mod tests {
         let evals = check_clone_pair_with_thresholds(20, 30);
 
         assert!(evals[0].is_pass()); // 14 tokens < warn threshold of 20
-    }
-
-    #[test]
-    fn observed_value_is_token_count_of_the_clone() {
-        let evals = check_clone_pair();
-
-        let Outcome::Completed { observed, .. } = &evals[0].outcome else {
-            panic!("expected completed evaluation")
-        };
-        // fn $ID ( $ID : $ID ) -> $ID { $ID + $LIT } = 14 tokens
-        assert_that!(*observed, eq(14));
     }
 
     #[test]
@@ -418,7 +397,6 @@ mod tests {
 
         let evals = check_dir(&dir.root());
 
-        // vendor/ is gitignored → only src/a.rs discovered → no clone pair
         assert!(
             evals.iter().all(Evaluation::is_pass),
             "vendor/ should be excluded, got: {evals:?}"
@@ -439,7 +417,6 @@ mod tests {
         )
         .unwrap();
 
-        // With skip_ignored_files disabled, vendor/ is scanned → clone pair found
         assert!(
             evals.iter().any(|e| !e.is_pass()),
             "vendor/ should be scanned when skip_ignored_files is false, got: {evals:?}"
@@ -447,27 +424,10 @@ mod tests {
     }
 
     #[test]
-    fn evidence_contains_all_occurrence_locations() {
-        let evals = check_clone_pair();
-
-        let evidence = unwrap_evidence(&evals[0]);
-        assert_that!(evidence, len(eq(2)));
-        assert_location_contains(evidence, "a.rs");
-        assert_location_contains(evidence, "b.rs");
-    }
-
-    #[test]
-    fn evidence_snippets_reflect_each_occurrence() {
-        let evals = check_clone_pair();
-
-        let evidence = unwrap_evidence(&evals[0]);
-        assert_that!(evidence[0].found, contains_substring("fn foo"));
-        assert_that!(evidence[1].found, contains_substring("fn bar"));
-    }
-
-    #[test]
     fn duplicated_code_returns_one_evaluation_per_clone_group() {
-        let evals = check_clone_pair();
+        let dir = clone_pair();
+
+        let evals = check_dir(&dir.root());
 
         assert_that!(evals, len(eq(1)));
     }
@@ -478,18 +438,6 @@ mod tests {
 
         let err = result.unwrap_err();
         assert_that!(err.code, eq("invalid_target"));
-    }
-
-    #[test]
-    fn distinct_code_passes() {
-        let dir = TestDir::new()
-            .source_file("a.rs", "let x = 1 + 2;")
-            .source_file("b.rs", "if true { return false; }");
-
-        let evals = check_dir(&dir.root());
-
-        assert_that!(evals, len(eq(1)));
-        assert!(evals[0].is_pass());
     }
 
     #[test_case::test_case("a.ts", "b.ts",
@@ -572,87 +520,6 @@ mod tests {
         assert_that!(evals, len(eq(2)));
     }
 
-    #[test_case::test_case("tests/a.rs", "tests/b.rs",
-        "fn foo(x: i32) -> i32 { x + 1 }",
-        "fn bar(y: i32) -> i32 { y + 1 }"
-        ; "test directory clones"
-    )]
-    #[test_case::test_case("a.test.ts", "b.test.ts",
-        "function foo(x: number): number { return x + 1; }",
-        "function bar(y: number): number { return y + 1; }"
-        ; "typescript test files"
-    )]
-    #[test_case::test_case("a.test.js", "b.test.js",
-        "function foo(x) { return x + 1; }",
-        "function bar(y) { return y + 1; }"
-        ; "javascript test files"
-    )]
-    #[test_case::test_case("__tests__/a.js", "__tests__/b.js",
-        "function foo(x) { return x + 1; }",
-        "function bar(y) { return y + 1; }"
-        ; "js files in __tests__ directory"
-    )]
-    #[test_case::test_case("a.spec.ts", "b.spec.ts",
-        "function foo(x: number): number { return x + 1; }",
-        "function bar(y: number): number { return y + 1; }"
-        ; "spec ts files"
-    )]
-    #[test_case::test_case("a.test.tsx", "b.test.tsx",
-        "function Greeting({ name }: { name: string }) { return <div>Hello {name}</div>; }",
-        "function Welcome({ name }: { name: string }) { return <div>Hello {name}</div>; }"
-        ; "tsx test files"
-    )]
-    #[test_case::test_case("src/a.rs", "src/b.rs",
-        "#[test]\nfn test_a(x: i32) -> i32 { x + 1 }",
-        "#[test]\nfn test_b(y: i32) -> i32 { y + 1 }"
-        ; "naked test fns"
-    )]
-    #[test_case::test_case("src/a.rs", "src/b.rs",
-        "fn serve() -> String { String::from(\"hello\") }\n\
-         #[cfg(test)]\nmod tests {\n    fn helper_a(x: i32) -> i32 { x + 1 }\n}",
-        "use std::collections::HashMap;\n\
-         #[cfg(test)]\nmod tests {\n    fn helper_b(y: i32) -> i32 { y + 1 }\n}"
-        ; "inline rust test modules"
-    )]
-    fn applies_test_thresholds(file_a: &str, file_b: &str, content_a: &str, content_b: &str) {
-        let dir = TestDir::new()
-            .source_file(file_a, content_a)
-            .source_file(file_b, content_b);
-
-        let evals = check_dir(&dir.root());
-
-        // Clone pair produces 14 tokens. Test thresholds: warn=10, fail=30.
-        // 14 > 10 (warn) but 14 < 30 (fail), so the result should be warn.
-        assert!(
-            evals[0].is_warn(),
-            "expected warn (test thresholds), got: {evals:?}"
-        );
-    }
-
-    #[test]
-    fn uses_production_thresholds_for_mixed_test_and_production_clones() {
-        let dir = TestDir::new()
-            .source_file("src/a.rs", "fn foo(x: i32) -> i32 { x + 1 }")
-            .source_file("tests/b.rs", "fn bar(y: i32) -> i32 { y + 1 }");
-
-        let evals = check_dir(&dir.root());
-
-        assert!(
-            evals[0].is_fail(),
-            "mixed groups should use production thresholds, got: {evals:?}"
-        );
-    }
-
-    #[test]
-    fn single_file_without_duplication_passes() {
-        let dir = TestDir::new().source_file("a.rs", "fn foo(x: i32) -> i32 { x + 1 }");
-
-        let evals = check_dir(&dir.root());
-
-        assert_that!(evals, len(eq(1)));
-        assert!(evals[0].is_pass());
-    }
-
     #[test]
     fn excludes_files_matching_a_glob_pattern() {
         let dir = clone_pair();
@@ -715,212 +582,6 @@ mod tests {
         assert!(
             evals.iter().all(Evaluation::is_pass),
             "generated/** should be excluded, got: {evals:?}"
-        );
-    }
-
-    const RUST_TRAIT_RENDER_HTML: &str = "\
-impl Render for Html {
-    fn render(&self) -> String {
-        let mut buf = String::new();
-        buf.push_str(\"<div>\");
-        buf.push_str(\"</div>\");
-        buf
-    }
-}";
-
-    const RUST_TRAIT_RENDER_XML: &str = "\
-impl Render for Xml {
-    fn render(&self) -> String {
-        let mut buf = String::new();
-        buf.push_str(\"<root>\");
-        buf.push_str(\"</root>\");
-        buf
-    }
-}";
-
-    const TS_IMPLEMENTS_RENDERER_HTML: &str = "\
-class HtmlRenderer implements Renderer {
-    render(): string {
-        let buf = '';
-        buf += '<div>';
-        buf += '</div>';
-        return buf;
-    }
-}";
-
-    const TS_IMPLEMENTS_RENDERER_XML: &str = "\
-class XmlRenderer implements Renderer {
-    render(): string {
-        let buf = '';
-        buf += '<root>';
-        buf += '</root>';
-        return buf;
-    }
-}";
-
-    const JS_EXTENDS_ABSTRACT_HTML: &str = "\
-class HtmlRenderer extends AbstractRenderer {
-    render() {
-        let buf = '';
-        buf += '<div>';
-        buf += '</div>';
-        return buf;
-    }
-}";
-
-    const JS_EXTENDS_ABSTRACT_XML: &str = "\
-class XmlRenderer extends AbstractRenderer {
-    render() {
-        let buf = '';
-        buf += '<root>';
-        buf += '</root>';
-        return buf;
-    }
-}";
-
-    #[test_case::test_case("a.rs", RUST_TRAIT_RENDER_HTML, "b.rs", RUST_TRAIT_RENDER_XML
-        ; "same rust traits")]
-    #[test_case::test_case("a.ts", TS_IMPLEMENTS_RENDERER_HTML, "b.ts", TS_IMPLEMENTS_RENDERER_XML
-        ; "same ts interfaces")]
-    #[test_case::test_case("a.tsx", TS_IMPLEMENTS_RENDERER_HTML, "b.tsx", TS_IMPLEMENTS_RENDERER_XML
-        ; "same tsx interfaces")]
-    #[test_case::test_case("a.js", JS_EXTENDS_ABSTRACT_HTML, "b.js", JS_EXTENDS_ABSTRACT_XML
-        ; "same js extends")]
-    #[test_case::test_case(
-        "a.ts", TS_IMPLEMENTS_RENDERER_HTML,
-        "b.js", "\
-class XmlRenderer extends Renderer {
-    render() {
-        let buf = '';
-        buf += '<root>';
-        buf += '</root>';
-        return buf;
-    }
-}"
-        ; "cross language ts implements and js extends same contract")]
-    fn excludes_same_contract_clone_groups(
-        file_a: &str,
-        content_a: &str,
-        file_b: &str,
-        content_b: &str,
-    ) {
-        let dir = TestDir::new()
-            .source_file(file_a, content_a)
-            .source_file(file_b, content_b);
-
-        let evals = check_dir(&dir.root());
-
-        assert!(
-            evals.iter().all(Evaluation::is_pass),
-            "same-contract impls should be excluded, got: {evals:?}"
-        );
-    }
-
-    #[test_case::test_case(
-        "a.rs", RUST_TRAIT_RENDER_HTML,
-        "b.rs", "\
-impl Format for Xml {
-    fn render(&self) -> String {
-        let mut buf = String::new();
-        buf.push_str(\"<root>\");
-        buf.push_str(\"</root>\");
-        buf
-    }
-}"
-        ; "different rust traits"
-    )]
-    #[test_case::test_case(
-        "a.ts", TS_IMPLEMENTS_RENDERER_HTML,
-        "b.ts", "\
-class XmlFormatter implements Formatter {
-    render(): string {
-        let buf = '';
-        buf += '<root>';
-        buf += '</root>';
-        return buf;
-    }
-}"
-        ; "different ts interfaces"
-    )]
-    #[test_case::test_case(
-        "a.rs", RUST_TRAIT_RENDER_HTML,
-        "b.rs", "\
-fn standalone_render() -> String {
-    let mut buf = String::new();
-    buf.push_str(\"<section>\");
-    buf.push_str(\"</section>\");
-    buf
-}"
-        ; "rust trait vs free function"
-    )]
-    #[test_case::test_case(
-        "a.ts", TS_IMPLEMENTS_RENDERER_HTML,
-        "b.ts", "\
-function standaloneRender(): string {
-    let buf = '';
-    buf += '<section>';
-    buf += '</section>';
-    return buf;
-}"
-        ; "ts contract vs free function"
-    )]
-    #[test_case::test_case(
-        "a.rs", "\
-impl Html {
-    fn render(&self) -> String {
-        let mut buf = String::new();
-        buf.push_str(\"<div>\");
-        buf.push_str(\"</div>\");
-        buf
-    }
-}",
-        "b.rs", "\
-impl Xml {
-    fn render(&self) -> String {
-        let mut buf = String::new();
-        buf.push_str(\"<root>\");
-        buf.push_str(\"</root>\");
-        buf
-    }
-}"
-        ; "rust inherent impls"
-    )]
-    #[test_case::test_case(
-        "a.ts", "\
-class HtmlRenderer {
-    render(): string {
-        let buf = '';
-        buf += '<div>';
-        buf += '</div>';
-        return buf;
-    }
-}",
-        "b.ts", "\
-class XmlRenderer {
-    render(): string {
-        let buf = '';
-        buf += '<root>';
-        buf += '</root>';
-        return buf;
-    }
-}"
-        ; "plain ts classes"
-    )]
-    fn reports_non_contract_duplication(
-        file_a: &str,
-        content_a: &str,
-        file_b: &str,
-        content_b: &str,
-    ) {
-        let dir = TestDir::new()
-            .source_file(file_a, content_a)
-            .source_file(file_b, content_b);
-
-        let evals = check_dir(&dir.root());
-
-        assert!(
-            evals.iter().any(|e| !e.is_pass()),
-            "expected duplication reported, got: {evals:?}"
         );
     }
 

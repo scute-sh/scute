@@ -146,7 +146,7 @@ All clear.
 
 ## Design notes
 
-See [handbook/checks/code-similarity.md](../../handbook/checks/code-similarity.md) for the design thinking behind context-aware similarity evaluation.
+See the [handbook/checks/code-similarity/](../../handbook/checks/code-similarity/) directory for the design thinking behind context-aware similarity evaluation.
 
 ## Scope & limitations
 

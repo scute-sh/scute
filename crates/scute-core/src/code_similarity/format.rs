@@ -72,27 +72,27 @@ mod tests {
     use crate::code_similarity::tree::SourceTreeBuilder;
 
     #[test]
-    fn empty_string_is_trivial() {
+    fn treats_empty_string_as_trivial() {
         assert!(is_trivial_line(""));
     }
 
     #[test]
-    fn closing_brace_is_trivial() {
+    fn treats_closing_brace_as_trivial() {
         assert!(is_trivial_line("}"));
     }
 
     #[test]
-    fn closing_brace_semicolon_is_trivial() {
+    fn treats_closing_brace_semicolon_as_trivial() {
         assert!(is_trivial_line("};"));
     }
 
     #[test]
-    fn whitespace_only_is_trivial() {
+    fn treats_whitespace_only_as_trivial() {
         assert!(is_trivial_line("   \t  "));
     }
 
     #[test]
-    fn fn_declaration_is_not_trivial() {
+    fn rejects_fn_declaration_as_non_trivial() {
         assert!(!is_trivial_line("fn foo()"));
     }
 
