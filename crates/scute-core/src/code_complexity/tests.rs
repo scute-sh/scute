@@ -1,11 +1,15 @@
+use super::javascript::JsFamily;
 use super::rules::LanguageRules;
 use super::rust::Rust;
 use super::score::score_functions;
-use super::typescript::TypeScript;
 use test_case::test_case;
 
-fn ts() -> TypeScript {
-    TypeScript::new(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into())
+fn js() -> JsFamily {
+    JsFamily::javascript()
+}
+
+fn ts() -> JsFamily {
+    JsFamily::typescript()
 }
 
 fn expect_score(source: &str, rules: &dyn LanguageRules, expected: u64) {
@@ -200,33 +204,29 @@ fn scores_inline_nesting(rules: &dyn LanguageRules, source: &str) {
 
 // function expression: const f = function() {...}
 // nesting +1, if: +1+1, else: +1
-#[test_case(&ts(), "function f() {
+#[test]
+fn scores_function_expression_as_inline_nesting() {
+    expect_score(
+        "function f() {
     const g = function() {
         if (true) { return 1; }
         else { return 0; }
     };
-}" ; "typescript_function_expression")]
-fn scores_function_expression_as_inline_nesting(rules: &dyn LanguageRules, source: &str) {
-    expect_score(source, rules, 3);
+}",
+        &ts(),
+        3,
+    );
 }
 
 // generator declaration: behaves like nested named function (Separate)
-#[test_case(&ts(),
-    "function outer() { function* gen() { if (true) {} } if (true) {} }",
-    "outer", 3, "gen", 1
-    ; "typescript_generator"
-)]
-fn scores_generator_declaration_independently(
-    rules: &dyn LanguageRules,
-    source: &str,
-    outer_name: &str,
-    outer_score: u64,
-    inner_name: &str,
-    inner_score: u64,
-) {
-    let results = score_functions(source, rules);
-    assert_function_score(&results, outer_name, outer_score);
-    assert_function_score(&results, inner_name, inner_score);
+#[test]
+fn scores_generator_declaration_independently() {
+    let results = score_functions(
+        "function outer() { function* gen() { if (true) {} } if (true) {} }",
+        &ts(),
+    );
+    assert_function_score(&results, "outer", 3);
+    assert_function_score(&results, "gen", 1);
 }
 
 #[test_case(&Rust,
@@ -287,5 +287,28 @@ fn ignores_non_this_member_call_as_recursion() {
         }",
         &ts(),
         2,
+    );
+}
+
+// JS grammar smoke test: exercises all construct families through the JS parser
+// to verify grammar wiring. Scoring logic is shared with TS and tested above.
+#[test]
+fn javascript_grammar_scores_all_constructs() {
+    // for...of: +1, if: +1+1(nesting), nested if: +1+2(nesting),
+    // &&: +1, break outer: +1, else: +1, recursion: +1 = 10
+    expect_score(
+        "function process(items) {
+            outer: for (const item of items) {
+                if (item > 0) {
+                    if (item > 10 && item < 100) {
+                        break outer;
+                    }
+                } else {
+                    return process(items.slice(1));
+                }
+            }
+        }",
+        &js(),
+        10,
     );
 }

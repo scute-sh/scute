@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use serde::Deserialize;
 
 use super::rules::LanguageRules;
-use super::{rust, score, typescript};
+use super::{javascript, rust, score};
 use crate::files;
 use crate::{Evaluation, Evidence, ExecutionError, Expected, Thresholds};
 
@@ -121,16 +121,16 @@ fn languages() -> crate::files::LanguageRegistry<dyn LanguageRules> {
             rules: Box::new(rust::Rust),
         },
         LanguageRegistryEntry {
+            extensions: &["js", "jsx", "mjs", "cjs"],
+            rules: Box::new(javascript::JsFamily::javascript()),
+        },
+        LanguageRegistryEntry {
             extensions: &["ts"],
-            rules: Box::new(typescript::TypeScript::new(
-                tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-            )),
+            rules: Box::new(javascript::JsFamily::typescript()),
         },
         LanguageRegistryEntry {
             extensions: &["tsx"],
-            rules: Box::new(typescript::TypeScript::new(
-                tree_sitter_typescript::LANGUAGE_TSX.into(),
-            )),
+            rules: Box::new(javascript::JsFamily::typescript_tsx()),
         },
     ])
 }
@@ -360,9 +360,10 @@ mod tests {
         assert_eq!(entry.expected, expected.map(|s| Expected::Text(s.into())));
     }
 
-    #[test]
-    fn catch_evidence_formatting() {
-        let evidence = evidence_of_file("a.ts", "function f() { try {} catch (e) {} }");
+    #[test_case("a.ts" ; "typescript")]
+    #[test_case("a.js" ; "javascript")]
+    fn catch_evidence_formatting(filename: &str) {
+        let evidence = evidence_of_file(filename, "function f() { try {} catch (e) {} }");
         let entry = evidence
             .iter()
             .find(|e| e.rule.as_deref() == Some("flow break"))
@@ -428,17 +429,32 @@ mod tests {
         assert!(evals[0].target.contains("Greeting"));
     }
 
+    #[test_case("app.js" ; "js")]
+    #[test_case("app.jsx" ; "jsx")]
+    #[test_case("app.mjs" ; "mjs")]
+    #[test_case("app.cjs" ; "cjs")]
+    fn scores_javascript_file(filename: &str) {
+        let dir = TestDir::new().source_file(filename, "function greet() { return 'hi' }");
+
+        let evals = check_dir(&dir.root());
+
+        assert_eq!(evals.len(), 1);
+        assert!(evals[0].target.contains("greet"));
+    }
+
     #[test]
     fn scores_mixed_language_project() {
         let dir = TestDir::new()
             .source_file("lib.rs", "fn rust_fn() { if true {} }")
-            .source_file("app.ts", "function ts_fn() { return 1 }");
+            .source_file("app.ts", "function ts_fn() { return 1 }")
+            .source_file("util.js", "function js_fn() { return 2 }");
 
         let evals = check_dir(&dir.root());
 
-        assert_eq!(evals.len(), 2);
+        assert_eq!(evals.len(), 3);
         let names: Vec<&str> = evals.iter().map(|e| e.target.as_str()).collect();
         assert!(names.iter().any(|t| t.contains("rust_fn")));
         assert!(names.iter().any(|t| t.contains("ts_fn")));
+        assert!(names.iter().any(|t| t.contains("js_fn")));
     }
 }

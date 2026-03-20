@@ -3,17 +3,35 @@ use tree_sitter::Language;
 use super::rules::{LanguageRules, NestingKind, ScoringUnit};
 use super::score::{Construct, FlowConstruct, JumpKeyword, LogicalOp};
 
-pub struct TypeScript {
+pub struct JsFamily {
     language: Language,
 }
 
-impl TypeScript {
-    pub fn new(language: Language) -> Self {
-        Self { language }
+/// Covers JavaScript, TypeScript, and TSX (parameterized by grammar).
+impl JsFamily {
+    #[must_use]
+    pub fn javascript() -> Self {
+        Self {
+            language: tree_sitter_javascript::LANGUAGE.into(),
+        }
+    }
+
+    #[must_use]
+    pub fn typescript() -> Self {
+        Self {
+            language: tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+        }
+    }
+
+    #[must_use]
+    pub fn typescript_tsx() -> Self {
+        Self {
+            language: tree_sitter_typescript::LANGUAGE_TSX.into(),
+        }
     }
 }
 
-impl LanguageRules for TypeScript {
+impl LanguageRules for JsFamily {
     fn language(&self) -> Language {
         self.language.clone()
     }
