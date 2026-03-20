@@ -24,7 +24,7 @@ Scute's own MCP server has check tools. Run them at the right moment:
 
 **Action (do this BEFORE fixing the problem):**
 
-1. Acknowledge what went wrong and why you didn't catch it yourself
+1. Acknowledge what went wrong and explain why you didn't catch it yourself
 2. Open @handbook/pain-points.md and track it:
    - Already documented → increase the counter (×N)
    - Not documented → write it down
@@ -38,7 +38,7 @@ When you need to understand how something behaves (an API, an edge case, a libra
 ## Before committing
 
 - Run all three, in this order: `cargo fmt`, `cargo clippy --all-targets`, `cargo test`. All must pass. Don't treat "tests pass" as "ready to commit."
-- Take a step back, and think. Don't blindly follow the workflow.
+- Run our scute checks: `code-complexity`, `code-similarity`
 
 # Testing
 

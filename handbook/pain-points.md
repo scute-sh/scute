@@ -171,7 +171,7 @@ value.
   behaves (an API, an edge case, a library quirk), the agent reads source or
   writes throwaway scripts instead of writing a test. The test harness gives
   faster feedback and the answer persists as documentation.
-- **Stated assumptions without verifying.** (×2) Confidently claimed a tool's
+- **Stated assumptions without verifying.** (×3) Confidently claimed a tool's
   fallback behavior ("it installs latest by default") without checking. The
   claim was plausible but wrong, caught only after CI failed. When behavior
   isn't documented in memory, verify it before asserting it.
@@ -185,6 +185,10 @@ value.
   context but treated as reference material instead of active capabilities.
   Agents follow static lists instead of thinking "what tools do I have for
   this?"
+- **Dismissed own tool warnings on freshly written code.** Pre-commit hook
+  flagged 108-token duplication between code just written and code just moved.
+  The agent rationalized it as "expected cost of separate compilation units"
+  instead of treating it as a signal to fix the design.
 
 ## Documentation
 
