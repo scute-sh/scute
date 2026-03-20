@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.10](https://github.com/scute-sh/scute/compare/scute-v0.0.9...scute-v0.0.10) - 2026-03-20
+
+### Fixed
+
+- *(test-utils)* per-check stdin handling in CliStdin backend ([#99](https://github.com/scute-sh/scute/pull/99))
+
+### Other
+
+- *(test-utils)* typed DSL for all checks, remove string-based API ([#97](https://github.com/scute-sh/scute/pull/97))
+
 ## [0.0.9](https://github.com/scute-sh/scute/compare/scute-v0.0.8...scute-v0.0.9) - 2026-03-20
 
 ### Added
