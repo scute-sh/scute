@@ -25,11 +25,11 @@
 //! [`Evidence`](crate::Evidence) entries explaining what drives the score.
 
 mod check;
+mod javascript;
 mod rules;
 mod rust;
 mod score;
 #[cfg(test)]
 mod tests;
-mod typescript;
 
 pub use check::{CHECK_NAME, Definition, check};
