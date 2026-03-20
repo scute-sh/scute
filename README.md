@@ -70,13 +70,12 @@ your agent, and your CI all consume it identically.
 
 | Check                                                         | What it catches                        | Supports             |
 | ------------------------------------------------------------- | -------------------------------------- | -------------------- |
-| [`code-complexity`](docs/checks/code-complexity.md)           | Functions that are hard to understand  | Rust, TS             |
+| [`code-complexity`](docs/checks/code-complexity.md)           | Functions that are hard to understand  | Rust, JS, TS         |
 | [`code-similarity`](docs/checks/code-similarity.md)           | Copy-paste and structural duplication  | Rust, JS, TS         |
 | [`commit-message`](docs/checks/commit-message.md)             | Sloppy or non-standard commit messages | Conventional commits |
 | [`dependency-freshness`](docs/checks/dependency-freshness.md) | Dependencies drifting behind           | Cargo, npm, pnpm     |
 
-JS support for code-complexity is next. More checks and ecosystems are on
-the [roadmap](handbook/roadmap.md).
+More checks and ecosystems are on the [roadmap](handbook/roadmap.md).
 
 ## Install
 

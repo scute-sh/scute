@@ -34,7 +34,7 @@ Every function starts at 0. Six cognitive drivers add to the score:
 
 Each language maps its own constructs to the cognitive drivers above.
 
-| Cognitive role | Rust | TypeScript |
+| Cognitive role | Rust | JavaScript / TypeScript |
 | --- | --- | --- |
 | Conditional | `if`, `match` | `if`, `switch`, ternary (`? :`) |
 | Loop | `for`, `while`, `loop` | `for`, `for...in`, `for...of`, `while`, `do...while` |
@@ -44,15 +44,15 @@ Each language maps its own constructs to the cognitive drivers above.
 | Inline nesting | closures | arrow functions, function expressions |
 | Jump | labeled `break`/`continue` | labeled `break`/`continue` |
 
-Constructs in the same cognitive role follow the same scoring rules. A `switch` in TypeScript scores exactly like a `match` in Rust.
+Constructs in the same cognitive role follow the same scoring rules. A `switch` in JavaScript scores exactly like a `match` in Rust.
 
 ### Key behaviors
 
 - **Nesting multiplies.** An `if` inside a `for` inside a `match`/`switch` costs 1 + nesting depth, not just 1. This is the main driver of high scores.
 - **Else-if chains are flat.** `if / else if / else if / else` does not compound nesting. Each branch costs +1.
-- **Inline nesting inherits depth.** Closures (Rust) and arrow functions / function expressions (TS) bump nesting depth by 1 for their contained code. They're not a fresh scope.
+- **Inline nesting inherits depth.** Closures (Rust) and arrow functions / function expressions (JS/TS) bump nesting depth by 1 for their contained code. They're not a fresh scope.
 - **Logical operators count sequence changes.** `a && b && c` is one sequence (+1). `a && b || c && d` has two changes (+3).
-- **Ternaries score like `if`.** (TS) A ternary counts as a conditional and nests like any other flow construct.
+- **Ternaries score like `if`.** (JS/TS) A ternary counts as a conditional and nests like any other flow construct.
 
 ## Usage
 
@@ -146,7 +146,7 @@ Each line that contributes to a function's score produces an evidence entry. The
 | `recursion` | `recursive call to 'process' (+1)` | consider iterative approach |
 | `jump` | `'break' to label 'outer (+1)` | restructure to avoid labeled jump |
 
-The nesting chain reads left-to-right (outside to inside) and stops at inline nesting boundaries: `'if' nested 2 levels: 'closure > if' (+3)` in Rust, `'if' nested 2 levels: 'arrow > if' (+3)` in TypeScript.
+The nesting chain reads left-to-right (outside to inside) and stops at inline nesting boundaries: `'if' nested 2 levels: 'closure > if' (+3)` in Rust, `'if' nested 2 levels: 'arrow > if' (+3)` in JavaScript/TypeScript.
 
 ## Examples
 
@@ -217,7 +217,7 @@ All functions score within thresholds. Nothing to fix.
 
 ## Scope & limitations
 
-- **Supported languages:** Rust and TypeScript. JavaScript support is planned.
+- **Supported languages:** Rust, JavaScript (`.js`, `.jsx`, `.mjs`, `.cjs`), and TypeScript (`.ts`, `.tsx`).
 - **Per-function, not per-file.** Each function is evaluated and reported independently. The `target` includes the function name and line number.
 - **Structural, not semantic.** Measures control flow structure. Two functions that are equally hard to understand but use different constructs may score differently.
 - **Scoped analysis.** Only the files and directories you pass are analyzed. Pass nothing to scan the whole project.
