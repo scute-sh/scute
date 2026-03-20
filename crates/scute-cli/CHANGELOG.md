@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.9](https://github.com/scute-sh/scute/compare/scute-v0.0.8...scute-v0.0.9) - 2026-03-20
+
+### Added
+
+- *(code-similarity)* TS/JS contract detection ([#91](https://github.com/scute-sh/scute/pull/91))
+
+### Fixed
+
+- *(code-similarity)* harden edge cases and writing style ([#93](https://github.com/scute-sh/scute/pull/93))
+- *(code-similarity)* exclude same-contract trait impls ([#86](https://github.com/scute-sh/scute/pull/86))
+
+### Other
+
+- *(test-utils)* typed DSL for commit-message check ([#96](https://github.com/scute-sh/scute/pull/96))
+- *(code-similarity)* restructure test pyramid and harden edges ([#95](https://github.com/scute-sh/scute/pull/95))
+- *(code-similarity)* redesign pipeline with tree-based architecture ([#89](https://github.com/scute-sh/scute/pull/89))
+
 ## [0.0.8](https://github.com/scute-sh/scute/compare/scute-v0.0.7...scute-v0.0.8) - 2026-03-16
 
 ### Added
