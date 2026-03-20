@@ -388,6 +388,11 @@ mod tests {
     }
 
     #[test]
+    fn all_share_contract_false_for_empty_pairs() {
+        assert!(!all_share_contract(&[]));
+    }
+
+    #[test]
     fn all_share_contract_false_when_no_overlap_in_multi_contract() {
         let tree_a = contract_tree("a.ts", &["Renderer", "Serializable"], &["fn", "$ID"]);
         let tree_b = contract_tree("b.ts", &["Formatter", "Disposable"], &["fn", "$ID"]);
