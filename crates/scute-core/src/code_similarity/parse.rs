@@ -149,4 +149,20 @@ mod tests {
             .is_ok()
         );
     }
+
+    #[test]
+    fn syntax_errors_preserve_tokens_from_valid_parts() {
+        let tree = parse_source("fn valid() { 1 + 2 }\nfn broken(x: { }", "a.rs", &Rust).unwrap();
+        let tokens = tree.tokens();
+        let texts: Vec<&str> = tokens.iter().map(|t| t.text.as_str()).collect();
+
+        assert!(
+            texts.contains(&"fn"),
+            "valid tokens should survive syntax errors, got: {texts:?}"
+        );
+        assert!(
+            tokens.len() >= 5,
+            "expected several tokens from the valid part"
+        );
+    }
 }

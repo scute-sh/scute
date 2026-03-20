@@ -484,7 +484,7 @@ fn compute(
         let groups = detect_clones(&[a, b], LOW_TOKEN_THRESHOLD);
 
         // The suffix array finds many overlapping sub-sequences, but only
-        // the longest match should survive — shorter ones are fully contained.
+        // the longest match should survive. Shorter ones are fully contained.
         assert_eq!(groups.len(), 1);
     }
 }
