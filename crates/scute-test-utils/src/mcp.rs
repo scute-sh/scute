@@ -52,20 +52,8 @@ impl McpBackend {
 }
 
 impl Backend for McpBackend {
-    fn check(&self, dir: TempDir, working_dir: &Path, args: &[&str]) -> CheckResult {
-        let check_name = args.get(1).expect("check name required");
-        let tool_name = format!("check_{}", check_name.replace('-', "_"));
-        let tool_args = build_tool_args(check_name, &args[2..]);
-        Self::call(dir, working_dir, &tool_name, &tool_args)
-    }
-
     fn run_check(&self, dir: TempDir, working_dir: &Path, input: &CheckInput) -> CheckResult {
-        let (tool_name, tool_args) = match input {
-            CheckInput::CommitMessage { message } => (
-                "check_commit_message",
-                serde_json::json!({ "message": message }),
-            ),
-        };
+        let (tool_name, tool_args) = mcp_tool_call(input);
         Self::call(dir, working_dir, tool_name, &tool_args)
     }
 
@@ -162,46 +150,42 @@ impl ClientHandler for RootsProvider {
     }
 }
 
-fn build_tool_args(check_name: &str, args: &[&str]) -> serde_json::Value {
-    match check_name {
-        "commit-message" => {
-            let message = args.first().copied().unwrap_or("");
-            serde_json::json!({ "message": message })
-        }
-        "code-complexity" => positional_paths_args("paths", args),
-        "code-similarity" => source_files_args(args),
-        "dependency-freshness" => match args.first() {
-            Some(path) => serde_json::json!({ "path": path }),
-            None => serde_json::json!({}),
-        },
-        _ => serde_json::json!({}),
-    }
+fn json_object(entries: &[(&str, Option<serde_json::Value>)]) -> serde_json::Value {
+    serde_json::Value::Object(
+        entries
+            .iter()
+            .filter_map(|(k, v)| v.as_ref().map(|v| ((*k).into(), v.clone())))
+            .collect(),
+    )
 }
 
-fn positional_paths_args(key: &str, args: &[&str]) -> serde_json::Value {
-    match args.first() {
-        Some(_) => serde_json::json!({ key: args }),
-        None => serde_json::json!({}),
-    }
+fn non_empty(slice: &[String]) -> Option<serde_json::Value> {
+    (!slice.is_empty()).then(|| serde_json::json!(slice))
 }
 
-fn source_files_args(args: &[&str]) -> serde_json::Value {
-    let mut json = serde_json::Map::new();
-    let mut files = Vec::new();
-    let mut i = 0;
-    while i < args.len() {
-        if args[i] == "--source-dir"
-            && let Some(val) = args.get(i + 1)
-        {
-            json.insert("source_dir".into(), serde_json::json!(val));
-            i += 2;
-            continue;
-        }
-        files.push(args[i]);
-        i += 1;
+fn mcp_tool_call(input: &CheckInput) -> (&'static str, serde_json::Value) {
+    match input {
+        CheckInput::CommitMessage { message } => (
+            "check_commit_message",
+            serde_json::json!({ "message": message }),
+        ),
+        CheckInput::DependencyFreshness { path } => (
+            "check_dependency_freshness",
+            json_object(&[("path", path.as_ref().map(|p| serde_json::json!(p)))]),
+        ),
+        CheckInput::CodeComplexity { paths } => (
+            "check_code_complexity",
+            json_object(&[("paths", non_empty(paths))]),
+        ),
+        CheckInput::CodeSimilarity { source_dir, files } => (
+            "check_code_similarity",
+            json_object(&[
+                (
+                    "source_dir",
+                    source_dir.as_ref().map(|d| serde_json::json!(d)),
+                ),
+                ("files", non_empty(files)),
+            ]),
+        ),
     }
-    if !files.is_empty() {
-        json.insert("files".into(), serde_json::json!(files));
-    }
-    serde_json::Value::Object(json)
 }

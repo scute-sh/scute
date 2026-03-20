@@ -98,11 +98,22 @@ impl std::fmt::Display for Interface {
 /// 3. Put optional params as builder methods, `.run()` executes
 /// 4. Implement the variant in both backends' `run_check`
 pub(crate) enum CheckInput {
-    CommitMessage { message: String },
+    CommitMessage {
+        message: String,
+    },
+    DependencyFreshness {
+        path: Option<String>,
+    },
+    CodeComplexity {
+        paths: Vec<String>,
+    },
+    CodeSimilarity {
+        source_dir: Option<String>,
+        files: Vec<String>,
+    },
 }
 
 trait Backend {
-    fn check(&self, dir: TempDir, working_dir: &Path, args: &[&str]) -> CheckResult;
     fn run_check(&self, dir: TempDir, working_dir: &Path, input: &CheckInput) -> CheckResult;
     fn list_checks(&self, dir: TempDir) -> ListChecksResult;
 }
@@ -179,17 +190,31 @@ impl Scute {
         }
     }
 
+    pub fn dependency_freshness(self) -> DependencyFreshnessCheck {
+        DependencyFreshnessCheck {
+            scute: self,
+            path: None,
+        }
+    }
+
+    pub fn code_complexity(self) -> CodeComplexityCheck {
+        CodeComplexityCheck {
+            scute: self,
+            paths: Vec::new(),
+        }
+    }
+
+    pub fn code_similarity(self) -> CodeSimilarityCheck {
+        CodeSimilarityCheck {
+            scute: self,
+            source_dir: None,
+            files: Vec::new(),
+        }
+    }
+
     pub fn list_checks(self) -> ListChecksResult {
         let dir = self.project.build();
         self.backend.list_checks(dir)
-    }
-
-    pub fn check(self, args: &[&str]) -> CheckResult {
-        let mut full_args = vec!["check"];
-        full_args.extend_from_slice(args);
-        let dir = self.project.build();
-        let working_dir = resolve_working_dir(&dir, self.cwd.as_deref());
-        self.backend.check(dir, &working_dir, &full_args)
     }
 
     fn run_check(self, input: &CheckInput) -> CheckResult {
@@ -219,6 +244,65 @@ impl CommitMessageCheck {
     pub fn run(self) -> CheckResult {
         self.scute.run_check(&CheckInput::CommitMessage {
             message: self.message,
+        })
+    }
+}
+
+pub struct DependencyFreshnessCheck {
+    scute: Scute,
+    path: Option<String>,
+}
+
+impl DependencyFreshnessCheck {
+    pub fn path(mut self, path: &str) -> Self {
+        self.path = Some(path.into());
+        self
+    }
+
+    pub fn run(self) -> CheckResult {
+        self.scute
+            .run_check(&CheckInput::DependencyFreshness { path: self.path })
+    }
+}
+
+pub struct CodeComplexityCheck {
+    scute: Scute,
+    paths: Vec<String>,
+}
+
+impl CodeComplexityCheck {
+    pub fn paths(mut self, paths: &[&str]) -> Self {
+        self.paths = paths.iter().map(|s| (*s).into()).collect();
+        self
+    }
+
+    pub fn run(self) -> CheckResult {
+        self.scute
+            .run_check(&CheckInput::CodeComplexity { paths: self.paths })
+    }
+}
+
+pub struct CodeSimilarityCheck {
+    scute: Scute,
+    source_dir: Option<String>,
+    files: Vec<String>,
+}
+
+impl CodeSimilarityCheck {
+    pub fn source_dir(mut self, dir: &str) -> Self {
+        self.source_dir = Some(dir.into());
+        self
+    }
+
+    pub fn files(mut self, files: &[&str]) -> Self {
+        self.files = files.iter().map(|s| (*s).into()).collect();
+        self
+    }
+
+    pub fn run(self) -> CheckResult {
+        self.scute.run_check(&CheckInput::CodeSimilarity {
+            source_dir: self.source_dir,
+            files: self.files,
         })
     }
 }

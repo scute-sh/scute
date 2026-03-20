@@ -31,32 +31,42 @@ impl CliBackend {
     }
 }
 
-impl Backend for CliBackend {
-    fn check(&self, dir: TempDir, working_dir: &Path, args: &[&str]) -> CheckResult {
-        let mut cmd = assert_cmd::Command::new(target_bin("scute"));
-        cmd.current_dir(working_dir);
-        if self.stdin {
-            let message = args.last().expect("CliStdin requires message in args");
-            cmd.args(&args[..args.len() - 1])
-                .write_stdin(message.to_string());
-        } else {
-            cmd.args(args);
+fn cli_args(input: &CheckInput) -> Vec<String> {
+    match input {
+        CheckInput::CommitMessage { message } => {
+            vec!["check".into(), "commit-message".into(), message.clone()]
         }
-        Self::run_cmd(cmd, dir, working_dir)
+        CheckInput::DependencyFreshness { path } => {
+            let mut args = vec!["check".into(), "dependency-freshness".into()];
+            args.extend(path.iter().cloned());
+            args
+        }
+        CheckInput::CodeComplexity { paths } => {
+            let mut args = vec!["check".into(), "code-complexity".into()];
+            args.extend(paths.iter().cloned());
+            args
+        }
+        CheckInput::CodeSimilarity { source_dir, files } => {
+            let mut args = vec!["check".into(), "code-similarity".into()];
+            if let Some(dir) = source_dir {
+                args.extend(["--source-dir".into(), dir.clone()]);
+            }
+            args.extend(files.iter().cloned());
+            args
+        }
     }
+}
 
+impl Backend for CliBackend {
     fn run_check(&self, dir: TempDir, working_dir: &Path, input: &CheckInput) -> CheckResult {
         let mut cmd = assert_cmd::Command::new(target_bin("scute"));
         cmd.current_dir(working_dir);
-        match input {
-            CheckInput::CommitMessage { message } => {
-                if self.stdin {
-                    cmd.args(["check", "commit-message"])
-                        .write_stdin(message.clone());
-                } else {
-                    cmd.args(["check", "commit-message", message]);
-                }
-            }
+        let args = cli_args(input);
+        if self.stdin {
+            let stdin_input = args.last().expect("check must have args").clone();
+            cmd.args(&args[..args.len() - 1]).write_stdin(stdin_input);
+        } else {
+            cmd.args(&args);
         }
         Self::run_cmd(cmd, dir, working_dir)
     }

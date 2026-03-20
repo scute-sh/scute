@@ -185,10 +185,11 @@ value.
   context but treated as reference material instead of active capabilities.
   Agents follow static lists instead of thinking "what tools do I have for
   this?"
-- **Dismissed own tool warnings on freshly written code.** Pre-commit hook
-  flagged 108-token duplication between code just written and code just moved.
-  The agent rationalized it as "expected cost of separate compilation units"
-  instead of treating it as a signal to fix the design.
+- **Dismissed own tool warnings on freshly written code.** (×2) Pre-commit hook
+  flags an issue on code the agent just wrote, and the agent rationalizes why
+  it's acceptable ("inherent to the function's job", "expected cost of separate
+  compilation units") instead of treating it as a signal to fix the design.
+  If the tool warns on code you just wrote, try to fix it before dismissing.
 
 ## Documentation
 

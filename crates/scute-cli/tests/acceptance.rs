@@ -112,7 +112,8 @@ mod dependency_freshness {
     #[test_case(Mcp)]
     fn fresh_project_passes(interface: Interface) {
         Scute::new(interface)
-            .check(&["dependency-freshness"])
+            .dependency_freshness()
+            .run()
             .expect_pass();
     }
 
@@ -121,7 +122,8 @@ mod dependency_freshness {
     fn outdated_deps_fail(interface: Interface) {
         Scute::new(interface)
             .dependency("itoa", "=0.4.8")
-            .check(&["dependency-freshness"])
+            .dependency_freshness()
+            .run()
             .expect_fail();
     }
 
@@ -129,7 +131,9 @@ mod dependency_freshness {
     #[test_case(Mcp)]
     fn nonexistent_path_produces_error(interface: Interface) {
         Scute::new(interface)
-            .check(&["dependency-freshness", "/nonexistent/path"])
+            .dependency_freshness()
+            .path("/nonexistent/path")
+            .run()
             .expect_error("invalid_target");
     }
 
@@ -139,7 +143,9 @@ mod dependency_freshness {
         let dir = TestProject::empty().build();
 
         Scute::new(interface)
-            .check(&["dependency-freshness", dir.path().to_str().unwrap()])
+            .dependency_freshness()
+            .path(dir.path().to_str().unwrap())
+            .run()
             .expect_error("invalid_target");
     }
 
@@ -156,7 +162,8 @@ checks:
       fail: 5
 ",
             )
-            .check(&["dependency-freshness"])
+            .dependency_freshness()
+            .run()
             .expect_pass();
     }
 
@@ -174,7 +181,8 @@ checks:
       fail: 5
 ",
             )
-            .check(&["dependency-freshness"])
+            .dependency_freshness()
+            .run()
             .expect_warn();
     }
 }
@@ -200,7 +208,8 @@ checks:
     min-tokens: 5
 ",
             )
-            .check(&["code-similarity"])
+            .code_similarity()
+            .run()
             .expect_fail();
     }
 
@@ -221,7 +230,8 @@ checks:
       - 'b.rs'
 ",
             )
-            .check(&["code-similarity"])
+            .code_similarity()
+            .run()
             .expect_pass();
     }
 
@@ -229,7 +239,9 @@ checks:
     #[test_case(Mcp)]
     fn nonexistent_source_dir_produces_error(interface: Interface) {
         Scute::new(interface)
-            .check(&["code-similarity", "--source-dir", "/nonexistent/path"])
+            .code_similarity()
+            .source_dir("/nonexistent/path")
+            .run()
             .expect_error("invalid_target");
     }
 
@@ -250,7 +262,9 @@ checks:
     min-tokens: 5
 ",
             )
-            .check(&["code-similarity", "a.rs"])
+            .code_similarity()
+            .files(&["a.rs"])
+            .run()
             .expect_fail()
             .expect_finding_count(1)
             .expect_target_contains("a.rs");
@@ -292,7 +306,8 @@ checks:
 ",
             )
             .source_file("src/complex.rs", COMPLEX_SOURCE)
-            .check(&["code-complexity"])
+            .code_complexity()
+            .run()
     }
 
     #[test_case(Cli)]
@@ -317,7 +332,8 @@ checks:
     fn simple_rust_function_passes(interface: Interface) {
         Scute::new(interface)
             .source_file("src/simple.rs", "fn add(a: i32, b: i32) -> i32 { a + b }")
-            .check(&["code-complexity"])
+            .code_complexity()
+            .run()
             .expect_pass();
     }
 
@@ -335,7 +351,8 @@ checks:
       fail: 30
 ",
             )
-            .check(&["code-complexity"])
+            .code_complexity()
+            .run()
             .expect_pass();
     }
 
@@ -354,7 +371,8 @@ checks:
       - 'src/complex.rs'
 ",
             )
-            .check(&["code-complexity"])
+            .code_complexity()
+            .run()
             .expect_pass();
     }
 
@@ -389,7 +407,8 @@ function process(items: number[]): number {
 }
 ",
             )
-            .check(&["code-complexity"])
+            .code_complexity()
+            .run()
             .expect_warn()
             .expect_target_contains("process");
     }
@@ -398,7 +417,9 @@ function process(items: number[]): number {
     #[test_case(Mcp)]
     fn nonexistent_path_produces_error(interface: Interface) {
         Scute::new(interface)
-            .check(&["code-complexity", "/nonexistent/path"])
+            .code_complexity()
+            .paths(&["/nonexistent/path"])
+            .run()
             .expect_error("invalid_target");
     }
 
@@ -416,7 +437,9 @@ checks:
       warn: 1
 ",
             )
-            .check(&["code-complexity", "src/simple.rs"])
+            .code_complexity()
+            .paths(&["src/simple.rs"])
+            .run()
             .expect_pass();
     }
 }
