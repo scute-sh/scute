@@ -4,12 +4,12 @@ use serde::Deserialize;
 
 use super::detect::{CloneGroup, detect_clones as run_detection};
 use super::evaluate::{SourceContext, ThresholdSet, evaluate_groups};
-use super::javascript::JsFamily;
 use super::parse_source;
 use super::rules::SimilarityRules;
-use super::rust::Rust;
 use super::tree::SourceTree;
 use crate::files;
+use crate::files::SourceFile;
+use crate::language::{self, JsFamily, LanguageRegistry, Rust};
 use crate::{Evaluation, ExecutionError, Thresholds};
 
 pub const CHECK_NAME: &str = "code-similarity";
@@ -84,12 +84,6 @@ impl Definition {
     }
 }
 
-struct SourceFile<'a> {
-    path: String,
-    content: String,
-    rules: &'a dyn SimilarityRules,
-}
-
 /// Check a directory for code duplication.
 ///
 /// Discovers supported source files (Rust, JavaScript, TypeScript), runs
@@ -137,7 +131,7 @@ pub fn check(
     };
 
     let source_files = read_sources(&canonical_dir, definition, &languages);
-    let trees = parse_trees(&source_files)?;
+    let trees = parse_trees(&source_files, &languages)?;
     let token_sets: Vec<Vec<_>> = trees.iter().map(SourceTree::tokens).collect();
     let contexts = build_contexts(&trees, &token_sets, &source_files);
 
@@ -161,7 +155,7 @@ pub fn check(
 fn build_contexts<'a>(
     trees: &'a [SourceTree],
     token_sets: &'a [Vec<super::tree::Token>],
-    sources: &'a [SourceFile<'_>],
+    sources: &'a [SourceFile],
 ) -> Vec<SourceContext<'a>> {
     trees
         .iter()
@@ -196,23 +190,22 @@ fn filter_by_focus<'a>(
         .collect()
 }
 
-fn read_sources<'a>(
+fn read_sources(
     dir: &Path,
     definition: &Definition,
-    languages: &'a crate::files::LanguageRegistry<dyn SimilarityRules>,
-) -> Vec<SourceFile<'a>> {
+    languages: &LanguageRegistry<dyn SimilarityRules>,
+) -> Vec<SourceFile> {
     let mut result: Vec<SourceFile> = files::walk_source_files(
         dir,
         definition.skip_ignored(),
         definition.exclude_patterns(),
     )
     .filter_map(|entry| {
-        let rules = languages.for_path(entry.path())?;
+        languages.for_path(entry.path())?;
         let content = std::fs::read_to_string(entry.path()).ok()?;
         Some(SourceFile {
             path: entry.into_path().display().to_string(),
             content,
-            rules,
         })
     })
     .collect();
@@ -220,11 +213,14 @@ fn read_sources<'a>(
     result
 }
 
-fn parse_trees(sources: &[SourceFile]) -> Result<Vec<SourceTree>, ExecutionError> {
+fn parse_trees(
+    sources: &[SourceFile],
+    languages: &LanguageRegistry<dyn SimilarityRules>,
+) -> Result<Vec<SourceTree>, ExecutionError> {
     sources
         .iter()
         .map(|source| {
-            parse_source(&source.content, &source.path, source.rules).map_err(|e| ExecutionError {
+            parse_source(source, languages).map_err(|e| ExecutionError {
                 code: "detection_failed".into(),
                 message: e.to_string(),
                 recovery: "check that source files are valid".into(),
@@ -233,24 +229,24 @@ fn parse_trees(sources: &[SourceFile]) -> Result<Vec<SourceTree>, ExecutionError
         .collect()
 }
 
-fn languages() -> crate::files::LanguageRegistry<dyn SimilarityRules> {
-    use crate::files::{LanguageRegistry, LanguageRegistryEntry};
+pub fn languages() -> LanguageRegistry<dyn SimilarityRules> {
+    use crate::language::{LanguageRegistry, LanguageRegistryEntry};
     LanguageRegistry::new(vec![
         LanguageRegistryEntry {
-            extensions: &["rs"],
+            language: language::rust(),
             rules: Box::new(Rust),
         },
         LanguageRegistryEntry {
-            extensions: &["js", "jsx", "mjs", "cjs"],
-            rules: Box::new(JsFamily::javascript()),
+            language: language::javascript(),
+            rules: Box::new(JsFamily),
         },
         LanguageRegistryEntry {
-            extensions: &["ts"],
-            rules: Box::new(JsFamily::typescript()),
+            language: language::typescript(),
+            rules: Box::new(JsFamily),
         },
         LanguageRegistryEntry {
-            extensions: &["tsx"],
-            rules: Box::new(JsFamily::typescript_tsx()),
+            language: language::typescript_tsx(),
+            rules: Box::new(JsFamily),
         },
     ])
 }

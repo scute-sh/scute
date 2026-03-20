@@ -2,9 +2,11 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use super::rules::LanguageRules;
-use super::{javascript, rust, score};
+use super::rules::ComplexityRules;
+use super::score;
 use crate::files;
+use crate::files::SourceFile;
+use crate::language::{self, LanguageRegistry};
 use crate::{Evaluation, Evidence, ExecutionError, Expected, Thresholds};
 
 pub const CHECK_NAME: &str = "code-complexity";
@@ -75,9 +77,12 @@ pub fn check(
     let evaluations: Vec<Evaluation> = files
         .iter()
         .filter_map(|path| {
-            let source = std::fs::read_to_string(path).ok()?;
-            let rules = languages.for_path(path)?;
-            Some(score_file(path, &source, rules, &thresholds))
+            let content = std::fs::read_to_string(path).ok()?;
+            let file = SourceFile {
+                path: path.display().to_string(),
+                content,
+            };
+            Some(score_file(path, &file, &languages, &thresholds))
         })
         .flatten()
         .collect();
@@ -102,7 +107,7 @@ fn with_fallback(
 fn resolve_files(
     paths: &[PathBuf],
     definition: &Definition,
-    languages: &crate::files::LanguageRegistry<dyn LanguageRules>,
+    languages: &LanguageRegistry<dyn ComplexityRules>,
 ) -> Result<Vec<PathBuf>, ExecutionError> {
     let exclude = definition.exclude.as_deref().unwrap_or_default();
     let extensions = languages.supported_extensions();
@@ -113,35 +118,36 @@ fn resolve_files(
     })
 }
 
-fn languages() -> crate::files::LanguageRegistry<dyn LanguageRules> {
-    use crate::files::{LanguageRegistry, LanguageRegistryEntry};
+pub(crate) fn languages() -> LanguageRegistry<dyn ComplexityRules> {
+    use crate::language::{JsFamily, Rust};
+    use crate::language::{LanguageRegistry, LanguageRegistryEntry};
     LanguageRegistry::new(vec![
         LanguageRegistryEntry {
-            extensions: &["rs"],
-            rules: Box::new(rust::Rust),
+            language: language::rust(),
+            rules: Box::new(Rust),
         },
         LanguageRegistryEntry {
-            extensions: &["js", "jsx", "mjs", "cjs"],
-            rules: Box::new(javascript::JsFamily::javascript()),
+            language: language::javascript(),
+            rules: Box::new(JsFamily),
         },
         LanguageRegistryEntry {
-            extensions: &["ts"],
-            rules: Box::new(javascript::JsFamily::typescript()),
+            language: language::typescript(),
+            rules: Box::new(JsFamily),
         },
         LanguageRegistryEntry {
-            extensions: &["tsx"],
-            rules: Box::new(javascript::JsFamily::typescript_tsx()),
+            language: language::typescript_tsx(),
+            rules: Box::new(JsFamily),
         },
     ])
 }
 
 fn score_file(
     path: &Path,
-    source: &str,
-    rules: &dyn LanguageRules,
+    file: &SourceFile,
+    languages: &LanguageRegistry<dyn ComplexityRules>,
     thresholds: &Thresholds,
 ) -> Vec<Evaluation> {
-    score::score_functions(source, rules)
+    score::score_functions(file, languages)
         .into_iter()
         .map(|func| {
             let target = format!("{}:{}:{}", path.display(), func.line, func.name);

@@ -3,6 +3,12 @@ use std::{fmt, io};
 
 use ignore::WalkBuilder;
 
+/// Source code with its file path, ready for check processing.
+pub struct SourceFile {
+    pub path: String,
+    pub content: String,
+}
+
 pub fn walk_source_files(
     dir: &Path,
     skip_ignored: bool,
@@ -200,43 +206,6 @@ fn resolve_file(path: &Path, supported_extensions: &[&str]) -> Result<PathBuf, I
         path: path.display().to_string(),
         kind: InvalidPathKind::Unreadable(e),
     })
-}
-
-/// Extension-based registry mapping file extensions to language rules.
-///
-/// Both `code_similarity` and `code_complexity` use this to resolve
-/// a file path to the right language rules implementation.
-pub struct LanguageRegistry<R: ?Sized> {
-    entries: Vec<LanguageRegistryEntry<R>>,
-}
-
-pub struct LanguageRegistryEntry<R: ?Sized> {
-    pub extensions: &'static [&'static str],
-    pub rules: Box<R>,
-}
-
-impl<R: ?Sized> LanguageRegistry<R> {
-    #[must_use]
-    pub fn new(entries: Vec<LanguageRegistryEntry<R>>) -> Self {
-        Self { entries }
-    }
-
-    #[must_use]
-    pub fn for_path(&self, path: &Path) -> Option<&R> {
-        let ext = path.extension()?.to_str()?;
-        self.entries
-            .iter()
-            .find(|e| e.extensions.contains(&ext))
-            .map(|e| e.rules.as_ref())
-    }
-
-    #[must_use]
-    pub fn supported_extensions(&self) -> Vec<&'static str> {
-        self.entries
-            .iter()
-            .flat_map(|e| e.extensions.iter().copied())
-            .collect()
-    }
 }
 
 fn has_extension(path: &Path, extensions: &[&str]) -> bool {

@@ -1,14 +1,10 @@
-use scute_core::code_similarity::{
-    detect_clones, javascript::JsFamily, rules::SimilarityRules, rust::Rust,
-};
+use scute_core::code_similarity::detect_clones;
 
 use super::helpers::{parse_and_detect, snapshot};
 
 const LOW_TOKEN_THRESHOLD: usize = 10;
 
-fn find_clone_groups(
-    files: &[(&str, &str, &dyn SimilarityRules)],
-) -> super::helpers::DetectionResult {
+fn find_clone_groups(files: &[(&str, &str)]) -> super::helpers::DetectionResult {
     parse_and_detect(files, LOW_TOKEN_THRESHOLD)
 }
 
@@ -39,8 +35,8 @@ fn validate_username(name: &str) -> Result<String, Error> {
 }";
 
     let result = find_clone_groups(&[
-        (file_a, "validators/email.rs", &Rust),
-        (file_b, "validators/username.rs", &Rust),
+        (file_a, "validators/email.rs"),
+        (file_b, "validators/username.rs"),
     ]);
 
     insta::assert_snapshot!(snapshot(&result));
@@ -66,11 +62,7 @@ export async function fetchOrder(orderId: number): Promise<Order> {
   return res.json();
 }";
 
-    let ts = JsFamily::typescript();
-    let result = find_clone_groups(&[
-        (file_a, "api/users.ts", &ts),
-        (file_b, "api/orders.ts", &ts),
-    ]);
+    let result = find_clone_groups(&[(file_a, "api/users.ts"), (file_b, "api/orders.ts")]);
 
     insta::assert_snapshot!(snapshot(&result));
 }
@@ -81,12 +73,7 @@ fn detects_only_same_language_clones() {
     let rust_b = "fn transform(y: u64) -> u64 { y * 2 + 1 }";
     let ts_code = "function compute(n: number): number { return n * 2 + 1; }";
 
-    let ts = JsFamily::typescript();
-    let result = find_clone_groups(&[
-        (rust_a, "a.rs", &Rust),
-        (rust_b, "b.rs", &Rust),
-        (ts_code, "c.ts", &ts),
-    ]);
+    let result = find_clone_groups(&[(rust_a, "a.rs"), (rust_b, "b.rs"), (ts_code, "c.ts")]);
 
     insta::assert_snapshot!(snapshot(&result));
 }
@@ -152,10 +139,10 @@ impl Config {
 }";
 
     let result = find_clone_groups(&[
-        (validate_email, "validators/email.rs", &Rust),
-        (validate_phone, "validators/phone.rs", &Rust),
-        (handlers, "handlers.rs", &Rust),
-        (config, "config.rs", &Rust),
+        (validate_email, "validators/email.rs"),
+        (validate_phone, "validators/phone.rs"),
+        (handlers, "handlers.rs"),
+        (config, "config.rs"),
     ]);
 
     insta::assert_snapshot!(snapshot(&result));

@@ -1,41 +1,9 @@
-use tree_sitter::Language;
+use crate::language::JsFamily;
 
-use super::rules::{LanguageRules, NestingKind, ScoringUnit};
+use super::rules::{ComplexityRules, NestingKind, ScoringUnit};
 use super::score::{Construct, FlowConstruct, JumpKeyword, LogicalOp};
 
-pub struct JsFamily {
-    language: Language,
-}
-
-/// Covers JavaScript, TypeScript, and TSX (parameterized by grammar).
-impl JsFamily {
-    #[must_use]
-    pub fn javascript() -> Self {
-        Self {
-            language: tree_sitter_javascript::LANGUAGE.into(),
-        }
-    }
-
-    #[must_use]
-    pub fn typescript() -> Self {
-        Self {
-            language: tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-        }
-    }
-
-    #[must_use]
-    pub fn typescript_tsx() -> Self {
-        Self {
-            language: tree_sitter_typescript::LANGUAGE_TSX.into(),
-        }
-    }
-}
-
-impl LanguageRules for JsFamily {
-    fn language(&self) -> Language {
-        self.language.clone()
-    }
-
+impl ComplexityRules for JsFamily {
     fn scoring_unit<'a>(
         &self,
         node: tree_sitter::Node<'a>,

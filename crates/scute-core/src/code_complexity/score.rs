@@ -1,6 +1,8 @@
+use crate::files::SourceFile;
+use crate::language::LanguageRegistry;
 use crate::parser::{AstParser, TreeSitterParser};
 
-use super::rules::{LanguageRules, NestingKind, NodeRole};
+use super::rules::{ComplexityRules, NestingKind, NodeRole};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Construct {
@@ -104,13 +106,18 @@ pub struct FunctionScore {
     pub contributors: Vec<Contributor>,
 }
 
-pub fn score_functions(source: &str, rules: &dyn LanguageRules) -> Vec<FunctionScore> {
-    let mut parser = TreeSitterParser::new();
-    let Ok(tree) = parser.parse(source, &rules.language()) else {
+pub fn score_functions(
+    file: &SourceFile,
+    languages: &LanguageRegistry<dyn ComplexityRules>,
+) -> Vec<FunctionScore> {
+    let Some((lang, rules)) = languages.for_path(std::path::Path::new(&file.path)) else {
         return vec![];
     };
-
-    let src = source.as_bytes();
+    let mut parser = TreeSitterParser::new();
+    let Ok(tree) = parser.parse(&file.content, &lang.grammar) else {
+        return vec![];
+    };
+    let src = file.content.as_bytes();
     let mut results = vec![];
     collect_functions(tree.root_node(), src, rules, &mut results);
     results
@@ -119,7 +126,7 @@ pub fn score_functions(source: &str, rules: &dyn LanguageRules) -> Vec<FunctionS
 fn collect_functions(
     node: tree_sitter::Node,
     src: &[u8],
-    rules: &dyn LanguageRules,
+    rules: &dyn ComplexityRules,
     results: &mut Vec<FunctionScore>,
 ) {
     let mut cursor = node.walk();
@@ -146,7 +153,7 @@ fn collect_functions(
 }
 
 fn classify(
-    rules: &dyn LanguageRules,
+    rules: &dyn ComplexityRules,
     node: tree_sitter::Node,
     fn_name: &str,
     receiver_type: Option<&str>,
@@ -156,7 +163,7 @@ fn classify(
         .or_else(|| classify_contextual(rules, node, fn_name, receiver_type, src))
 }
 
-fn classify_structural(rules: &dyn LanguageRules, node: tree_sitter::Node) -> Option<NodeRole> {
+fn classify_structural(rules: &dyn ComplexityRules, node: tree_sitter::Node) -> Option<NodeRole> {
     if let Some(construct) = rules.flow_construct(node) {
         return Some(NodeRole::FlowConstruct(construct));
     }
@@ -173,7 +180,7 @@ fn classify_structural(rules: &dyn LanguageRules, node: tree_sitter::Node) -> Op
 }
 
 fn classify_contextual(
-    rules: &dyn LanguageRules,
+    rules: &dyn ComplexityRules,
     node: tree_sitter::Node,
     fn_name: &str,
     receiver_type: Option<&str>,
@@ -189,7 +196,7 @@ fn classify_contextual(
 }
 
 struct ScoringContext<'a> {
-    rules: &'a dyn LanguageRules,
+    rules: &'a dyn ComplexityRules,
     fn_name: &'a str,
     impl_type: Option<&'a str>,
     src: &'a [u8],
@@ -311,7 +318,7 @@ impl ScoringContext<'_> {
     }
 }
 
-fn nesting_chain(node: tree_sitter::Node, rules: &dyn LanguageRules) -> Vec<FlowConstruct> {
+fn nesting_chain(node: tree_sitter::Node, rules: &dyn ComplexityRules) -> Vec<FlowConstruct> {
     let ancestors = std::iter::successors(node.parent(), tree_sitter::Node::parent);
     let mut chain = Vec::new();
     for ancestor in ancestors {
@@ -342,7 +349,7 @@ fn count_operator_sequences(operators: &[LogicalOp]) -> u64 {
 
 fn collect_logical_operators(
     node: tree_sitter::Node,
-    rules: &dyn LanguageRules,
+    rules: &dyn ComplexityRules,
     operators: &mut Vec<LogicalOp>,
 ) {
     let Some(op) = rules.logical_operator(node) else {
@@ -361,7 +368,8 @@ fn collect_logical_operators(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::code_complexity::rust::Rust;
+    use crate::code_complexity::check::languages;
+    use crate::files::SourceFile;
     use test_case::test_case;
 
     // Source fixtures: named by scenario, not by language.
@@ -392,21 +400,22 @@ mod tests {
         }
         total
     }";
-    const EMPTY_SOURCE: &str = "";
-    const BROKEN_SYNTAX: &str = "fn f(x: i32 -> { x + }";
 
-    fn rules() -> &'static dyn LanguageRules {
-        &Rust
+    fn file(source: &str) -> SourceFile {
+        SourceFile {
+            path: "test.rs".into(),
+            content: source.into(),
+        }
     }
 
     fn contributors(source: &str) -> Vec<Contributor> {
-        let results = score_functions(source, rules());
+        let results = score_functions(&file(source), &languages());
         assert_eq!(results.len(), 1, "expected exactly one function");
         results.into_iter().next().unwrap().contributors
     }
 
     fn score(source: &str) -> u64 {
-        let results = score_functions(source, rules());
+        let results = score_functions(&file(source), &languages());
         assert_eq!(results.len(), 1, "expected exactly one function");
         results[0].score
     }
@@ -517,12 +526,12 @@ mod tests {
 
     #[test]
     fn empty_source_returns_no_functions() {
-        assert!(score_functions(EMPTY_SOURCE, rules()).is_empty());
+        assert!(score_functions(&file(""), &languages()).is_empty());
     }
 
     #[test]
     fn broken_syntax_returns_partial_results() {
-        let results = score_functions(BROKEN_SYNTAX, rules());
+        let results = score_functions(&file("fn f(x: i32 -> { x + }"), &languages());
         assert!(
             results.is_empty() || results.iter().all(|r| r.score < u64::MAX),
             "broken syntax should produce empty or valid results"
