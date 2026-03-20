@@ -90,8 +90,20 @@ impl std::fmt::Display for Interface {
     }
 }
 
+/// Typed check parameters. Each variant maps to a check's inputs.
+///
+/// To add a new check:
+/// 1. Add a variant here with the check's parameters
+/// 2. Add a constructor on [`Scute`] that takes mandatory params and returns a builder
+/// 3. Put optional params as builder methods, `.run()` executes
+/// 4. Implement the variant in both backends' `run_check`
+pub(crate) enum CheckInput {
+    CommitMessage { message: String },
+}
+
 trait Backend {
     fn check(&self, dir: TempDir, working_dir: &Path, args: &[&str]) -> CheckResult;
+    fn run_check(&self, dir: TempDir, working_dir: &Path, input: &CheckInput) -> CheckResult;
     fn list_checks(&self, dir: TempDir) -> ListChecksResult;
 }
 
@@ -160,6 +172,13 @@ impl Scute {
         self
     }
 
+    pub fn commit_message(self, message: &str) -> CommitMessageCheck {
+        CommitMessageCheck {
+            scute: self,
+            message: message.into(),
+        }
+    }
+
     pub fn list_checks(self) -> ListChecksResult {
         let dir = self.project.build();
         self.backend.list_checks(dir)
@@ -169,15 +188,38 @@ impl Scute {
         let mut full_args = vec!["check"];
         full_args.extend_from_slice(args);
         let dir = self.project.build();
-        let working_dir = match &self.cwd {
-            Some(subdir) => {
-                let path = dir.path().join(subdir);
-                std::fs::create_dir_all(&path).expect("failed to create cwd subdir");
-                path
-            }
-            None => dir.path().to_path_buf(),
-        };
+        let working_dir = resolve_working_dir(&dir, self.cwd.as_deref());
         self.backend.check(dir, &working_dir, &full_args)
+    }
+
+    fn run_check(self, input: &CheckInput) -> CheckResult {
+        let dir = self.project.build();
+        let working_dir = resolve_working_dir(&dir, self.cwd.as_deref());
+        self.backend.run_check(dir, &working_dir, input)
+    }
+}
+
+fn resolve_working_dir(dir: &TempDir, cwd: Option<&str>) -> PathBuf {
+    match cwd {
+        Some(subdir) => {
+            let path = dir.path().join(subdir);
+            std::fs::create_dir_all(&path).expect("failed to create cwd subdir");
+            path
+        }
+        None => dir.path().to_path_buf(),
+    }
+}
+
+pub struct CommitMessageCheck {
+    scute: Scute,
+    message: String,
+}
+
+impl CommitMessageCheck {
+    pub fn run(self) -> CheckResult {
+        self.scute.run_check(&CheckInput::CommitMessage {
+            message: self.message,
+        })
     }
 }
 
