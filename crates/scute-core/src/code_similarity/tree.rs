@@ -126,9 +126,15 @@ impl SourceTreeBuilder {
 /// walk-up queries.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token {
+    /// Index into the parent `SourceTree`'s arena. Used for walk-up queries
+    /// (e.g. `is_in_test_region`, `ancestor_contracts`). Only meaningful
+    /// within the tree that produced this token.
     pub node_index: usize,
+    /// Normalized text (e.g. `$ID` for identifiers, `$LIT` for literals).
     pub text: String,
+    /// 1-indexed start line in the original source.
     pub start_line: usize,
+    /// 1-indexed end line in the original source.
     pub end_line: usize,
 }
 

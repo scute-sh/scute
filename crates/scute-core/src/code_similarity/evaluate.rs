@@ -9,17 +9,22 @@ pub(super) struct SourceContext<'a> {
     pub content: &'a str,
 }
 
+/// Base and test thresholds, bundled for evaluation.
+pub(super) struct ThresholdSet {
+    pub base: Thresholds,
+    pub test: Thresholds,
+}
+
 /// Evaluate clone groups using structural context from the trees.
 ///
 /// For each group, walks up from matched tokens to determine context:
 /// - Same-contract groups (all occurrences inside the same trait impl) are excluded
 /// - Test-only groups get separate thresholds
-/// - Everything else gets production thresholds
+/// - Everything else gets base thresholds
 pub fn evaluate_groups(
     groups: &[&CloneGroup],
     sources: &[SourceContext],
-    thresholds: &Thresholds,
-    test_thresholds: &Thresholds,
+    thresholds: &ThresholdSet,
 ) -> Vec<Evaluation> {
     groups
         .iter()
@@ -28,9 +33,9 @@ pub fn evaluate_groups(
                 return None;
             }
             let effective = if is_test_only_group(group, sources) {
-                test_thresholds
+                &thresholds.test
             } else {
-                thresholds
+                &thresholds.base
             };
             Some(super::format::format_evaluation(group, effective, sources))
         })
@@ -83,7 +88,7 @@ mod tests {
 
     const CLONE_TOKENS: &[&str] = &["fn", "$ID", "(", ")", "{", "}"];
 
-    // Strict production thresholds: 6 tokens (CLONE_TOKENS) will fail.
+    // Strict base thresholds: 6 tokens (CLONE_TOKENS) will fail.
     const STRICT: Thresholds = Thresholds {
         warn: Some(3),
         fail: Some(5),
@@ -143,7 +148,11 @@ mod tests {
                 })
                 .collect(),
         };
-        evaluate_groups(&[&group], &sources, &STRICT, &LENIENT)
+        let thresholds = ThresholdSet {
+            base: STRICT,
+            test: LENIENT,
+        };
+        evaluate_groups(&[&group], &sources, &thresholds)
     }
 
     #[test]
@@ -194,7 +203,7 @@ mod tests {
     }
 
     #[test]
-    fn applies_production_thresholds_for_mixed_groups() {
+    fn applies_base_thresholds_for_mixed_groups() {
         let trees = [
             build_tree("a.rs", test_region(), CLONE_TOKENS),
             build_tree("b.rs", None, CLONE_TOKENS),
@@ -205,7 +214,7 @@ mod tests {
         assert_eq!(result.len(), 1);
         assert!(
             result[0].is_fail(),
-            "mixed group should use production thresholds"
+            "mixed group should use base thresholds"
         );
     }
 

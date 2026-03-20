@@ -1,5 +1,9 @@
+use std::path::Path;
+
+use scute_core::Evaluation;
 use scute_core::code_similarity::{
-    CloneGroup, Token, detect_clones, parse_source, rules::SimilarityRules, tree::SourceTree,
+    CloneGroup, Definition, Token, check, detect_clones, parse_source, rules::SimilarityRules,
+    tree::SourceTree,
 };
 
 pub struct DetectionResult {
@@ -27,6 +31,28 @@ pub fn parse_and_detect(
         tokens,
         groups,
     }
+}
+
+pub fn check_with_low_thresholds(dir: &Path) -> Vec<Evaluation> {
+    use scute_core::Thresholds;
+
+    check(
+        dir,
+        &[],
+        &Definition {
+            min_tokens: Some(5),
+            thresholds: Some(Thresholds {
+                warn: Some(5),
+                fail: Some(10),
+            }),
+            test_thresholds: Some(Thresholds {
+                warn: Some(10),
+                fail: Some(30),
+            }),
+            ..Definition::default()
+        },
+    )
+    .unwrap()
 }
 
 pub fn snapshot(result: &DetectionResult) -> String {

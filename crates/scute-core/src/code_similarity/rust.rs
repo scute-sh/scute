@@ -64,13 +64,17 @@ fn classify_impl(node: &tree_sitter::Node, src: &[u8]) -> Option<NodeKind> {
 /// Matches `#[cfg(test)]` and compound forms like `#[cfg(all(test, ...))]`,
 /// but not negated forms like `#[cfg(not(test))]` or `#[cfg(not(any(test)))]`.
 fn is_cfg_test_attr(attr_text: &str) -> bool {
-    attr_text.starts_with("#[cfg(")
-        && !attr_text.contains("not(")
-        && (attr_text == "#[cfg(test)]"
-            || attr_text.contains("(test,")
-            || attr_text.contains("(test)")
-            || attr_text.contains(", test)")
-            || attr_text.contains(", test,"))
+    if !attr_text.starts_with("#[cfg(") {
+        return false;
+    }
+    if attr_text.contains("not(test)") || attr_text.contains("not(any(test))") {
+        return false;
+    }
+    attr_text == "#[cfg(test)]"
+        || attr_text.contains("(test,")
+        || attr_text.contains("(test)")
+        || attr_text.contains(", test)")
+        || attr_text.contains(", test,")
 }
 
 fn has_preceding_attr(node: &tree_sitter::Node, src: &[u8], pred: impl Fn(&str) -> bool) -> bool {
@@ -193,6 +197,15 @@ mod tests {
             "src/lib.rs",
         );
         assert!(!tree.is_in_test_region(tokens.last().unwrap().node_index));
+    }
+
+    #[test]
+    fn compound_cfg_with_negated_non_test_predicate_creates_test_region() {
+        let (tree, tokens) = parse(
+            "#[cfg(all(test, not(feature = \"foo\")))]\nmod tests {\n    fn helper(x: i32) -> i32 { x + 1 }\n}\n",
+            "src/lib.rs",
+        );
+        assert!(tree.is_in_test_region(tokens.last().unwrap().node_index));
     }
 
     #[test]

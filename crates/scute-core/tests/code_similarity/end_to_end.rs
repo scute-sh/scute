@@ -76,7 +76,7 @@ export async function fetchOrder(orderId: number): Promise<Order> {
 }
 
 #[test]
-fn ignores_cross_language_matches() {
+fn detects_only_same_language_clones() {
     let rust_a = "fn process(x: i32) -> i32 { x * 2 + 1 }";
     let rust_b = "fn transform(y: u64) -> u64 { y * 2 + 1 }";
     let ts_code = "function compute(n: number): number { return n * 2 + 1; }";
