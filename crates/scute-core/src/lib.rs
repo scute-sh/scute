@@ -15,6 +15,7 @@ pub mod code_similarity;
 pub mod commit_message;
 pub mod dependency_freshness;
 pub mod files;
+pub mod language;
 pub mod parser;
 pub mod report;
 

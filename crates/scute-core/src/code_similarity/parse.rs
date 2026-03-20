@@ -2,6 +2,8 @@ use std::path::Path;
 
 use super::rules::SimilarityRules;
 use super::tree::{NodeKind, SourceTree, SourceTreeBuilder};
+use crate::files::SourceFile;
+use crate::language::LanguageRegistry;
 use crate::parser::{AstParser, TreeSitterParser};
 
 #[derive(Debug)]
@@ -24,25 +26,30 @@ impl std::error::Error for ParseError {}
 ///
 /// Returns `ParseError` if the parser fails to produce a parse tree.
 pub fn parse_source(
-    source: &str,
-    path: &str,
-    rules: &dyn SimilarityRules,
+    file: &SourceFile,
+    languages: &LanguageRegistry<dyn SimilarityRules>,
 ) -> Result<SourceTree, ParseError> {
+    let (lang, rules) = languages.for_path(&file.path).ok_or(ParseError)?;
     let mut parser = TreeSitterParser::new();
     let tree = parser
-        .parse(source, &rules.language())
+        .parse(&file.content, &lang.grammar)
         .map_err(|_| ParseError)?;
 
-    let mut builder = SourceTreeBuilder::new(path.to_string());
+    let mut builder = SourceTreeBuilder::new(file.path.display().to_string());
 
-    let has_file_context = if let Some(kind) = rules.classify_file(Path::new(path)) {
+    let has_file_context = if let Some(kind) = rules.classify_file(&file.path) {
         builder.open_container(kind);
         true
     } else {
         false
     };
 
-    walk_node(tree.root_node(), source.as_bytes(), rules, &mut builder);
+    walk_node(
+        tree.root_node(),
+        file.content.as_bytes(),
+        rules,
+        &mut builder,
+    );
 
     if has_file_context {
         builder.close_container();
@@ -118,41 +125,37 @@ fn walk_children(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::code_similarity::javascript::JsFamily;
-    use crate::code_similarity::rust::Rust;
+    use crate::code_similarity::check::languages;
+    use crate::files::SourceFile;
+
+    fn parse(source: &str, path: &str) -> Result<SourceTree, ParseError> {
+        parse_source(
+            &SourceFile {
+                path: path.into(),
+                content: source.into(),
+            },
+            &languages(),
+        )
+    }
 
     #[test]
     fn rust_syntax_errors_do_not_panic() {
-        assert!(parse_source("fn f(x: i32 -> { x + }", "broken.rs", &Rust).is_ok());
+        assert!(parse("fn f(x: i32 -> { x + }", "broken.rs").is_ok());
     }
 
     #[test]
     fn javascript_syntax_errors_do_not_panic() {
-        assert!(
-            parse_source(
-                "function f(x { return +; }",
-                "broken.js",
-                &JsFamily::javascript()
-            )
-            .is_ok()
-        );
+        assert!(parse("function f(x { return +; }", "broken.js").is_ok());
     }
 
     #[test]
     fn typescript_syntax_errors_do_not_panic() {
-        assert!(
-            parse_source(
-                "function f(x: number { return +; }",
-                "broken.ts",
-                &JsFamily::typescript()
-            )
-            .is_ok()
-        );
+        assert!(parse("function f(x: number { return +; }", "broken.ts").is_ok());
     }
 
     #[test]
     fn syntax_errors_preserve_tokens_from_valid_parts() {
-        let tree = parse_source("fn valid() { 1 + 2 }\nfn broken(x: { }", "a.rs", &Rust).unwrap();
+        let tree = parse("fn valid() { 1 + 2 }\nfn broken(x: { }", "a.rs").unwrap();
         let tokens = tree.tokens();
         let texts: Vec<&str> = tokens.iter().map(|t| t.text.as_str()).collect();
 

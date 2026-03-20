@@ -1,16 +1,11 @@
 use std::path::Path;
 
+use crate::language::Rust;
+
 use super::rules::{SimilarityRules, token};
 use super::tree::NodeKind;
-use tree_sitter::Language;
-
-pub struct Rust;
 
 impl SimilarityRules for Rust {
-    fn language(&self) -> Language {
-        tree_sitter_rust::LANGUAGE.into()
-    }
-
     fn classify_file(&self, path: &Path) -> Option<NodeKind> {
         if path.components().any(|c| c.as_os_str() == "tests") {
             Some(NodeKind::TestRegion)
@@ -94,34 +89,24 @@ fn has_preceding_attr(node: &tree_sitter::Node, src: &[u8], pred: impl Fn(&str) 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::code_similarity::test_support::{parse_with, token_texts};
+    use crate::code_similarity::test_support::{parse_file, token_texts};
     use crate::code_similarity::tree::all_share_contract;
-
-    fn parse(
-        source: &str,
-        path: &str,
-    ) -> (
-        crate::code_similarity::tree::SourceTree,
-        Vec<crate::code_similarity::Token>,
-    ) {
-        parse_with(source, path, &Rust)
-    }
 
     #[test]
     fn classify_file_marks_tests_directory_as_test_region() {
-        let (tree, tokens) = parse("fn f() {}", "tests/a.rs");
+        let (tree, tokens) = parse_file("fn f() {}", "tests/a.rs");
         assert!(tree.is_in_test_region(tokens[0].node_index));
     }
 
     #[test]
     fn classify_file_ignores_src_directory() {
-        let (tree, tokens) = parse("fn f() {}", "src/a.rs");
+        let (tree, tokens) = parse_file("fn f() {}", "src/a.rs");
         assert!(!tree.is_in_test_region(tokens[0].node_index));
     }
 
     #[test]
     fn trait_impl_creates_contract_container() {
-        let (tree, tokens) = parse(
+        let (tree, tokens) = parse_file(
             "impl Render for Html {\n    fn render(&self) -> String { String::new() }\n}",
             "a.rs",
         );
@@ -130,7 +115,7 @@ mod tests {
 
     #[test]
     fn inherent_impl_has_no_contract() {
-        let (tree, tokens) = parse(
+        let (tree, tokens) = parse_file(
             "impl Html {\n    fn render(&self) -> String { String::new() }\n}",
             "a.rs",
         );
@@ -139,13 +124,13 @@ mod tests {
 
     #[test]
     fn free_function_has_no_contract() {
-        let (tree, tokens) = parse("fn render() -> String { String::new() }", "a.rs");
+        let (tree, tokens) = parse_file("fn render() -> String { String::new() }", "a.rs");
         assert!(!all_share_contract(&[(&tree, &tokens)]));
     }
 
     #[test]
     fn cfg_test_module_creates_test_region() {
-        let (tree, tokens) = parse(
+        let (tree, tokens) = parse_file(
             "fn production() -> i32 { 42 }\n\n#[cfg(test)]\nmod tests {\n    fn helper(x: i32) -> i32 { x + 1 }\n}\n",
             "src/lib.rs",
         );
@@ -155,7 +140,7 @@ mod tests {
 
     #[test]
     fn naked_test_fn_creates_test_region() {
-        let (tree, tokens) = parse(
+        let (tree, tokens) = parse_file(
             "fn production() -> i32 { 42 }\n\n#[test]\nfn test_something() {\n    assert_eq!(production(), 42);\n}\n",
             "src/lib.rs",
         );
@@ -165,7 +150,7 @@ mod tests {
 
     #[test]
     fn compound_cfg_test_creates_test_region() {
-        let (tree, tokens) = parse(
+        let (tree, tokens) = parse_file(
             "#[cfg(all(test, feature = \"integration\"))]\nmod integration_tests {\n    fn helper(x: i32) -> i32 { x + 1 }\n}\n",
             "src/lib.rs",
         );
@@ -174,7 +159,7 @@ mod tests {
 
     #[test]
     fn cfg_any_test_creates_test_region() {
-        let (tree, tokens) = parse(
+        let (tree, tokens) = parse_file(
             "#[cfg(any(test))]\nmod tests {\n    fn helper(x: i32) -> i32 { x + 1 }\n}\n",
             "src/lib.rs",
         );
@@ -183,7 +168,7 @@ mod tests {
 
     #[test]
     fn cfg_not_test_is_not_a_test_region() {
-        let (tree, tokens) = parse(
+        let (tree, tokens) = parse_file(
             "#[cfg(not(test))]\nmod prod_only {\n    fn helper() -> i32 { 42 }\n}\n",
             "src/lib.rs",
         );
@@ -192,7 +177,7 @@ mod tests {
 
     #[test]
     fn cfg_not_any_test_is_not_a_test_region() {
-        let (tree, tokens) = parse(
+        let (tree, tokens) = parse_file(
             "#[cfg(not(any(test)))]\nmod prod_only {\n    fn helper() -> i32 { 42 }\n}\n",
             "src/lib.rs",
         );
@@ -201,7 +186,7 @@ mod tests {
 
     #[test]
     fn compound_cfg_with_negated_non_test_predicate_creates_test_region() {
-        let (tree, tokens) = parse(
+        let (tree, tokens) = parse_file(
             "#[cfg(all(test, not(feature = \"foo\")))]\nmod tests {\n    fn helper(x: i32) -> i32 { x + 1 }\n}\n",
             "src/lib.rs",
         );
@@ -210,7 +195,7 @@ mod tests {
 
     #[test]
     fn test_fn_nested_in_non_test_module_creates_test_region() {
-        let (tree, tokens) = parse(
+        let (tree, tokens) = parse_file(
             "mod integration {\n    #[test]\n    fn test_flow() {\n        assert!(true);\n    }\n}\n",
             "src/lib.rs",
         );
@@ -225,7 +210,7 @@ mod tests {
 
     #[test]
     fn multiple_attributes_before_test_fn() {
-        let (tree, tokens) = parse(
+        let (tree, tokens) = parse_file(
             "#[test]\n#[should_panic]\nfn test_something() {\n    panic!(\"expected\");\n}\n",
             "src/lib.rs",
         );
@@ -234,7 +219,7 @@ mod tests {
 
     #[test]
     fn normalizes_identifiers_and_literals() {
-        let (_, tokens) = parse("let x: i32 = 42;", "a.rs");
+        let (_, tokens) = parse_file("let x: i32 = 42;", "a.rs");
         assert_eq!(
             token_texts(&tokens),
             vec!["let", "$ID", ":", "$ID", "=", "$LIT", ";"]
@@ -243,7 +228,7 @@ mod tests {
 
     #[test]
     fn strips_comments_and_attributes() {
-        let (_, tokens) = parse("// comment\n#[derive(Debug)]\nfn f() {}", "a.rs");
+        let (_, tokens) = parse_file("// comment\n#[derive(Debug)]\nfn f() {}", "a.rs");
         assert_eq!(token_texts(&tokens), vec!["fn", "$ID", "(", ")", "{", "}"]);
     }
 }

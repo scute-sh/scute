@@ -1,5 +1,3 @@
-use tree_sitter::Language;
-
 use super::score::{FlowConstruct, JumpKeyword, LogicalOp};
 
 pub enum NodeRole {
@@ -31,10 +29,7 @@ pub struct ScoringUnit<'a> {
 /// The scoring algorithm is language-agnostic: it asks the language to identify
 /// its own constructs (flow control, nesting boundaries, logical operators, etc.)
 /// and applies the Sonar cognitive complexity rules uniformly.
-pub trait LanguageRules {
-    /// The tree-sitter grammar for this language.
-    fn language(&self) -> Language;
-
+pub trait ComplexityRules {
     /// If this node is a scoreable function or method, return its metadata.
     fn scoring_unit<'a>(
         &self,

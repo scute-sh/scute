@@ -2,9 +2,9 @@ use std::path::Path;
 
 use scute_core::Evaluation;
 use scute_core::code_similarity::{
-    CloneGroup, Definition, Token, check, detect_clones, parse_source, rules::SimilarityRules,
-    tree::SourceTree,
+    CloneGroup, Definition, Token, check, detect_clones, parse_source, tree::SourceTree,
 };
+use scute_core::files::SourceFile;
 
 pub struct DetectionResult {
     pub trees: Vec<SourceTree>,
@@ -12,14 +12,16 @@ pub struct DetectionResult {
     pub groups: Vec<CloneGroup>,
 }
 
-pub fn parse_and_detect(
-    files: &[(&str, &str, &dyn SimilarityRules)],
-    min_tokens: usize,
-) -> DetectionResult {
+pub fn parse_and_detect(files: &[(&str, &str)], min_tokens: usize) -> DetectionResult {
+    let languages = scute_core::code_similarity::languages();
     let mut trees = Vec::new();
 
-    for (source, path, rules) in files {
-        let tree = parse_source(source, path, *rules).unwrap();
+    for (source, path) in files {
+        let file = SourceFile {
+            path: (*path).into(),
+            content: source.to_string(),
+        };
+        let tree = parse_source(&file, &languages).unwrap();
         trees.push(tree);
     }
 

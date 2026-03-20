@@ -290,13 +290,19 @@ fn extract_lcp_intervals(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::code_similarity::{parse_source, rust};
+    use crate::code_similarity::check::languages;
+    use crate::code_similarity::parse_source;
+    use crate::files::SourceFile;
 
     const LOW_TOKEN_THRESHOLD: usize = 5;
     const IMPOSSIBLY_HIGH_THRESHOLD: usize = 1000;
 
     fn parse_tokens(source: &str, path: &str) -> Vec<Token> {
-        parse_source(source, path, &rust::Rust).unwrap().tokens()
+        let file = SourceFile {
+            path: path.into(),
+            content: source.into(),
+        };
+        parse_source(&file, &languages()).unwrap().tokens()
     }
 
     /// fn $ID ( $ID : $ID ) -> $ID { $ID + $LIT } = 14 tokens

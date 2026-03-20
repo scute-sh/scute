@@ -1,15 +1,9 @@
-use tree_sitter::Language;
+use crate::language::Rust;
 
-use super::rules::{LanguageRules, NestingKind, ScoringUnit};
+use super::rules::{ComplexityRules, NestingKind, ScoringUnit};
 use super::score::{Construct, FlowConstruct, JumpKeyword, LogicalOp};
 
-pub struct Rust;
-
-impl LanguageRules for Rust {
-    fn language(&self) -> Language {
-        tree_sitter_rust::LANGUAGE.into()
-    }
-
+impl ComplexityRules for Rust {
     fn scoring_unit<'a>(
         &self,
         node: tree_sitter::Node<'a>,
