@@ -191,7 +191,7 @@ mod code_similarity {
     use scute_test_utils::{Interface, Scute};
     use test_case::test_case;
 
-    use Interface::{Cli, Mcp};
+    use Interface::{Cli, CliStdin, Mcp};
 
     #[test_case(Cli)]
     #[test_case(Mcp)]
@@ -246,6 +246,7 @@ checks:
     }
 
     #[test_case(Cli)]
+    #[test_case(CliStdin)]
     #[test_case(Mcp)]
     fn focus_file_filters_reported_clones(interface: Interface) {
         Scute::new(interface)
@@ -275,7 +276,7 @@ mod code_complexity {
     use scute_test_utils::{Interface, Scute};
     use test_case::test_case;
 
-    use Interface::{Cli, Mcp};
+    use Interface::{Cli, CliStdin, Mcp};
 
     // for: +1, if: +2, if: +3, else: +1 → score 7, 4 contributors (1 nesting at index 1)
     const COMPLEX_SOURCE: &str = r"
@@ -328,6 +329,7 @@ checks:
     }
 
     #[test_case(Cli)]
+    #[test_case(CliStdin)]
     #[test_case(Mcp)]
     fn simple_rust_function_passes(interface: Interface) {
         Scute::new(interface)
@@ -424,6 +426,7 @@ function process(items: number[]): number {
     }
 
     #[test_case(Cli)]
+    #[test_case(CliStdin)]
     #[test_case(Mcp)]
     fn scores_only_specified_file(interface: Interface) {
         Scute::new(interface)

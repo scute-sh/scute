@@ -31,29 +31,43 @@ impl CliBackend {
     }
 }
 
-fn cli_args(input: &CheckInput) -> Vec<String> {
+/// CLI args that are always present regardless of stdin mode.
+fn cli_base_args(input: &CheckInput) -> Vec<String> {
     match input {
-        CheckInput::CommitMessage { message } => {
-            vec!["check".into(), "commit-message".into(), message.clone()]
-        }
+        CheckInput::CommitMessage { .. } => vec!["check".into(), "commit-message".into()],
         CheckInput::DependencyFreshness { path } => {
             let mut args = vec!["check".into(), "dependency-freshness".into()];
             args.extend(path.iter().cloned());
             args
         }
-        CheckInput::CodeComplexity { paths } => {
-            let mut args = vec!["check".into(), "code-complexity".into()];
-            args.extend(paths.iter().cloned());
-            args
-        }
-        CheckInput::CodeSimilarity { source_dir, files } => {
+        CheckInput::CodeComplexity { .. } => vec!["check".into(), "code-complexity".into()],
+        CheckInput::CodeSimilarity { source_dir, .. } => {
             let mut args = vec!["check".into(), "code-similarity".into()];
             if let Some(dir) = source_dir {
                 args.extend(["--source-dir".into(), dir.clone()]);
             }
-            args.extend(files.iter().cloned());
             args
         }
+    }
+}
+
+/// Content that goes to stdin. Returns `None` for checks that don't support stdin.
+fn stdin_content(input: &CheckInput) -> Option<String> {
+    match input {
+        CheckInput::CommitMessage { message } => Some(message.clone()),
+        CheckInput::DependencyFreshness { .. } => None,
+        CheckInput::CodeComplexity { paths } => Some(paths.join("\n")),
+        CheckInput::CodeSimilarity { files, .. } => Some(files.join("\n")),
+    }
+}
+
+/// Positional args that go on the command line in non-stdin mode.
+fn cli_positional_args(input: &CheckInput) -> Vec<String> {
+    match input {
+        CheckInput::CommitMessage { message } => vec![message.clone()],
+        CheckInput::DependencyFreshness { .. } => vec![],
+        CheckInput::CodeComplexity { paths } => paths.clone(),
+        CheckInput::CodeSimilarity { files, .. } => files.clone(),
     }
 }
 
@@ -61,12 +75,13 @@ impl Backend for CliBackend {
     fn run_check(&self, dir: TempDir, working_dir: &Path, input: &CheckInput) -> CheckResult {
         let mut cmd = assert_cmd::Command::new(target_bin("scute"));
         cmd.current_dir(working_dir);
-        let args = cli_args(input);
+        cmd.args(cli_base_args(input));
         if self.stdin {
-            let stdin_input = args.last().expect("check must have args").clone();
-            cmd.args(&args[..args.len() - 1]).write_stdin(stdin_input);
+            if let Some(content) = stdin_content(input) {
+                cmd.write_stdin(content);
+            }
         } else {
-            cmd.args(&args);
+            cmd.args(cli_positional_args(input));
         }
         Self::run_cmd(cmd, dir, working_dir)
     }
