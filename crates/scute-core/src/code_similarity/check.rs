@@ -229,6 +229,7 @@ fn parse_trees(
         .collect()
 }
 
+#[must_use]
 pub fn languages() -> LanguageRegistry<dyn SimilarityRules> {
     use crate::language::{LanguageRegistry, LanguageRegistryEntry};
     LanguageRegistry::new(vec![

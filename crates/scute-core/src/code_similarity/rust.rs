@@ -88,7 +88,6 @@ fn has_preceding_attr(node: &tree_sitter::Node, src: &[u8], pred: impl Fn(&str) 
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::code_similarity::test_support::{parse_file, token_texts};
     use crate::code_similarity::tree::all_share_contract;
 

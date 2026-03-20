@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use super::rules::SimilarityRules;
 use super::tree::{NodeKind, SourceTree, SourceTreeBuilder};
 use crate::files::SourceFile;

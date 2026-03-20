@@ -136,7 +136,6 @@ fn first_type_name(node: &tree_sitter::Node, src: &[u8]) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::code_similarity::test_support::{parse_file, token_texts};
     use crate::code_similarity::tree::all_share_contract;
 
