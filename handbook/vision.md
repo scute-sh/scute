@@ -17,9 +17,11 @@ Existing tools (SonarQube, CodeScene, Code Climate) are dashboard-centric, built
 for humans clicking through a UI. The industry needs deterministic verification
 designed for agents and terminals first, humans second.
 
-Scute is the **deterministic fitness check layer** for software delivery. It sits
-between code generation (by agents or humans) and code acceptance (by CI, PR gates,
-or humans). It answers one question: does this code meet the criteria you defined?
+Scute is the **fitness function engine** for the entire software engineering
+lifecycle. It guards the characteristics you care about, from the first line
+of code through production, and feeds what it learns back into what you build
+next. A protective shell that evolves with your product, so it keeps heading
+in the right direction.
 
 ## Strategic Position
 
