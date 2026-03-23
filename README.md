@@ -5,7 +5,7 @@
 **Define the boundaries. Let your code evolve freely within them.**
 
 [![CI](https://github.com/scute-sh/scute/actions/workflows/ci-scute.yml/badge.svg)](https://github.com/scute-sh/scute/actions/workflows/ci-scute.yml)
-[![crates.io](https://img.shields.io/crates/v/scute)](https://crates.io/crates/scute)
+[![release](https://img.shields.io/github/v/release/scute-sh/scute)](https://github.com/scute-sh/scute/releases/latest)
 [![License](https://img.shields.io/badge/license-Apache--2.0-blue)](LICENSE)
 
 </div>
