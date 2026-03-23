@@ -1,10 +1,6 @@
 <div align="center">
 
-<picture>
-  <source media="(prefers-color-scheme: dark)" srcset="assets/scute-logo_white.svg">
-  <source media="(prefers-color-scheme: light)" srcset="assets/scute-logo_blue.svg">
-  <img alt="Scute" src="assets/scute-logo_blue.svg">
-</picture>
+<img alt="A turtle typing on a keyboard, its shell forming a protective shield. The Scute logo." src="assets/scute-logo_blue.svg">
 
 **Define the boundaries. Let your code evolve freely within them.**
 
