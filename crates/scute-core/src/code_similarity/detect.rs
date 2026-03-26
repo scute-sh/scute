@@ -151,23 +151,22 @@ fn collect_occurrences(
     occurrences
 }
 
-/// Check if every occurrence in `candidate` is contained within
-/// some occurrence of `accepted` (token-range containment).
+/// Check if every occurrence in `candidate` overlaps with
+/// some occurrence of an already-accepted group.
 fn is_subsumed_by(candidate: &CloneGroup, accepted: &[CloneGroup]) -> bool {
     accepted.iter().any(|prev| {
         candidate.occurrences.iter().all(|occ| {
             let occ_end = occ.token_start + candidate.token_count;
             prev.occurrences.iter().any(|p| {
-                p.source_idx == occ.source_idx
-                    && p.token_start <= occ.token_start
-                    && p.token_start + prev.token_count >= occ_end
+                let p_end = p.token_start + prev.token_count;
+                p.source_idx == occ.source_idx && occ.token_start < p_end && p.token_start < occ_end
             })
         })
     })
 }
 
-/// Keep only maximal matches: discard groups where every occurrence is
-/// spatially contained within an already-accepted longer group.
+/// Keep only maximal matches: discard groups where every occurrence
+/// overlaps with an already-accepted longer group.
 fn filter_maximal_groups(mut groups: Vec<CloneGroup>) -> Vec<CloneGroup> {
     // Deterministic output: longest matches first, then by occurrence count
     groups.sort_by(|a, b| {
@@ -339,6 +338,26 @@ mod tests {
         let groups = detect_clones(&[tokens], above_half_the_list);
 
         assert!(groups.is_empty(), "got {groups:#?}");
+    }
+
+    #[test]
+    fn subsumes_shorter_groups_that_overlap_with_longer_accepted_group() {
+        let source = r"
+            const ITEMS = new Set([
+                'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j',
+                'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't',
+                'u', 'v', 'w', 'x', 'y', 'z', 'aa', 'bb', 'cc', 'dd',
+            ]);
+        ";
+        let tokens = parse_tokens(source, "list.ts");
+
+        let groups = detect_clones(&[tokens], LOW_TOKEN_THRESHOLD);
+
+        assert!(
+            groups.len() <= 1,
+            "expected at most 1 group, got {}",
+            groups.len()
+        );
     }
 
     #[test]
