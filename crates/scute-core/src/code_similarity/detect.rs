@@ -145,6 +145,9 @@ fn collect_occurrences(
             .then(a.token_start.cmp(&b.token_start))
     });
     occurrences.dedup();
+    occurrences.dedup_by(|next, prev| {
+        prev.source_idx == next.source_idx && next.token_start < prev.token_start + depth
+    });
     occurrences
 }
 
@@ -320,6 +323,48 @@ mod tests {
     fn detect_pair(min_tokens: usize) -> Vec<CloneGroup> {
         let [a, b] = rust_clone_pair();
         detect_clones(&[a, b], min_tokens)
+    }
+
+    #[test]
+    fn drops_clone_groups_where_all_occurrences_overlap() {
+        let source = r"
+            const ITEMS = [
+                'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j',
+                'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't',
+            ];
+        ";
+        let tokens = parse_tokens(source, "list.ts");
+        let above_half_the_list = 21; // 20 items = 40 tokens; any match above half must overlap
+
+        let groups = detect_clones(&[tokens], above_half_the_list);
+
+        assert!(groups.is_empty(), "got {groups:#?}");
+    }
+
+    #[test]
+    fn keeps_group_when_non_overlapping_occurrences_remain_after_merge() {
+        let source_a = r"
+            const ITEMS = [
+                'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j',
+                'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't',
+            ];
+        ";
+        let source_b = r"
+            const OTHER = [
+                'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j',
+                'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't',
+            ];
+        ";
+        let tokens_a = parse_tokens(source_a, "a.ts");
+        let tokens_b = parse_tokens(source_b, "b.ts");
+        let above_half_the_list = 21;
+
+        let groups = detect_clones(&[tokens_a, tokens_b], above_half_the_list);
+
+        assert_eq!(groups.len(), 1, "got {groups:#?}");
+        assert_eq!(groups[0].occurrences.len(), 2);
+        assert_eq!(groups[0].occurrences[0].source_idx, 0);
+        assert_eq!(groups[0].occurrences[1].source_idx, 1);
     }
 
     #[test]
