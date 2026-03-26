@@ -25,7 +25,7 @@ impl SimilarityRules for Rust {
                 Some(NodeKind::TestRegion)
             }
 
-            "array_expression" => Some(NodeKind::Collection),
+            "array_expression" | "token_tree" => Some(NodeKind::Collection),
 
             // Identifiers
             "identifier"

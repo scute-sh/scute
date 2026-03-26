@@ -176,7 +176,7 @@ const RESERVED_PORTS = [
     2000, 2001, 1234, 5678, 9999, 1111, 2222, 3333,
 ];";
 
-const RUST_LITERAL_LIST: &str = r#"
+const RUST_ARRAY_LITERAL_LIST: &str = r#"
 const SLUGS: &[&str] = &[
     "api", "app", "maps", "embed", "share", "edit", "create",
     "dashboard", "home", "explore", "search", "auth", "login",
@@ -186,9 +186,22 @@ const SLUGS: &[&str] = &[
 ];
 "#;
 
+const RUST_VEC_LITERAL_LIST: &str = r#"
+fn reserved() -> Vec<&'static str> {
+    vec![
+        "api", "app", "maps", "embed", "share", "edit", "create",
+        "dashboard", "home", "explore", "search", "auth", "login",
+        "logout", "signup", "register", "verify", "reset", "oauth",
+        "profile", "account", "settings", "admin", "billing", "plan",
+        "about", "contact", "help", "support", "docs", "blog", "news",
+    ]
+}
+"#;
+
 #[test_case::test_case("slugs.ts", TS_STRING_LITERAL_LIST ; "ts string literals")]
 #[test_case::test_case("ports.ts", TS_NUMBER_LITERAL_LIST ; "ts number literals")]
-#[test_case::test_case("slugs.rs", RUST_LITERAL_LIST ; "rust string literals")]
+#[test_case::test_case("slugs.rs", RUST_ARRAY_LITERAL_LIST ; "rust array literals")]
+#[test_case::test_case("slugs.rs", RUST_VEC_LITERAL_LIST ; "rust vec macro literals")]
 fn excludes_flat_literal_list(file: &str, content: &str) {
     let dir = TestDir::new().source_file(file, content);
 
@@ -197,6 +210,32 @@ fn excludes_flat_literal_list(file: &str, content: &str) {
     assert!(
         evals.iter().all(Evaluation::is_pass),
         "flat literal list should not be flagged, got: {evals:?}"
+    );
+}
+
+#[test]
+fn detects_duplicated_assertions_with_vec_literals() {
+    let source_a = r#"
+fn test_a() {
+    let tokens = parse("let x = 1;");
+    assert_eq!(token_texts(&tokens), vec!["let", "$ID", "=", "$LIT", ";"]);
+}
+"#;
+    let source_b = r#"
+fn test_b() {
+    let tokens = parse("let y = 2;");
+    assert_eq!(token_texts(&tokens), vec!["let", "$ID", "=", "$LIT", ";"]);
+}
+"#;
+    let dir = TestDir::new()
+        .source_file("a.rs", source_a)
+        .source_file("b.rs", source_b);
+
+    let evals = check_with_low_thresholds(&dir.root());
+
+    assert!(
+        evals.iter().any(|e| !e.is_pass()),
+        "duplicated assertions should still be detected, got: {evals:?}"
     );
 }
 
