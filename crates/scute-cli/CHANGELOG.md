@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.12](https://github.com/scute-sh/scute/compare/scute-v0.0.11...scute-v0.0.12) - 2026-03-26
+
+This release focuses on reducing false positives in the code similarity check.
+Flat literal lists (reserved slugs, config arrays, `vec!` macros) are no longer
+flagged as duplication, and overlapping clone occurrences within the same file
+are properly merged instead of reported as separate clones. Tested against a
+real-world frontend + backend codebase, these changes eliminated all false
+positives while preserving every real duplication finding.
+
+### Fixed
+
+- *(code-similarity)* filter literal-only clones inside collections ([#112](https://github.com/scute-sh/scute/pull/112))
+- *(code-similarity)* overlap-based subsumption for clone groups ([#110](https://github.com/scute-sh/scute/pull/110))
+- *(code-similarity)* merge overlapping clone occurrences ([#108](https://github.com/scute-sh/scute/pull/108))
+- *(code-similarity)* clean up unused imports and add must_use lint
+
 ## [0.0.11](https://github.com/scute-sh/scute/compare/scute-v0.0.10...scute-v0.0.11) - 2026-03-20
 
 ### Added

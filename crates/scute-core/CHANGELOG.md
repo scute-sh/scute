@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.11](https://github.com/scute-sh/scute/compare/scute-core-v0.0.10...scute-core-v0.0.11) - 2026-03-26
+
+### Fixed
+
+- *(code-similarity)* filter literal-only clones inside collections ([#112](https://github.com/scute-sh/scute/pull/112))
+- *(code-similarity)* overlap-based subsumption for clone groups ([#110](https://github.com/scute-sh/scute/pull/110))
+- *(code-similarity)* merge overlapping clone occurrences ([#108](https://github.com/scute-sh/scute/pull/108))
+- *(code-similarity)* clean up unused imports and add must_use lint
+
 ## [0.0.10](https://github.com/scute-sh/scute/compare/scute-core-v0.0.9...scute-core-v0.0.10) - 2026-03-20
 
 ### Added
