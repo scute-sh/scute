@@ -28,6 +28,8 @@ impl SimilarityRules for JsFamily {
                 classify_class(&node, src)
             }
 
+            "array" => Some(NodeKind::Collection),
+
             // Identifiers
             "identifier"
             | "shorthand_property_identifier"
