@@ -151,23 +151,22 @@ fn collect_occurrences(
     occurrences
 }
 
-/// Check if every occurrence in `candidate` is contained within
-/// some occurrence of `accepted` (token-range containment).
+/// Check if every occurrence in `candidate` overlaps with
+/// some occurrence of an already-accepted group.
 fn is_subsumed_by(candidate: &CloneGroup, accepted: &[CloneGroup]) -> bool {
     accepted.iter().any(|prev| {
         candidate.occurrences.iter().all(|occ| {
             let occ_end = occ.token_start + candidate.token_count;
             prev.occurrences.iter().any(|p| {
-                p.source_idx == occ.source_idx
-                    && p.token_start <= occ.token_start
-                    && p.token_start + prev.token_count >= occ_end
+                let p_end = p.token_start + prev.token_count;
+                p.source_idx == occ.source_idx && occ.token_start < p_end && p.token_start < occ_end
             })
         })
     })
 }
 
-/// Keep only maximal matches: discard groups where every occurrence is
-/// spatially contained within an already-accepted longer group.
+/// Keep only maximal matches: discard groups where every occurrence
+/// overlaps with an already-accepted longer group.
 fn filter_maximal_groups(mut groups: Vec<CloneGroup>) -> Vec<CloneGroup> {
     // Deterministic output: longest matches first, then by occurrence count
     groups.sort_by(|a, b| {
@@ -339,6 +338,68 @@ mod tests {
         let groups = detect_clones(&[tokens], above_half_the_list);
 
         assert!(groups.is_empty(), "got {groups:#?}");
+    }
+
+    #[test]
+    fn subsumes_shorter_groups_that_overlap_with_longer_accepted_group() {
+        let source = r"
+            const ITEMS = new Set([
+                'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j',
+                'k', 'l', 'm', 'n', 'o', 'p', 'q', 'r', 's', 't',
+                'u', 'v', 'w', 'x', 'y', 'z', 'aa', 'bb', 'cc', 'dd',
+            ]);
+        ";
+        let tokens = parse_tokens(source, "list.ts");
+
+        let groups = detect_clones(&[tokens], LOW_TOKEN_THRESHOLD);
+
+        assert!(
+            groups.len() <= 1,
+            "expected at most 1 group, got {}",
+            groups.len()
+        );
+    }
+
+    #[test]
+    fn preserves_independent_groups_with_no_overlapping_occurrences() {
+        let a = parse_tokens("fn f(x: i32) -> i32 { x + 1 }", "a.rs");
+        let b = parse_tokens("fn g(y: u32) -> u32 { y + 1 }", "b.rs");
+        let c = parse_tokens(
+            "struct Foo { a: i32, b: i32, c: i32, d: i32, e: i32 }",
+            "c.rs",
+        );
+        let d = parse_tokens(
+            "struct Bar { a: u64, b: u64, c: u64, d: u64, e: u64 }",
+            "d.rs",
+        );
+
+        let groups = detect_clones(&[a, b, c, d], LOW_TOKEN_THRESHOLD);
+
+        assert_eq!(groups.len(), 2, "got {groups:#?}");
+    }
+
+    #[test]
+    fn preserves_group_when_some_occurrences_do_not_overlap_with_accepted() {
+        let a = parse_tokens(
+            "fn f(x: i32, y: i32) -> i32 { if x > 0 { return x; } else { return 0; } }",
+            "a.rs",
+        );
+        let b = parse_tokens(
+            "fn g(a: u32, b: u32) -> u32 { if a > 0 { return a; } else { return 0; } }",
+            "b.rs",
+        );
+        let c = parse_tokens(
+            "fn h(z: f64) -> f64 { if z > 0 { return z; } else { return 0; } }",
+            "c.rs",
+        );
+
+        let groups = detect_clones(&[a, b, c], LOW_TOKEN_THRESHOLD);
+
+        let has_three_way_group = groups.iter().any(|g| g.occurrences.len() == 3);
+        assert!(
+            has_three_way_group,
+            "expected a group with 3 occurrences (a, b, c sharing the tail), got {groups:#?}"
+        );
     }
 
     #[test]
