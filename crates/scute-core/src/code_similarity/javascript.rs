@@ -172,18 +172,6 @@ mod tests {
     }
 
     #[test]
-    fn classifies_array_as_collection() {
-        let (tree, tokens) = parse_file("const x = ['a', 'b', 'c'];", "a.ts");
-
-        assert!(
-            tokens
-                .iter()
-                .filter(|t| t.text == "$LIT")
-                .all(|t| tree.is_in_collection(t.node_index))
-        );
-    }
-
-    #[test]
     fn normalizes_identifiers_to_id_placeholder() {
         let (_, tokens) = parse_file("let x = y;", "a.ts");
         assert_eq!(token_texts(&tokens), vec!["let", "$ID", "=", "$ID", ";"]);

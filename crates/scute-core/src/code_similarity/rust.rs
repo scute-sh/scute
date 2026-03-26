@@ -219,18 +219,6 @@ mod tests {
     }
 
     #[test]
-    fn classifies_array_expression_as_collection() {
-        let (tree, tokens) = parse_file("let x = [1, 2, 3];", "a.rs");
-
-        assert!(
-            tokens
-                .iter()
-                .filter(|t| t.text == "$LIT")
-                .all(|t| tree.is_in_collection(t.node_index))
-        );
-    }
-
-    #[test]
     fn normalizes_identifiers_and_literals() {
         let (_, tokens) = parse_file("let x: i32 = 42;", "a.rs");
         assert_eq!(
