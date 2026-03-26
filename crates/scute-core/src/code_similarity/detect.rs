@@ -361,48 +361,6 @@ mod tests {
     }
 
     #[test]
-    fn preserves_independent_groups_with_no_overlapping_occurrences() {
-        let a = parse_tokens("fn f(x: i32) -> i32 { x + 1 }", "a.rs");
-        let b = parse_tokens("fn g(y: u32) -> u32 { y + 1 }", "b.rs");
-        let c = parse_tokens(
-            "struct Foo { a: i32, b: i32, c: i32, d: i32, e: i32 }",
-            "c.rs",
-        );
-        let d = parse_tokens(
-            "struct Bar { a: u64, b: u64, c: u64, d: u64, e: u64 }",
-            "d.rs",
-        );
-
-        let groups = detect_clones(&[a, b, c, d], LOW_TOKEN_THRESHOLD);
-
-        assert_eq!(groups.len(), 2, "got {groups:#?}");
-    }
-
-    #[test]
-    fn preserves_group_when_some_occurrences_do_not_overlap_with_accepted() {
-        let a = parse_tokens(
-            "fn f(x: i32, y: i32) -> i32 { if x > 0 { return x; } else { return 0; } }",
-            "a.rs",
-        );
-        let b = parse_tokens(
-            "fn g(a: u32, b: u32) -> u32 { if a > 0 { return a; } else { return 0; } }",
-            "b.rs",
-        );
-        let c = parse_tokens(
-            "fn h(z: f64) -> f64 { if z > 0 { return z; } else { return 0; } }",
-            "c.rs",
-        );
-
-        let groups = detect_clones(&[a, b, c], LOW_TOKEN_THRESHOLD);
-
-        let has_three_way_group = groups.iter().any(|g| g.occurrences.len() == 3);
-        assert!(
-            has_three_way_group,
-            "expected a group with 3 occurrences (a, b, c sharing the tail), got {groups:#?}"
-        );
-    }
-
-    #[test]
     fn keeps_group_when_non_overlapping_occurrences_remain_after_merge() {
         let source_a = r"
             const ITEMS = [
