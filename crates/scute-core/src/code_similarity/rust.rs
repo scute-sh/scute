@@ -25,6 +25,8 @@ impl SimilarityRules for Rust {
                 Some(NodeKind::TestRegion)
             }
 
+            "array_expression" => Some(NodeKind::Collection),
+
             // Identifiers
             "identifier"
             | "type_identifier"
@@ -214,6 +216,18 @@ mod tests {
             "src/lib.rs",
         );
         assert!(tree.is_in_test_region(tokens.last().unwrap().node_index));
+    }
+
+    #[test]
+    fn classifies_array_expression_as_collection() {
+        let (tree, tokens) = parse_file("let x = [1, 2, 3];", "a.rs");
+
+        assert!(
+            tokens
+                .iter()
+                .filter(|t| t.text == "$LIT")
+                .all(|t| tree.is_in_collection(t.node_index))
+        );
     }
 
     #[test]

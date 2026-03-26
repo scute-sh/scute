@@ -27,6 +27,7 @@ pub enum NodeKind {
     Contract {
         names: Vec<String>,
     },
+    Collection,
     Token {
         text: String,
         start_line: usize,
@@ -174,6 +175,13 @@ impl SourceTree {
     pub fn is_in_test_region(&self, node_index: usize) -> bool {
         self.ancestors(node_index)
             .any(|kind| matches!(kind, NodeKind::TestRegion))
+    }
+
+    /// Walk up from a node to check if it's inside a `Collection`.
+    #[must_use]
+    pub fn is_in_collection(&self, node_index: usize) -> bool {
+        self.ancestors(node_index)
+            .any(|kind| matches!(kind, NodeKind::Collection))
     }
 
     fn ancestors(&self, node_index: usize) -> impl Iterator<Item = &NodeKind> {
@@ -339,6 +347,30 @@ mod tests {
         }
         b.close_container();
         b.build()
+    }
+
+    #[test]
+    fn is_in_collection_true_for_tokens_inside_collection() {
+        let mut b = SourceTreeBuilder::new("a.ts".to_string());
+        b.open_container(NodeKind::Collection);
+        b.add_token("$LIT".to_string(), 1, 1);
+        b.add_token(",".to_string(), 1, 1);
+        b.add_token("$LIT".to_string(), 1, 1);
+        b.close_container();
+        let tree = b.build();
+
+        let tokens = tree.tokens();
+
+        assert!(tokens.iter().all(|t| tree.is_in_collection(t.node_index)));
+    }
+
+    #[test]
+    fn is_in_collection_false_for_tokens_outside_collection() {
+        let tree = source_with_tokens("a.ts", &[("fn", 1), ("$ID", 1)]);
+
+        let tokens = tree.tokens();
+
+        assert!(tokens.iter().all(|t| !tree.is_in_collection(t.node_index)));
     }
 
     #[test]

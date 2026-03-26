@@ -28,6 +28,8 @@ impl SimilarityRules for JsFamily {
                 classify_class(&node, src)
             }
 
+            "array" => Some(NodeKind::Collection),
+
             // Identifiers
             "identifier"
             | "shorthand_property_identifier"
@@ -167,6 +169,18 @@ mod tests {
     fn classify_file_marks_dot_test_tsx_as_test_region() {
         let (tree, tokens) = parse_file("function f() {}", "src/Button.test.tsx");
         assert!(tree.is_in_test_region(tokens[0].node_index));
+    }
+
+    #[test]
+    fn classifies_array_as_collection() {
+        let (tree, tokens) = parse_file("const x = ['a', 'b', 'c'];", "a.ts");
+
+        assert!(
+            tokens
+                .iter()
+                .filter(|t| t.text == "$LIT")
+                .all(|t| tree.is_in_collection(t.node_index))
+        );
     }
 
     #[test]

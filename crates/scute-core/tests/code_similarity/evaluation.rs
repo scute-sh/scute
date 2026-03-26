@@ -155,3 +155,70 @@ fn applies_test_thresholds(file_a: &str, file_b: &str, content_a: &str, content_
         "expected warn (test thresholds), got: {evals:?}"
     );
 }
+
+#[test]
+fn excludes_flat_string_literal_list() {
+    let dir = TestDir::new().source_file(
+        "slugs.ts",
+        "\
+const RESERVED = new Set([
+    'api', 'app', 'maps', 'embed', 'share', 'edit', 'create',
+    'dashboard', 'home', 'explore', 'search', 'auth', 'login',
+    'logout', 'signup', 'register', 'verify', 'reset', 'oauth',
+    'profile', 'account', 'settings', 'admin', 'billing', 'plan',
+    'about', 'contact', 'help', 'support', 'docs', 'blog', 'news',
+    'terms', 'privacy', 'legal', 'status', 'health', 'metrics',
+    'developer', 'sdk', 'cli', 'tools', 'webhooks', 'graphql',
+    'www', 'mail', 'cdn', 'assets', 'static', 'files', 'uploads',
+    'test', 'staging', 'prod', 'sandbox', 'beta', 'preview',
+]);",
+    );
+
+    let evals = check_with_low_thresholds(&dir.root());
+
+    assert!(
+        evals.iter().all(Evaluation::is_pass),
+        "flat literal list should not be flagged, got: {evals:?}"
+    );
+}
+
+#[test]
+fn excludes_flat_number_literal_list() {
+    let dir = TestDir::new().source_file(
+        "ports.ts",
+        "\
+const RESERVED_PORTS = [
+    80, 443, 8080, 8443, 3000, 3001, 5000, 5001,
+    9090, 9091, 4000, 4001, 6000, 6001, 7000, 7001,
+    2000, 2001, 1234, 5678, 9999, 1111, 2222, 3333,
+];",
+    );
+
+    let evals = check_with_low_thresholds(&dir.root());
+
+    assert!(
+        evals.iter().all(Evaluation::is_pass),
+        "flat number literal list should not be flagged, got: {evals:?}"
+    );
+}
+
+#[test]
+fn detects_identical_literal_lists_across_files() {
+    let list = "\
+const RESERVED = new Set([
+    'api', 'app', 'maps', 'embed', 'share', 'edit', 'create',
+    'dashboard', 'home', 'explore', 'search', 'auth', 'login',
+    'logout', 'signup', 'register', 'verify', 'reset', 'oauth',
+    'profile', 'account', 'settings', 'admin', 'billing', 'plan',
+]);";
+    let dir = TestDir::new()
+        .source_file("a.ts", list)
+        .source_file("b.ts", list);
+
+    let evals = check_with_low_thresholds(&dir.root());
+
+    assert!(
+        evals.iter().any(|e| !e.is_pass()),
+        "identical lists in separate files should be detected, got: {evals:?}"
+    );
+}

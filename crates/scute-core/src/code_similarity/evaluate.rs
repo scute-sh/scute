@@ -18,6 +18,7 @@ pub(super) struct ThresholdSet {
 /// Evaluate clone groups using structural context from the trees.
 ///
 /// For each group, walks up from matched tokens to determine context:
+/// - Literal list groups (all tokens are `$LIT` and `,`) are excluded
 /// - Same-contract groups (all occurrences inside the same trait impl) are excluded
 /// - Test-only groups get separate thresholds
 /// - Everything else gets base thresholds
@@ -28,18 +29,20 @@ pub fn evaluate_groups(
 ) -> Vec<Evaluation> {
     groups
         .iter()
-        .filter_map(|group| {
-            if is_same_contract_group(group, sources) {
-                return None;
-            }
+        .filter(|group| !is_excluded(group, sources))
+        .map(|group| {
             let effective = if is_test_only_group(group, sources) {
                 &thresholds.test
             } else {
                 &thresholds.base
             };
-            Some(super::format::format_evaluation(group, effective, sources))
+            super::format::format_evaluation(group, effective, sources)
         })
         .collect()
+}
+
+fn is_excluded(group: &CloneGroup, sources: &[SourceContext]) -> bool {
+    is_literal_list_group(group, sources) || is_same_contract_group(group, sources)
 }
 
 /// Returns the tokens for the exact range in this occurrence.
@@ -57,6 +60,16 @@ pub fn occurrence_tokens<'a>(
         len = tokens.len(),
     );
     &tokens[occ.token_start..end]
+}
+
+fn is_literal_list_group(group: &CloneGroup, sources: &[SourceContext]) -> bool {
+    group.occurrences.iter().all(|occ| {
+        let src = &sources[occ.source_idx];
+        let tokens = occurrence_tokens(occ, group.token_count, sources);
+        tokens.iter().all(|tok| {
+            src.tree.is_in_collection(tok.node_index) && (tok.text == "$LIT" || tok.text == ",")
+        })
+    })
 }
 
 fn is_same_contract_group(group: &CloneGroup, sources: &[SourceContext]) -> bool {
@@ -126,8 +139,11 @@ mod tests {
         Some(NodeKind::TestRegion)
     }
 
-    /// Build contexts from trees and run evaluation with standard thresholds.
-    fn run_evaluation(trees: &[SourceTree], contents: &[&str]) -> Vec<Evaluation> {
+    fn evaluate_trees(
+        trees: &[SourceTree],
+        token_count: usize,
+        contents: &[&str],
+    ) -> Vec<Evaluation> {
         let all_tokens: Vec<Vec<Token>> = trees.iter().map(SourceTree::tokens).collect();
         let sources: Vec<SourceContext> = trees
             .iter()
@@ -140,7 +156,7 @@ mod tests {
             })
             .collect();
         let group = CloneGroup {
-            token_count: CLONE_TOKENS.len(),
+            token_count,
             occurrences: (0..trees.len())
                 .map(|idx| Occurrence {
                     source_idx: idx,
@@ -153,6 +169,10 @@ mod tests {
             test: LENIENT,
         };
         evaluate_groups(&[&group], &sources, &thresholds)
+    }
+
+    fn run_evaluation(trees: &[SourceTree], contents: &[&str]) -> Vec<Evaluation> {
+        evaluate_trees(trees, CLONE_TOKENS.len(), contents)
     }
 
     #[test]
@@ -216,6 +236,33 @@ mod tests {
             result[0].is_fail(),
             "mixed group should use base thresholds"
         );
+    }
+
+    #[test]
+    fn excludes_literal_list_groups() {
+        let tokens: &[&str] = &["$LIT", ",", "$LIT", ",", "$LIT", ","];
+        let collection = Some(NodeKind::Collection);
+        let trees = [
+            build_tree("a.ts", collection.clone(), tokens),
+            build_tree("b.ts", collection, tokens),
+        ];
+
+        let result = evaluate_trees(&trees, tokens.len(), &["", ""]);
+
+        assert!(result.is_empty(), "literal list group should be excluded");
+    }
+
+    #[test]
+    fn reports_groups_with_literals_mixed_with_other_tokens() {
+        let tokens: &[&str] = &["$ID", "=", "$LIT", ",", "$ID", "=", "$LIT"];
+        let trees = [
+            build_tree("a.ts", None, tokens),
+            build_tree("b.ts", None, tokens),
+        ];
+
+        let result = evaluate_trees(&trees, tokens.len(), &["", ""]);
+
+        assert_eq!(result.len(), 1, "mixed tokens should not be excluded");
     }
 
     #[test]
