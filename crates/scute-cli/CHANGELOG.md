@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.14](https://github.com/scute-sh/scute/compare/scute-v0.0.13...scute-v0.0.14) - 2026-03-27
+
+### Fixed
+
+- *(dist)* unpin Rust toolchain and regenerate release workflow ([#117](https://github.com/scute-sh/scute/pull/117))
+
 ## [0.0.13](https://github.com/scute-sh/scute/compare/scute-v0.0.12...scute-v0.0.13) - 2026-03-27
 
 ### Other
