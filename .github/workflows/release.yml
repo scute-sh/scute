@@ -80,10 +80,8 @@ jobs:
       # (PRs run on the *source* but secrets are usually on the *target* -- that's *good*
       # but also really annoying to build CI around when it needs secrets to work right.)
       - id: plan
-        env:
-          DIST_CMD: ${{ (!github.event.pull_request && format('host --steps=create --tag={0}', github.ref_name)) || 'plan' }}
         run: |
-          dist ${DIST_CMD} --allow-dirty --output-format=json > plan-dist-manifest.json
+          dist ${{ (!github.event.pull_request && format('host --steps=create --tag={0}', github.ref_name)) || 'plan' }} --allow-dirty --output-format=json > plan-dist-manifest.json
           echo "dist ran successfully"
           cat plan-dist-manifest.json
           echo "manifest=$(jq -c "." plan-dist-manifest.json)" >> "$GITHUB_OUTPUT"
@@ -146,12 +144,9 @@ jobs:
         run: |
           ${{ matrix.packages_install }}
       - name: Build artifacts
-        env:
-          TAG_FLAG: ${{ needs.plan.outputs.tag-flag }}
-          DIST_ARGS: ${{ matrix.dist_args }}
         run: |
           # Actually do builds and make zips and whatnot
-          dist build ${TAG_FLAG} --allow-dirty --print=linkage --output-format=json ${DIST_ARGS} > dist-manifest.json
+          dist build ${{ needs.plan.outputs.tag-flag }} --allow-dirty --print=linkage --output-format=json ${{ matrix.dist_args }} > dist-manifest.json
           echo "dist ran successfully"
       - id: cargo-dist
         name: Post-build
@@ -203,10 +198,8 @@ jobs:
           merge-multiple: true
       - id: cargo-dist
         shell: bash
-        env:
-          TAG_FLAG: ${{ needs.plan.outputs.tag-flag }}
         run: |
-          dist build ${TAG_FLAG} --allow-dirty --output-format=json "--artifacts=global" > dist-manifest.json
+          dist build ${{ needs.plan.outputs.tag-flag }} --allow-dirty --output-format=json "--artifacts=global" > dist-manifest.json
           echo "dist ran successfully"
 
           # Parse out what we just built and upload it to scratch storage
@@ -255,10 +248,8 @@ jobs:
           merge-multiple: true
       - id: host
         shell: bash
-        env:
-          TAG_FLAG: ${{ needs.plan.outputs.tag-flag }}
         run: |
-          dist host ${TAG_FLAG} --allow-dirty --steps=upload --steps=release --output-format=json > dist-manifest.json
+          dist host ${{ needs.plan.outputs.tag-flag }} --allow-dirty --steps=upload --steps=release --output-format=json > dist-manifest.json
           echo "artifacts uploaded and released successfully"
           cat dist-manifest.json
           echo "manifest=$(jq -c "." dist-manifest.json)" >> "$GITHUB_OUTPUT"
@@ -281,14 +272,13 @@ jobs:
           rm -f artifacts/*-dist-manifest.json
       - name: Create GitHub Release
         env:
-          TAG: ${{ needs.plan.outputs.tag }}
           PRERELEASE_FLAG: "${{ fromJson(steps.host.outputs.manifest).announcement_is_prerelease && '--prerelease' || '' }}"
           RELEASE_COMMIT: "${{ github.sha }}"
         run: |
           # If we're editing a release in place, we need to upload things ahead of time
-          gh release upload "$TAG" artifacts/*
+          gh release upload "${{ needs.plan.outputs.tag }}" artifacts/*
 
-          gh release edit "$TAG" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --draft=false
+          gh release edit "${{ needs.plan.outputs.tag }}" --target "$RELEASE_COMMIT" $PRERELEASE_FLAG --draft=false
 
   publish-homebrew-formula:
     needs:
