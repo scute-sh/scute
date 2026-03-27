@@ -1,3 +1,8 @@
+//! MCP server exposing Scute checks as tools.
+//!
+//! Runs on stdio and lets AI agents call checks like `check_commit_message`
+//! or `check_code_complexity` through the Model Context Protocol.
+
 mod schema;
 
 use std::path::{Path, PathBuf};
