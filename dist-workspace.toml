@@ -3,6 +3,8 @@ members = ["cargo:crates"]
 
 [dist]
 cargo-dist-version = "0.31.0"
+allow-dirty = ["ci"]
+tag-namespace = "scute-"
 ci = "github"
 installers = ["shell", "powershell", "homebrew"]
 targets = [

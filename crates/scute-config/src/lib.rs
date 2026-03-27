@@ -1,3 +1,9 @@
+//! Configuration loading for Scute checks.
+//!
+//! Finds and parses `.scute.yml`, walking up from the project root to the
+//! nearest git boundary. Each check can pull its own typed [`Definition`](ScuteConfig::definition)
+//! from the shared config file.
+
 #![allow(clippy::missing_errors_doc)]
 
 use std::collections::HashMap;
