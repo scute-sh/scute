@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.14](https://github.com/scute-sh/scute/compare/scute-mcp-v0.0.13...scute-mcp-v0.0.14) - 2026-04-02
+
+### Other
+
+- updated the following local packages: scute-core, scute-config
+
 ## [0.0.13](https://github.com/scute-sh/scute/compare/scute-mcp-v0.0.12...scute-mcp-v0.0.13) - 2026-03-27
 
 ### Other
