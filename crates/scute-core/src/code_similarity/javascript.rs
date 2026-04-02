@@ -139,6 +139,8 @@ fn first_type_name(node: &tree_sitter::Node, src: &[u8]) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use test_case::test_case;
+
     use crate::code_similarity::test_support::{parse_file, token_texts};
     use crate::code_similarity::tree::all_share_contract;
 
@@ -212,12 +214,12 @@ mod tests {
         );
     }
 
-    #[test_case::test_case("\"hello\"", "a.ts" ; "string")]
-    #[test_case::test_case("`hello`", "a.ts" ; "template string")]
-    #[test_case::test_case("42", "a.ts" ; "number")]
-    #[test_case::test_case("true", "a.ts" ; "boolean true")]
-    #[test_case::test_case("null", "a.ts" ; "null")]
-    #[test_case::test_case("undefined", "a.js" ; "undefined")]
+    #[test_case("\"hello\"", "a.ts" ; "string")]
+    #[test_case("`hello`", "a.ts" ; "template string")]
+    #[test_case("42", "a.ts" ; "number")]
+    #[test_case("true", "a.ts" ; "boolean true")]
+    #[test_case("null", "a.ts" ; "null")]
+    #[test_case("undefined", "a.js" ; "undefined")]
     fn normalizes_literal_to_lit_placeholder(value: &str, file: &str) {
         let (_, tokens) = parse_file(&format!("const x = {value};"), file);
         assert_eq!(token_texts(&tokens), vec!["const", "$ID", "=", "$LIT", ";"]);
@@ -249,11 +251,11 @@ mod tests {
         assert!(texts.contains(&"class"));
     }
 
-    #[test_case::test_case("import { foo } from 'bar';", "a.js" ; "js named import")]
-    #[test_case::test_case("import { foo } from 'bar';", "a.ts" ; "ts named import")]
-    #[test_case::test_case("import { foo } from 'bar';", "a.tsx" ; "tsx named import")]
-    #[test_case::test_case("import foo from 'bar';", "a.ts" ; "default import")]
-    #[test_case::test_case("import * as foo from 'bar';", "a.ts" ; "namespace import")]
+    #[test_case("import { foo } from 'bar';", "a.js" ; "js named import")]
+    #[test_case("import { foo } from 'bar';", "a.ts" ; "ts named import")]
+    #[test_case("import { foo } from 'bar';", "a.tsx" ; "tsx named import")]
+    #[test_case("import foo from 'bar';", "a.ts" ; "default import")]
+    #[test_case("import * as foo from 'bar';", "a.ts" ; "namespace import")]
     fn strips_import_statements(source: &str, path: &str) {
         let (_, tokens) = parse_file(source, path);
         assert!(tokens.is_empty(), "expected no tokens, got: {tokens:?}");
@@ -265,35 +267,35 @@ mod tests {
         assert_eq!(token_texts(&tokens), vec!["const", "$ID", "=", "$LIT", ";"]);
     }
 
-    #[test_case::test_case(
+    #[test_case(
         "class Html implements Renderer { render(): string { return ''; } }",
         "a.ts", true ; "ts implements"
     )]
-    #[test_case::test_case(
+    #[test_case(
         "class Html extends AbstractRenderer { render(): string { return ''; } }",
         "a.ts", true ; "ts extends"
     )]
-    #[test_case::test_case(
+    #[test_case(
         "class Html extends Base { render() { return ''; } }",
         "a.js", true ; "js extends"
     )]
-    #[test_case::test_case(
+    #[test_case(
         "abstract class Base implements Renderer { abstract render(): string; }",
         "a.ts", true ; "ts abstract class"
     )]
-    #[test_case::test_case(
+    #[test_case(
         "class Html implements Renderer { render(): string { return ''; } }",
         "a.tsx", true ; "tsx implements"
     )]
-    #[test_case::test_case(
+    #[test_case(
         "class Html implements Renderer<string> { render(): string { return ''; } }",
         "a.ts", true ; "ts generic implements"
     )]
-    #[test_case::test_case(
+    #[test_case(
         "class Foo { bar(): string { return ''; } }",
         "a.ts", false ; "plain class"
     )]
-    #[test_case::test_case(
+    #[test_case(
         "function render(): string { return ''; }",
         "a.ts", false ; "free function"
     )]
@@ -302,17 +304,17 @@ mod tests {
         assert_eq!(all_share_contract(&[(&tree, &tokens)]), has_contract);
     }
 
-    #[test_case::test_case(
+    #[test_case(
         "class A implements Renderer, Serializable { render(): string { return ''; } }",
         "class B implements Renderer { render(): string { return ''; } }"
         ; "multiple implements shares contract with single"
     )]
-    #[test_case::test_case(
+    #[test_case(
         "class A extends Base implements Renderer { render(): string { return ''; } }",
         "class B extends Base implements Formatter { format(): string { return ''; } }"
         ; "extends plus implements shares contract via either"
     )]
-    #[test_case::test_case(
+    #[test_case(
         "class A implements Renderer<string> { render(): string { return ''; } }",
         "class B implements Renderer<number> { render(): number { return 0; } }"
         ; "generic type params ignored in contract name"
