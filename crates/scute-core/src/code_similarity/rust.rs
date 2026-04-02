@@ -91,6 +91,8 @@ fn has_preceding_attr(node: &tree_sitter::Node, src: &[u8], pred: impl Fn(&str) 
 
 #[cfg(test)]
 mod tests {
+    use test_case::test_case;
+
     use crate::code_similarity::test_support::{parse_file, token_texts};
     use crate::code_similarity::tree::all_share_contract;
 
@@ -234,10 +236,10 @@ mod tests {
         assert_eq!(token_texts(&tokens), vec!["fn", "$ID", "(", ")", "{", "}"]);
     }
 
-    #[test_case::test_case("use std::io;" ; "simple use")]
-    #[test_case::test_case("use crate::foo::Bar;" ; "path use")]
-    #[test_case::test_case("use std::{fs, path::Path};" ; "grouped use")]
-    #[test_case::test_case("use std::collections::*;" ; "glob use")]
+    #[test_case("use std::io;" ; "simple use")]
+    #[test_case("use crate::foo::Bar;" ; "path use")]
+    #[test_case("use std::{fs, path::Path};" ; "grouped use")]
+    #[test_case("use std::collections::*;" ; "glob use")]
     fn strips_use_declarations(import: &str) {
         let source = format!("{import}\nfn f() {{}}");
         let (_, tokens) = parse_file(&source, "a.rs");
