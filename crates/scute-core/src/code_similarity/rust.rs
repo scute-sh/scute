@@ -234,12 +234,13 @@ mod tests {
         assert_eq!(token_texts(&tokens), vec!["fn", "$ID", "(", ")", "{", "}"]);
     }
 
-    #[test]
-    fn strips_use_declarations() {
-        let (_, tokens) = parse_file(
-            "use std::io;\nuse crate::foo::Bar;\nuse std::{fs, path::Path};\nfn f() {}",
-            "a.rs",
-        );
+    #[test_case::test_case("use std::io;" ; "simple use")]
+    #[test_case::test_case("use crate::foo::Bar;" ; "path use")]
+    #[test_case::test_case("use std::{fs, path::Path};" ; "grouped use")]
+    #[test_case::test_case("use std::collections::*;" ; "glob use")]
+    fn strips_use_declarations(import: &str) {
+        let source = format!("{import}\nfn f() {{}}");
+        let (_, tokens) = parse_file(&source, "a.rs");
         assert_eq!(token_texts(&tokens), vec!["fn", "$ID", "(", ")", "{", "}"]);
     }
 }
