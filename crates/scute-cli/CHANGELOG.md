@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.15](https://github.com/scute-sh/scute/compare/scute-v0.0.14...scute-v0.0.15) - 2026-04-02
+
+### Fixed
+
+- *(code-similarity)* exclude import blocks from duplication analysis ([#120](https://github.com/scute-sh/scute/pull/120))
+
+### Other
+
+- *(code-similarity)* cover import exclusion edge cases ([#122](https://github.com/scute-sh/scute/pull/122))
+
 ## [0.0.14](https://github.com/scute-sh/scute/compare/scute-v0.0.13...scute-v0.0.14) - 2026-03-27
 
 ### Fixed
