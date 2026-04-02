@@ -35,6 +35,7 @@ pub enum NodeKind {
     },
     Comment,
     Decoration,
+    Import,
 }
 
 /// Builds a `SourceTree` by tracking the current container on a stack.

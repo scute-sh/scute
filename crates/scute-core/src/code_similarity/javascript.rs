@@ -45,6 +45,7 @@ impl SimilarityRules for JsFamily {
             // Skip
             "comment" => Some(NodeKind::Comment),
             "decorator" => Some(NodeKind::Decoration),
+            "import_statement" => Some(NodeKind::Import),
 
             _ => None,
         }
@@ -246,6 +247,22 @@ mod tests {
         let texts = token_texts(&tokens);
         assert!(!texts.contains(&"@"));
         assert!(texts.contains(&"class"));
+    }
+
+    #[test_case::test_case("import { foo } from 'bar';", "a.js" ; "js named import")]
+    #[test_case::test_case("import { foo } from 'bar';", "a.ts" ; "ts named import")]
+    #[test_case::test_case("import { foo } from 'bar';", "a.tsx" ; "tsx named import")]
+    #[test_case::test_case("import foo from 'bar';", "a.ts" ; "default import")]
+    #[test_case::test_case("import * as foo from 'bar';", "a.ts" ; "namespace import")]
+    fn strips_import_statements(source: &str, path: &str) {
+        let (_, tokens) = parse_file(source, path);
+        assert!(tokens.is_empty(), "expected no tokens, got: {tokens:?}");
+    }
+
+    #[test]
+    fn preserves_code_after_imports() {
+        let (_, tokens) = parse_file("import { foo } from 'bar';\nconst x = 1;", "a.ts");
+        assert_eq!(token_texts(&tokens), vec!["const", "$ID", "=", "$LIT", ";"]);
     }
 
     #[test_case::test_case(

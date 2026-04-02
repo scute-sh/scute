@@ -46,6 +46,7 @@ impl SimilarityRules for Rust {
             // Skip
             "line_comment" | "block_comment" => Some(NodeKind::Comment),
             "attribute_item" | "inner_attribute_item" => Some(NodeKind::Decoration),
+            "use_declaration" => Some(NodeKind::Import),
 
             _ => None,
         }
@@ -230,6 +231,15 @@ mod tests {
     #[test]
     fn strips_comments_and_attributes() {
         let (_, tokens) = parse_file("// comment\n#[derive(Debug)]\nfn f() {}", "a.rs");
+        assert_eq!(token_texts(&tokens), vec!["fn", "$ID", "(", ")", "{", "}"]);
+    }
+
+    #[test]
+    fn strips_use_declarations() {
+        let (_, tokens) = parse_file(
+            "use std::io;\nuse crate::foo::Bar;\nuse std::{fs, path::Path};\nfn f() {}",
+            "a.rs",
+        );
         assert_eq!(token_texts(&tokens), vec!["fn", "$ID", "(", ")", "{", "}"]);
     }
 }

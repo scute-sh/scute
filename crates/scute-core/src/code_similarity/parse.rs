@@ -81,7 +81,7 @@ fn walk_node(
             start_line,
             end_line,
         } => builder.add_token(text, start_line, end_line),
-        NodeKind::Comment | NodeKind::Decoration => {}
+        NodeKind::Comment | NodeKind::Decoration | NodeKind::Import => {}
         container => {
             builder.open_container(container);
             walk_children(node, src, rules, builder);
