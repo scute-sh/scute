@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.16](https://github.com/scute-sh/scute/compare/scute-v0.0.15...scute-v0.0.16) - 2026-04-11
+
+### Other
+
+- update Cargo.lock dependencies
+- *(deps)* upgrade rmcp to 1.4 ([#123](https://github.com/scute-sh/scute/pull/123))
+
 ## [0.0.15](https://github.com/scute-sh/scute/compare/scute-v0.0.14...scute-v0.0.15) - 2026-04-02
 
 ### Fixed
