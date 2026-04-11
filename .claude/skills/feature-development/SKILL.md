@@ -37,9 +37,9 @@ _Invoke_ `/harden` on all files touched.
 
 _Invoke_ `/verify-criteria` against `playground/{feature-name}-criteria.md`.
 
-## Cleanup
+## 7. Clean Up
 
-Remove playground files from disk (`{feature-name}-criteria.md`, `{feature-name}-scout.md`, `{feature-name}-sketch.md`). These are working files, not tracked by git.
+Delete all `playground/{feature-name}-*` files. These are working artifacts, not project files — they must not be committed.
 
 ## When to Check In With User
 

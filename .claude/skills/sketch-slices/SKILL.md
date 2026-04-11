@@ -21,8 +21,9 @@ Enough structure to start, not a complete design. Implementation details (functi
    - **Focused**: One concern per slice (one refactoring, one test coverage gap)
    - Ordered before feature slices — they prepare the ground
 
-   **Feature slices**:
+   **Feature slices** (ordered consumer-outward):
    - **Persona-driven**: Written as "[Persona] does [action] and sees [result]" — if you can't name the persona, it's a task, not a slice
+   - **Consumer-first**: Start from the most important persona's experience, then work backwards to data entry and storage — what needs to be displayed drives how data is structured
    - **End-to-end**: Cuts through all layers (not split by layer)
    - **Small**: Completable in one focused session
 
@@ -51,6 +52,7 @@ Enough structure to start, not a complete design. Implementation details (functi
 
 **Anti-patterns**:
 - Slices by layer ("Backend first, then Frontend") — tasks, not slices
+- Storage/modeling first ("Build the schema, then the UI") — risks designing data that doesn't serve the presentation
 - Slices by technical concern ("Score a function", "Add language support") — no persona, no observable outcome
 - **Litmus test**: Can you demo it to a persona and they'd care? If not, re-slice.
 

@@ -35,18 +35,29 @@ Enter a worktree for this issue using `EnterWorktree` — do not create one manu
 
 ## 4. Build and Ship
 
-For each scenario (or the single fix):
+Repeat for each slice (or the single fix):
 
-1. Build it — _invoke_ `/atdd` for substantial work, `/tdd` or the appropriate testing skill for small fixes
-2. **Ship it** — push the branch and open a PR
+### Build
+
+Do not design upfront. No data models, no architecture decisions, no technical plans. Start the first scenario and let implementation emerge from the tests. The right design will reveal itself as you make tests pass.
+
+_Invoke_ `/atdd` for substantial work, `/tdd` or the appropriate testing skill for small fixes.
+
+### Commit and Open PR
+
+A slice is not done until it has a PR. This is not optional.
+
+1. Commit all changes for this slice
+2. Push the branch
+3. Open a PR:
    - Title: short, under 70 characters
    - Body: use the repo's PR template if one exists, otherwise write a concise description. Reference the issue with `Part of #<number>`.
-3. Watch CI checks until they complete
+4. Watch CI checks until they complete
    - If checks fail: read the failure logs, fix, commit, push, watch again
    - After 3 failed fix attempts, stop and ask the user for guidance
-4. Report the PR URL to the user
+5. Report the PR URL to the user
 
-**⛔ STOP here.** Do not start the next slice. Wait for the user to confirm the PR is reviewed and merged before continuing. When they do, reset the worktree to latest main (`git reset --hard origin/main`) and proceed to the next scenario.
+**⛔ STOP.** Do not start the next slice. Wait for the user to confirm the PR is reviewed and merged. Then reset the worktree to latest main (`git reset --hard origin/main`) and proceed.
 
 Each PR must not break existing behavior.
 
@@ -59,11 +70,15 @@ Once all scenarios are complete:
 3. Push, open a final PR with `Closes #<number>` in the body
 4. Watch CI until green
 
+## 6. Clean Up
+
+Delete any `playground/` working files created during this workflow (sketches, scout reports, criteria files). These are working artifacts, not project files — they must not be committed.
+
+Do not clean up the worktree — the user may want to keep it for follow-up work.
+
 ## When Done
 
 Report to the user:
 - PR URL(s)
 - Summary of what was done
 - Any decisions made along the way that the user should know about
-
-Do not clean up the worktree — the user may want to keep it for follow-up work.

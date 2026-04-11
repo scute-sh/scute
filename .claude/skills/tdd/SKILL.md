@@ -55,6 +55,8 @@ Anti-pattern: RED → GREEN → RED → GREEN → ... → REFACTOR at the end.
 
 ## Implementation Phase
 
+**One test. One cycle. No exceptions.** Write a single failing test, make it pass, refactor. Only then think about the next test. Do not write multiple tests before making them pass — that is upfront design disguised as testing.
+
 1. Replace the next [TEST] comment directly with a failing test. No intermediate markers.
 2. Test should be in format given-when-then (do not add as comments), with empty line separating them
 3. Think through the expected value BEFORE writing the assertion. Trace the logic step by step.

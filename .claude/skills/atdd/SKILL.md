@@ -23,7 +23,9 @@ Invoke the selected skill. It handles red-green-refactor.
 
 ## Outside-In Build Loop
 
-### For each scenario:
+### One scenario at a time
+
+Pick the next scenario. Complete it fully — build, gate, course correction — before starting another. Do not plan or implement multiple scenarios in parallel.
 
 1. **Describe the scenario in plain language first** — before any code. Write it as a Given/When/Then:
 
@@ -35,7 +37,7 @@ Invoke the selected skill. It handles red-green-refactor.
 
    Present this to the user and get confirmation before proceeding. The acceptance test is a contract — don't decide what the user should see on their behalf.
 
-2. **Turn the confirmed scenario into an acceptance test.** This test will fail. That's the point.
+2. **Turn the confirmed scenario into a single acceptance test.** This test will fail. That's the point. Write one test, make it pass, then write the next. Do not write all tests for a scenario upfront — let each passing test inform what the next one should be.
 
 3. **Find the entry point** — where in the system does this scenario begin?
    - Web feature → the UI component where the new affordance appears
@@ -69,6 +71,7 @@ If you find yourself reasoning about why outside-in doesn't apply here, you are 
 - "I'll be pragmatic" → Outside-in IS pragmatic. It catches integration issues early and prevents building the wrong API.
 - "The backend needs to exist first" → No. That's what stubs are for.
 - "This component already exists, so I can skip this layer" → The outermost layer is the component that USES the shared one. Start there.
+- "I'll implement all the scenarios together since they're related" → Each scenario is a learning opportunity. What you learn in one changes how you build the next. Batching them throws that away.
 
 ## Stop If You Catch Yourself
 
@@ -90,7 +93,6 @@ These are not suggestions. Stop immediately and correct course:
 3. Update tracking:
    - **Preparatory**: Mark item complete in scout report
    - **Feature**: Mark satisfied criteria in criteria file
-4. Commit with message describing the change
 
 ## Course Correction
 
