@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 
 use rmcp::{
     ErrorData, RoleServer, ServerHandler, ServiceExt,
-    handler::server::router::tool::ToolRouter,
     handler::server::tool::schema_for_output,
     handler::server::wrapper::Parameters,
     model::{CallToolResult, ServerCapabilities, ServerInfo},
@@ -63,17 +62,7 @@ struct CheckSourceFilesInput {
 }
 
 #[derive(Debug, Clone)]
-struct ScuteMcp {
-    tool_router: ToolRouter<Self>,
-}
-
-impl ScuteMcp {
-    fn new() -> Self {
-        Self {
-            tool_router: Self::tool_router(),
-        }
-    }
-}
+struct ScuteMcp;
 
 #[tool_router]
 impl ScuteMcp {
@@ -298,7 +287,7 @@ pub fn run() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         .enable_all()
         .build()?;
     rt.block_on(async {
-        let service = ScuteMcp::new().serve(stdio()).await?;
+        let service = ScuteMcp.serve(stdio()).await?;
         service.waiting().await?;
         Ok(())
     })
