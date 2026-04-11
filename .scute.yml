@@ -4,8 +4,8 @@ checks:
       fail: 0
   dependency-freshness:
     thresholds:
-      warn: 5
-      fail: 8
+      warn: 2
+      fail: 3
     level: minor
   code-similarity:
     thresholds:
