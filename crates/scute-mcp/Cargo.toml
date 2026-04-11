@@ -1,6 +1,6 @@
 [package]
 name = "scute-mcp"
-version = "0.0.14"
+version = "0.0.15"
 edition = "2024"
 description = "MCP server for Scute fitness checks"
 repository = "https://github.com/scute-sh/scute"
