@@ -4,6 +4,8 @@ use crate::parser::{AstParser, TreeSitterParser};
 
 use super::rules::{ComplexityRules, NestingKind, NodeRole};
 
+const ELSE_IF: &str = "else if";
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Construct {
     Conditional,
@@ -79,7 +81,9 @@ pub enum ContributorKind {
         depth: u64,
         chain: Vec<FlowConstruct>,
     },
-    Else,
+    Else {
+        label: &'static str,
+    },
     Logical {
         operators: Vec<LogicalOp>,
     },
@@ -256,12 +260,12 @@ impl ScoringContext<'_> {
     }
 
     fn score_else(&mut self, node: tree_sitter::Node, nesting: u64) -> u64 {
-        if self.rules.is_else_if(node) {
-            self.complexity(node, nesting.saturating_sub(1))
-        } else {
-            self.push(ContributorKind::Else, node, 1);
-            1 + self.complexity(node, nesting)
-        }
+        let (label, body) = match self.rules.else_if_branch(node) {
+            Some(branch) => (ELSE_IF, branch),
+            None => ("else", node),
+        };
+        self.push(ContributorKind::Else { label }, node, 1);
+        1 + self.complexity(body, nesting)
     }
 
     fn score_jump(
@@ -319,10 +323,10 @@ impl ScoringContext<'_> {
 }
 
 fn nesting_chain(node: tree_sitter::Node, rules: &dyn ComplexityRules) -> Vec<FlowConstruct> {
-    let ancestors = std::iter::successors(node.parent(), tree_sitter::Node::parent);
+    let ancestors = std::iter::successors(enclosing(node, rules), |n| enclosing(*n, rules));
     let mut chain = Vec::new();
     for ancestor in ancestors {
-        if let Some(construct) = rules.flow_construct(ancestor) {
+        if let Some(construct) = chain_construct(ancestor, rules) {
             chain.push(construct);
             continue;
         }
@@ -337,6 +341,33 @@ fn nesting_chain(node: tree_sitter::Node, rules: &dyn ComplexityRules) -> Vec<Fl
     }
     chain.reverse();
     chain
+}
+
+fn enclosing<'a>(
+    node: tree_sitter::Node<'a>,
+    rules: &dyn ComplexityRules,
+) -> Option<tree_sitter::Node<'a>> {
+    let parent = node.parent()?;
+    if is_else_if_branch(node, rules) {
+        enclosing(parent.parent()?, rules)
+    } else {
+        Some(parent)
+    }
+}
+
+fn chain_construct(node: tree_sitter::Node, rules: &dyn ComplexityRules) -> Option<FlowConstruct> {
+    let construct = rules.flow_construct(node)?;
+    let label = if is_else_if_branch(node, rules) {
+        ELSE_IF
+    } else {
+        construct.label
+    };
+    Some(FlowConstruct { label, ..construct })
+}
+
+fn is_else_if_branch(node: tree_sitter::Node, rules: &dyn ComplexityRules) -> bool {
+    node.parent()
+        .is_some_and(|p| rules.is_else_clause(p) && rules.else_if_branch(p).is_some())
 }
 
 fn count_operator_sequences(operators: &[LogicalOp]) -> u64 {
@@ -454,7 +485,7 @@ mod tests {
         let cs = contributors(CONDITIONAL_WITH_ELSE);
         let else_c = cs
             .iter()
-            .find(|c| matches!(c.kind, ContributorKind::Else))
+            .find(|c| matches!(c.kind, ContributorKind::Else { .. }))
             .unwrap();
 
         assert_eq!(else_c.increment, 1);

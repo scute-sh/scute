@@ -39,7 +39,7 @@ Each language maps its own constructs to the cognitive drivers above.
 | Conditional | `if`, `match` | `if`, `switch`, ternary (`? :`) |
 | Loop | `for`, `while`, `loop` | `for`, `for...in`, `for...of`, `while`, `do...while` |
 | Exception handler | — | `catch` |
-| Else branch | `else` | `else` |
+| Else branch | `else`, `else if` | `else`, `else if` |
 | Boolean operator | `&&`, `\|\|` | `&&`, `\|\|` (nullish coalescing `??` is not scored) |
 | Inline nesting | closures | arrow functions, function expressions |
 | Jump | labeled `break`/`continue` | labeled `break`/`continue` |
@@ -49,7 +49,7 @@ Constructs in the same cognitive role follow the same scoring rules. A `switch` 
 ### Key behaviors
 
 - **Nesting multiplies.** An `if` inside a `for` inside a `match`/`switch` costs 1 + nesting depth, not just 1. This is the main driver of high scores.
-- **Else-if chains are flat.** `if / else if / else if / else` does not compound nesting. Each branch costs +1.
+- **Else-if chains are flat.** `if / else if / else if / else` does not compound nesting. Each branch costs +1 at any depth, since the nesting cost was already paid on the `if`. Code inside a branch body is one level deeper, same as inside an `if` body.
 - **Inline nesting inherits depth.** Closures (Rust) and arrow functions / function expressions (JS/TS) bump nesting depth by 1 for their contained code. They're not a fresh scope.
 - **Logical operators count sequence changes.** `a && b && c` is one sequence (+1). `a && b || c && d` has two changes (+3).
 - **Ternaries score like `if`.** (JS/TS) A ternary counts as a conditional and nests like any other flow construct.
@@ -141,7 +141,7 @@ Each line that contributes to a function's score produces an evidence entry. The
 | --- | --- | --- |
 | `flow break` | `'for' loop (+1)` | — |
 | `nesting` | `'if' nested 2 levels: 'for > if > if' (+3)` | extract inner block into a function |
-| `else` | `'else' branch (+1)` | use a guard clause or early return |
+| `else` | `'else' branch (+1)`, `'else if' branch (+1)` | use a guard clause or early return |
 | `boolean logic` | `mixed '&&' and '\|\|' operators (+2)` | extract into a named boolean |
 | `recursion` | `recursive call to 'process' (+1)` | consider iterative approach |
 | `jump` | `'break' to label 'outer (+1)` | restructure to avoid labeled jump |

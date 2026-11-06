@@ -122,9 +122,9 @@ impl ComplexityRules for JsFamily {
         node.kind() == "else_clause"
     }
 
-    fn is_else_if(&self, node: tree_sitter::Node) -> bool {
+    fn else_if_branch<'a>(&self, node: tree_sitter::Node<'a>) -> Option<tree_sitter::Node<'a>> {
         node.children(&mut node.walk())
-            .any(|c| c.kind() == "if_statement")
+            .find(|c| c.kind() == "if_statement")
     }
 
     fn logical_operator(&self, node: tree_sitter::Node) -> Option<LogicalOp> {

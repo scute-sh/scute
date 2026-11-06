@@ -56,9 +56,9 @@ impl ComplexityRules for Rust {
         node.kind() == "else_clause"
     }
 
-    fn is_else_if(&self, node: tree_sitter::Node) -> bool {
+    fn else_if_branch<'a>(&self, node: tree_sitter::Node<'a>) -> Option<tree_sitter::Node<'a>> {
         node.children(&mut node.walk())
-            .any(|c| c.kind() == "if_expression")
+            .find(|c| c.kind() == "if_expression")
     }
 
     fn nesting_kind(&self, node: tree_sitter::Node) -> Option<NestingKind> {
