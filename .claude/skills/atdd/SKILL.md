@@ -48,7 +48,13 @@ Pick the next scenario. Complete it fully — build, gate, course correction —
 
 4. **Make the acceptance test pass, outside-in.** Stub everything below — hardcoded data, fake responses, in-memory storage. The entry point should work with stubs before any inner layer exists.
 
-5. **Work inward one layer at a time.** Each layer gets its own tests. Replace the stub from the layer above with real implementation. Then stub the next layer down. Repeat until you reach storage.
+5. **Work inward one layer at a time.** The stub from the outer layer IS the spec for the next one — it already declares what it needs. Don't plan what the inner layer should do; read what the outer layer expects from it.
+
+   For each layer inward:
+   1. Read the stub/mock the passing layer uses — that's the contract
+   2. Write a test for the collaborator that captures that contract
+   3. Make it pass, stubbing its own dependencies
+   4. Repeat until the scenario is complete
 
 6. **Read back code** — is it clear? If not, refactor before moving on.
 
@@ -72,6 +78,7 @@ If you find yourself reasoning about why outside-in doesn't apply here, you are 
 - "The backend needs to exist first" → No. That's what stubs are for.
 - "This component already exists, so I can skip this layer" → The outermost layer is the component that USES the shared one. Start there.
 - "I'll implement all the scenarios together since they're related" → Each scenario is a learning opportunity. What you learn in one changes how you build the next. Batching them throws that away.
+- "Let me figure out what the next layer needs" → You don't figure it out. The consuming layer already told you — look at its stubs. If you're planning what an inner layer should do instead of reading what the outer layer expects, you've flipped to inside-out.
 
 ## Stop If You Catch Yourself
 
