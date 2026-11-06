@@ -2,7 +2,7 @@
 members = ["cargo:crates"]
 
 [dist]
-cargo-dist-version = "0.31.0"
+cargo-dist-version = "0.34.0"
 allow-dirty = ["ci"]
 tag-namespace = "scute-"
 ci = "github"
