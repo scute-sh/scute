@@ -214,9 +214,9 @@ fn format_evidence(c: &score::Contributor, path: &Path) -> Evidence {
                 text("extract inner block into a function"),
             )
         }
-        score::ContributorKind::Else => (
+        score::ContributorKind::Else { label } => (
             "else",
-            format!("'else' branch (+{})", c.increment),
+            format!("'{label}' branch (+{})", c.increment),
             text("use a guard clause or early return"),
         ),
         score::ContributorKind::Logical { operators } => (
@@ -270,6 +270,19 @@ mod tests {
         assert_eq!(evals.len(), 2);
         assert!(evals[0].target.contains('a'));
         assert!(evals[1].target.contains('b'));
+    }
+
+    // for: +1, if: +1+1, two else ifs: +1 each = 5, the default warn threshold
+    #[test]
+    fn nested_else_if_chain_at_warn_threshold_passes() {
+        let dir = TestDir::new().source_file(
+            "chain.rs",
+            "fn f(a: bool, c: &[i32]) { for _ in c { if a {} else if a {} else if a {} } }",
+        );
+
+        let evals = check_dir(&dir.root());
+
+        assert!(evals[0].is_pass());
     }
 
     #[test]
@@ -331,6 +344,26 @@ mod tests {
         "fn f(x: bool) { if x {} else {} }",
         "else", "'else' branch (+1)", Some("use a guard clause or early return")
         ; "else_suggests_guard_clause"
+    )]
+    #[test_case(
+        "fn f(a: bool, b: bool) { if a {} else if b {} }",
+        "else", "'else if' branch (+1)", Some("use a guard clause or early return")
+        ; "else_if_names_the_branch"
+    )]
+    #[test_case(
+        "fn f(a: bool, b: bool, c: &[i32]) { for _ in c { if a {} else if b {} } }",
+        "else", "'else if' branch (+1)", Some("use a guard clause or early return")
+        ; "nested_else_if_reports_no_nesting"
+    )]
+    #[test_case(
+        "fn f(a: bool, b: bool, c: bool) { if a {} else if b { if c {} } }",
+        "nesting", "'if' nested 1 level: 'else if > if' (+2)", Some("extract inner block into a function")
+        ; "nesting_chain_counts_else_if_as_one_level"
+    )]
+    #[test_case(
+        "fn f(a: bool, b: bool, c: bool) { if a {} else if b {} else if c { if a {} } }",
+        "nesting", "'if' nested 1 level: 'else if > if' (+2)", Some("extract inner block into a function")
+        ; "nesting_chain_skips_sibling_branches_of_else_if_chain"
     )]
     #[test_case(
         "fn f(a: bool, b: bool) -> bool { a && b }",

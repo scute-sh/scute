@@ -97,6 +97,61 @@ fn scores_else_if_chain_flat(path: &str, source: &str) {
     expect_score(source, path, 3);
 }
 
+// for: +1, if: +1+1, each else if: +1 (flat)
+#[test_case("a.rs", "fn f(a: bool, b: bool, c: &[i32]) { for _ in c { if a {} else if b {} } }", 4 ; "rust")]
+#[test_case("a.js", "function f(a, b, c) { for (const x of c) { if (a) {} else if (b) {} } }", 4 ; "javascript")]
+#[test_case("a.ts", "function f(a: boolean, b: boolean, c: number[]) { for (const x of c) { if (a) {} else if (b) {} } }", 4 ; "typescript")]
+#[test_case("a.tsx", "function f(a: boolean, b: boolean, c: number[]) { for (const x of c) { if (a) {} else if (b) {} } }", 4 ; "tsx")]
+#[test_case("a.rs", "fn f(a: bool, b: Option<i32>, c: &[i32]) { for _ in c { if a {} else if let Some(x) = b {} } }", 4 ; "rust_if_let")]
+#[test_case("a.rs", "fn f(a: bool, c: &[i32]) { for _ in c { if a {} else if a {} else if a {} else if a {} } }", 6 ; "rust_chain")]
+#[test_case("a.ts", "function f(a: boolean, c: number[]) { for (const x of c) { if (a) {} else if (a) {} else if (a) {} else if (a) {} } }", 6 ; "typescript_chain")]
+fn scores_nested_else_if_flat_per_branch(path: &str, source: &str, expected: u64) {
+    expect_score(source, path, expected);
+}
+
+// if: +1, else: +1, nested if: +1+1
+#[test_case("a.rs", "fn f(a: bool, b: bool) { if a {} else { if b {} } }" ; "rust")]
+#[test_case("a.ts", "function f(a: boolean, b: boolean) { if (a) {} else { if (b) {} } }" ; "typescript")]
+fn scores_if_as_only_statement_of_else_block_with_nesting_penalty(path: &str, source: &str) {
+    expect_score(source, path, 4);
+}
+
+// Campbell's Cognitive Complexity spec, Appendix C: WildcardPattern.toRegexp, total 20.
+#[test]
+fn matches_spec_worked_example_mixing_else_if_and_nesting() {
+    expect_score(
+        r"function toRegexp(antPattern, directorySeparator) {
+            let i = antPattern.startsWith('/') || antPattern.startsWith('x') ? 1 : 0;
+            while (i < antPattern.length) {
+                const ch = antPattern.charAt(i);
+                if (SPECIAL_CHARS.indexOf(ch) != -1) {
+                    sb.append(ch);
+                } else if (ch == '*') {
+                    if (i + 1 < antPattern.length && antPattern.charAt(i + 1) == '*') {
+                        if (i + 2 < antPattern.length && isSlash(antPattern.charAt(i + 2))) {
+                            i += 2;
+                        } else {
+                            i += 1;
+                        }
+                    } else {
+                        sb.append(directorySeparator);
+                    }
+                } else if (ch == '?') {
+                    sb.append(directorySeparator);
+                } else if (isSlash(ch)) {
+                    sb.append(directorySeparator);
+                } else {
+                    sb.append(ch);
+                }
+                i++;
+            }
+            return sb.toString();
+        }",
+        "a.js",
+        20,
+    );
+}
+
 #[test_case("a.rs", "fn f(a: bool, b: bool, c: bool) -> bool { a && b && c }", 1 ; "rust_same_ops")]
 #[test_case("a.rs", "fn f(a: bool, b: bool, c: bool) -> bool { a && b || c }", 2 ; "rust_mixed_ops")]
 #[test_case("a.ts", "function f(a: boolean, b: boolean, c: boolean) { return a && b && c; }", 1 ; "typescript_same_ops")]

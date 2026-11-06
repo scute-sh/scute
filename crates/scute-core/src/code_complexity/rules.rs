@@ -45,8 +45,9 @@ pub trait ComplexityRules {
     /// Whether this node is an else clause (scores +1 as a hybrid increment).
     fn is_else_clause(&self, node: tree_sitter::Node) -> bool;
 
-    /// Whether this else clause is actually an else-if (scored flat, no nesting penalty).
-    fn is_else_if(&self, node: tree_sitter::Node) -> bool;
+    /// If this else clause is an else-if, return its `if` node. The clause then
+    /// counts as one flat branch: the `if` takes no flow construct increment.
+    fn else_if_branch<'a>(&self, node: tree_sitter::Node<'a>) -> Option<tree_sitter::Node<'a>>;
 
     /// If this node is a nesting boundary (closure, arrow function, nested
     /// named function), return how it affects scoring.
