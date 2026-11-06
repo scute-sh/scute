@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.16](https://github.com/scute-sh/scute/compare/scute-v0.0.15...scute-v0.0.16) - 2026-11-06
+
+### Fixed
+
+- *(code-complexity)* score nested else if as a flat +1 ([#137](https://github.com/scute-sh/scute/pull/137))
+
+  Heads up: scores drop for functions with nested `else if` branches, so some will move
+  from warn or fail to pass. Every `else if` now reports under the `else` rule as
+  `'else if' branch (+1)` (it was `flow break` or `nesting`), which matters if you filter
+  on rule names.
+
+### Other
+
+- update Cargo.lock dependencies
+- *(deps)* upgrade rmcp to 1.4 ([#123](https://github.com/scute-sh/scute/pull/123))
+
 ## [0.0.15](https://github.com/scute-sh/scute/compare/scute-v0.0.14...scute-v0.0.15) - 2026-04-02
 
 ### Fixed
