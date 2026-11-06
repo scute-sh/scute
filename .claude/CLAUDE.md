@@ -18,9 +18,11 @@ Scute's own MCP server has check tools. Run them at the right moment:
 | `check_commit_message`       | Before making a commit                               |
 | `check_dependency_freshness` | After adding/editing a dependency                    |
 
+The MCP server runs a previously built binary, so it lags behind the code while you're working on Scute itself. During development, run the same checks with `cargo run check <name>` from `crates/`.
+
 ## 🛑 When course-corrected
 
-**Trigger:** The user corrects, reminds, or redirects you. This includes explicit corrections AND gentle nudges like "did you forget...?"
+**Trigger:** The user corrects, reminds, or redirects you on how software gets built: code, design, tests, tooling, or the delivery workflow. This includes explicit corrections AND gentle nudges like "did you forget...?" Corrections about general interaction don't count, since the pain points cover Scute's development process and augmented coding.
 
 **Action (do this BEFORE fixing the problem):**
 
@@ -30,6 +32,14 @@ Scute's own MCP server has check tools. Run them at the right moment:
    - Not documented → write it down
    - Focus on the core problem, not the details
    - Group in logical categories
+
+## Planning work
+
+Plan in the spirit of David Hussman's story mapping: pick a person, walk through their experience, then choose one journey to build and learn from.
+
+- **Stories carry the why and the what, plus real constraints.** The how belongs to the implementer. It only goes in a story when a hard limitation leaves no other choice.
+- **Slice by journey, not by component.** Start with the simplest end-to-end experience for one person, then add complexity one journey at a time. Don't split work per check or per module, and don't order it by demand or risk.
+- **Start from what's already there.** Scute builds on the tools teams already use, and customizes only where they fall short.
 
 ## Explore by testing, not by poking
 
@@ -75,6 +85,7 @@ reports_current_version                // of WHAT?
 
 - Do not use `git -C` commands, instead `cd` at the root and use regular `git` commands.
 - Cargo workspace root is `crates/`, not the repo root. Run cargo commands from there.
+- Check `scripts/` before writing a build, test, or lint script. If what you need isn't there, suggest adding it.
 
 # Voice & Tone
 
