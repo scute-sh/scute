@@ -13,6 +13,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - *(code-complexity)* score nested else if as a flat +1 ([#137](https://github.com/scute-sh/scute/pull/137))
 
+  Heads up: scores drop for functions with nested `else if` branches, so some will move
+  from warn or fail to pass. Every `else if` now reports under the `else` rule as
+  `'else if' branch (+1)` (it was `flow break` or `nesting`), which matters if you filter
+  on rule names.
+
 ## [0.0.12](https://github.com/scute-sh/scute/compare/scute-core-v0.0.11...scute-core-v0.0.12) - 2026-04-02
 
 ### Fixed
