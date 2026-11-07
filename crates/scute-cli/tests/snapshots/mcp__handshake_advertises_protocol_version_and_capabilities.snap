@@ -1,0 +1,10 @@
+---
+source: scute-cli/tests/mcp.rs
+expression: "serde_json::json!({\n    \"protocolVersion\": info[\"protocolVersion\"], \"capabilities\":\n    info[\"capabilities\"],\n})"
+---
+{
+  "capabilities": {
+    "tools": {}
+  },
+  "protocolVersion": "2025-06-18"
+}

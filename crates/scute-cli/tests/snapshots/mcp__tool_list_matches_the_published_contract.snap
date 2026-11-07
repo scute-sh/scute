@@ -1,0 +1,1071 @@
+---
+source: scute-cli/tests/mcp.rs
+expression: tools
+---
+[
+  {
+    "name": "check_code_complexity",
+    "description": "Measure code complexity of functions in your project.\nScores each function based on how hard it is to understand: nesting,\ncontrol flow, logical operators, recursion. Flags functions that\nexceed the configured threshold.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "paths": {
+          "description": "Files or directories to check. Defaults to the project root.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        }
+      },
+      "title": "CheckCodeComplexityInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "ErrorSchema": {
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "recovery": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message",
+            "recovery"
+          ],
+          "type": "object"
+        },
+        "EvidenceSchema": {
+          "properties": {
+            "expected": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ExpectedSchema"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "found": {
+              "type": "string"
+            },
+            "location": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "rule": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "found"
+          ],
+          "type": "object"
+        },
+        "ExpectedSchema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ]
+        },
+        "FindingSchema": {
+          "anyOf": [
+            {
+              "properties": {
+                "evidence": {
+                  "items": {
+                    "$ref": "#/$defs/EvidenceSchema"
+                  },
+                  "type": "array"
+                },
+                "measurement": {
+                  "$ref": "#/$defs/MeasurementSchema"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target",
+                "status",
+                "measurement",
+                "evidence"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "error": {
+                  "$ref": "#/$defs/ErrorSchema"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target",
+                "status",
+                "error"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "MeasurementSchema": {
+          "properties": {
+            "observed": {
+              "description": "The value the check measured.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "thresholds": {
+              "$ref": "#/$defs/ThresholdsSchema",
+              "description": "The warn/fail boundaries this measurement was compared against."
+            }
+          },
+          "required": [
+            "observed",
+            "thresholds"
+          ],
+          "type": "object"
+        },
+        "SummarySchema": {
+          "properties": {
+            "errored": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "evaluated": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "failed": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "passed": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "warned": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "evaluated",
+            "passed",
+            "warned",
+            "failed",
+            "errored"
+          ],
+          "type": "object"
+        },
+        "ThresholdsSchema": {
+          "properties": {
+            "fail": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "warn": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "check": {
+          "description": "The check that produced this report (e.g. `\"commit-message\"`).",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ErrorSchema"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Present when the check could not execute at all."
+        },
+        "findings": {
+          "description": "Non-passing evaluations. Empty array when all pass.",
+          "items": {
+            "$ref": "#/$defs/FindingSchema"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "summary": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SummarySchema"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Counts of evaluated, passed, warned, failed, and errored evaluations."
+        }
+      },
+      "required": [
+        "check"
+      ],
+      "title": "CheckReportSchema",
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "check_code_similarity",
+    "description": "Find code duplication in your project.\nScans source files for duplicated token sequences. Optionally focus on\nspecific files to only report clones involving them.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "files": {
+          "description": "Files to focus on. When empty, all discovered files are checked.",
+          "items": {
+            "type": "string"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "source_dir": {
+          "description": "Directory to scan for source files. Defaults to the project root.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "CheckSourceFilesInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "ErrorSchema": {
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "recovery": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message",
+            "recovery"
+          ],
+          "type": "object"
+        },
+        "EvidenceSchema": {
+          "properties": {
+            "expected": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ExpectedSchema"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "found": {
+              "type": "string"
+            },
+            "location": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "rule": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "found"
+          ],
+          "type": "object"
+        },
+        "ExpectedSchema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ]
+        },
+        "FindingSchema": {
+          "anyOf": [
+            {
+              "properties": {
+                "evidence": {
+                  "items": {
+                    "$ref": "#/$defs/EvidenceSchema"
+                  },
+                  "type": "array"
+                },
+                "measurement": {
+                  "$ref": "#/$defs/MeasurementSchema"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target",
+                "status",
+                "measurement",
+                "evidence"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "error": {
+                  "$ref": "#/$defs/ErrorSchema"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target",
+                "status",
+                "error"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "MeasurementSchema": {
+          "properties": {
+            "observed": {
+              "description": "The value the check measured.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "thresholds": {
+              "$ref": "#/$defs/ThresholdsSchema",
+              "description": "The warn/fail boundaries this measurement was compared against."
+            }
+          },
+          "required": [
+            "observed",
+            "thresholds"
+          ],
+          "type": "object"
+        },
+        "SummarySchema": {
+          "properties": {
+            "errored": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "evaluated": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "failed": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "passed": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "warned": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "evaluated",
+            "passed",
+            "warned",
+            "failed",
+            "errored"
+          ],
+          "type": "object"
+        },
+        "ThresholdsSchema": {
+          "properties": {
+            "fail": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "warn": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "check": {
+          "description": "The check that produced this report (e.g. `\"commit-message\"`).",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ErrorSchema"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Present when the check could not execute at all."
+        },
+        "findings": {
+          "description": "Non-passing evaluations. Empty array when all pass.",
+          "items": {
+            "$ref": "#/$defs/FindingSchema"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "summary": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SummarySchema"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Counts of evaluated, passed, warned, failed, and errored evaluations."
+        }
+      },
+      "required": [
+        "check"
+      ],
+      "title": "CheckReportSchema",
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "check_commit_message",
+    "description": "Validate a commit message before committing.\nChecks subject format (type, optional scope, description), body separation,\nfooter syntax, and breaking change markers against the Conventional Commits spec.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "message": {
+          "description": "The full commit message to validate against Conventional Commits.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "message"
+      ],
+      "title": "CheckCommitMessageInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "ErrorSchema": {
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "recovery": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message",
+            "recovery"
+          ],
+          "type": "object"
+        },
+        "EvidenceSchema": {
+          "properties": {
+            "expected": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ExpectedSchema"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "found": {
+              "type": "string"
+            },
+            "location": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "rule": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "found"
+          ],
+          "type": "object"
+        },
+        "ExpectedSchema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ]
+        },
+        "FindingSchema": {
+          "anyOf": [
+            {
+              "properties": {
+                "evidence": {
+                  "items": {
+                    "$ref": "#/$defs/EvidenceSchema"
+                  },
+                  "type": "array"
+                },
+                "measurement": {
+                  "$ref": "#/$defs/MeasurementSchema"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target",
+                "status",
+                "measurement",
+                "evidence"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "error": {
+                  "$ref": "#/$defs/ErrorSchema"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target",
+                "status",
+                "error"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "MeasurementSchema": {
+          "properties": {
+            "observed": {
+              "description": "The value the check measured.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "thresholds": {
+              "$ref": "#/$defs/ThresholdsSchema",
+              "description": "The warn/fail boundaries this measurement was compared against."
+            }
+          },
+          "required": [
+            "observed",
+            "thresholds"
+          ],
+          "type": "object"
+        },
+        "SummarySchema": {
+          "properties": {
+            "errored": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "evaluated": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "failed": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "passed": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "warned": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "evaluated",
+            "passed",
+            "warned",
+            "failed",
+            "errored"
+          ],
+          "type": "object"
+        },
+        "ThresholdsSchema": {
+          "properties": {
+            "fail": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "warn": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "check": {
+          "description": "The check that produced this report (e.g. `\"commit-message\"`).",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ErrorSchema"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Present when the check could not execute at all."
+        },
+        "findings": {
+          "description": "Non-passing evaluations. Empty array when all pass.",
+          "items": {
+            "$ref": "#/$defs/FindingSchema"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "summary": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SummarySchema"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Counts of evaluated, passed, warned, failed, and errored evaluations."
+        }
+      },
+      "required": [
+        "check"
+      ],
+      "title": "CheckReportSchema",
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false
+    }
+  },
+  {
+    "name": "check_dependency_freshness",
+    "description": "Find outdated dependencies in your project.\nReports which packages are behind their latest version, how far behind\n(patch, minor, major), and what to update to.",
+    "inputSchema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "path": {
+          "description": "Path to the project directory. Defaults to the current working directory.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "title": "CheckDependencyFreshnessInput",
+      "type": "object"
+    },
+    "outputSchema": {
+      "$defs": {
+        "ErrorSchema": {
+          "properties": {
+            "code": {
+              "type": "string"
+            },
+            "message": {
+              "type": "string"
+            },
+            "recovery": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "code",
+            "message",
+            "recovery"
+          ],
+          "type": "object"
+        },
+        "EvidenceSchema": {
+          "properties": {
+            "expected": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/ExpectedSchema"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "found": {
+              "type": "string"
+            },
+            "location": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "rule": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "found"
+          ],
+          "type": "object"
+        },
+        "ExpectedSchema": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            }
+          ]
+        },
+        "FindingSchema": {
+          "anyOf": [
+            {
+              "properties": {
+                "evidence": {
+                  "items": {
+                    "$ref": "#/$defs/EvidenceSchema"
+                  },
+                  "type": "array"
+                },
+                "measurement": {
+                  "$ref": "#/$defs/MeasurementSchema"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target",
+                "status",
+                "measurement",
+                "evidence"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "error": {
+                  "$ref": "#/$defs/ErrorSchema"
+                },
+                "status": {
+                  "type": "string"
+                },
+                "target": {
+                  "type": "string"
+                }
+              },
+              "required": [
+                "target",
+                "status",
+                "error"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "MeasurementSchema": {
+          "properties": {
+            "observed": {
+              "description": "The value the check measured.",
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "thresholds": {
+              "$ref": "#/$defs/ThresholdsSchema",
+              "description": "The warn/fail boundaries this measurement was compared against."
+            }
+          },
+          "required": [
+            "observed",
+            "thresholds"
+          ],
+          "type": "object"
+        },
+        "SummarySchema": {
+          "properties": {
+            "errored": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "evaluated": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "failed": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "passed": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            },
+            "warned": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "evaluated",
+            "passed",
+            "warned",
+            "failed",
+            "errored"
+          ],
+          "type": "object"
+        },
+        "ThresholdsSchema": {
+          "properties": {
+            "fail": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            },
+            "warn": {
+              "format": "uint64",
+              "minimum": 0,
+              "type": [
+                "integer",
+                "null"
+              ]
+            }
+          },
+          "type": "object"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "check": {
+          "description": "The check that produced this report (e.g. `\"commit-message\"`).",
+          "type": "string"
+        },
+        "error": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ErrorSchema"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Present when the check could not execute at all."
+        },
+        "findings": {
+          "description": "Non-passing evaluations. Empty array when all pass.",
+          "items": {
+            "$ref": "#/$defs/FindingSchema"
+          },
+          "type": [
+            "array",
+            "null"
+          ]
+        },
+        "summary": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/SummarySchema"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Counts of evaluated, passed, warned, failed, and errored evaluations."
+        }
+      },
+      "required": [
+        "check"
+      ],
+      "title": "CheckReportSchema",
+      "type": "object"
+    },
+    "annotations": {
+      "readOnlyHint": true,
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": true
+    }
+  }
+]

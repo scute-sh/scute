@@ -19,6 +19,26 @@ fn tool_result_includes_content_text_fallback() {
     );
 }
 
+#[test]
+fn tool_list_matches_the_published_contract() {
+    let client = McpTestClient::connect(&std::env::temp_dir());
+    let mut tools = client.list_tools();
+    tools.sort_by(|a, b| a.name.cmp(&b.name));
+
+    insta::assert_json_snapshot!(tools);
+}
+
+#[test]
+fn handshake_advertises_protocol_version_and_capabilities() {
+    let client = McpTestClient::connect(&std::env::temp_dir());
+    let info = client.server_info();
+
+    insta::assert_json_snapshot!(serde_json::json!({
+        "protocolVersion": info["protocolVersion"],
+        "capabilities": info["capabilities"],
+    }));
+}
+
 #[test_case("check_commit_message")]
 #[test_case("check_dependency_freshness")]
 fn tool_declares_output_schema(tool_name: &str) {

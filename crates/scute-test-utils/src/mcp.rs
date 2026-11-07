@@ -127,6 +127,11 @@ impl McpTestClient {
             .block_on(self.service.list_all_tools())
             .expect("list_all_tools failed")
     }
+
+    /// The server's side of the MCP handshake.
+    pub fn server_info(&self) -> serde_json::Value {
+        serde_json::to_value(self.service.peer_info()).expect("server info serializes")
+    }
 }
 
 /// A [`ClientHandler`] that provides project roots to the server.
