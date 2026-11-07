@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.17](https://github.com/scute-sh/scute/compare/scute-v0.0.16...scute-v0.0.17) - 2026-11-07
+
+### Other
+
+- update Cargo.lock dependencies
+- *(deps)* bump minreq to 3 ([#144](https://github.com/scute-sh/scute/pull/144))
+- *(deps)* bump dirs to 7 ([#142](https://github.com/scute-sh/scute/pull/142))
+
 ## [0.0.16](https://github.com/scute-sh/scute/compare/scute-v0.0.15...scute-v0.0.16) - 2026-11-06
 
 ### Fixed
