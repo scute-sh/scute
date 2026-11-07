@@ -8,13 +8,11 @@ mod schema;
 use std::path::{Path, PathBuf};
 
 use rmcp::{
-    ErrorData, RoleServer, ServerHandler, ServiceExt,
+    ErrorData, ServerHandler, ServiceExt,
     handler::server::tool::schema_for_output,
     handler::server::wrapper::Parameters,
     model::{CallToolResult, ServerCapabilities, ServerInfo},
-    schemars,
-    service::Peer,
-    tool, tool_handler, tool_router,
+    schemars, tool, tool_handler, tool_router,
     transport::stdio,
 };
 use schema::CheckReportSchema;
@@ -37,24 +35,32 @@ not deferred. Do not skip over them.";
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 struct CheckCommitMessageInput {
+    /// Absolute path to the project root.
+    project_root: String,
     /// The full commit message to validate against Conventional Commits.
     message: String,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 struct CheckDependencyFreshnessInput {
-    /// Path to the project directory. Defaults to the current working directory.
+    /// Absolute path to the project root. Relative paths resolve against it.
+    project_root: String,
+    /// Directory to check, for a project inside a monorepo. Defaults to the project root.
     path: Option<String>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 struct CheckCodeComplexityInput {
+    /// Absolute path to the project root. Relative paths resolve against it.
+    project_root: String,
     /// Files or directories to check. Defaults to the project root.
     paths: Option<Vec<String>>,
 }
 
 #[derive(Debug, serde::Deserialize, schemars::JsonSchema)]
 struct CheckSourceFilesInput {
+    /// Absolute path to the project root. Relative paths resolve against it.
+    project_root: String,
     /// Directory to scan for source files. Defaults to the project root.
     source_dir: Option<String>,
     /// Files to focus on. When empty, all discovered files are checked.
@@ -80,14 +86,11 @@ impl ScuteMcp {
             open_world_hint = false,
         )
     )]
-    async fn check_commit_message(
-        &self,
-        peer: Peer<RoleServer>,
+    fn check_commit_message(
         Parameters(input): Parameters<CheckCommitMessageInput>,
     ) -> Result<CallToolResult, ErrorData> {
-        let project_root = resolve_project_root(&peer).await?;
         run_check(
-            &project_root,
+            Path::new(&input.project_root),
             commit_message::CHECK_NAME,
             |def: &commit_message::Definition| commit_message::check(&input.message, def),
         )
@@ -108,21 +111,14 @@ impl ScuteMcp {
             open_world_hint = false,
         )
     )]
-    async fn check_code_complexity(
-        &self,
-        peer: Peer<RoleServer>,
+    fn check_code_complexity(
         Parameters(input): Parameters<CheckCodeComplexityInput>,
     ) -> Result<CallToolResult, ErrorData> {
-        let project_root = resolve_project_root(&peer).await?;
-        let paths: Vec<PathBuf> = input
-            .paths
-            .unwrap_or_default()
-            .into_iter()
-            .map(PathBuf::from)
-            .collect();
-        let paths = scute_core::files::paths_or_default(paths, &project_root);
+        let project_root = Path::new(&input.project_root);
+        let paths = resolve_paths(project_root, input.paths);
+        let paths = scute_core::files::paths_or_default(paths, project_root);
         run_check(
-            &project_root,
+            project_root,
             code_complexity::CHECK_NAME,
             |def: &code_complexity::Definition| code_complexity::check(&paths, def),
         )
@@ -142,18 +138,10 @@ impl ScuteMcp {
             open_world_hint = false,
         )
     )]
-    async fn check_code_similarity(
-        &self,
-        peer: Peer<RoleServer>,
+    fn check_code_similarity(
         Parameters(input): Parameters<CheckSourceFilesInput>,
     ) -> Result<CallToolResult, ErrorData> {
-        run_source_check(
-            &peer,
-            input,
-            code_similarity::CHECK_NAME,
-            code_similarity::check,
-        )
-        .await
+        run_source_check(input, code_similarity::CHECK_NAME, code_similarity::check)
     }
 
     /// Find outdated dependencies in your project.
@@ -170,15 +158,13 @@ impl ScuteMcp {
             open_world_hint = true,
         )
     )]
-    async fn check_dependency_freshness(
-        &self,
-        peer: Peer<RoleServer>,
+    fn check_dependency_freshness(
         Parameters(input): Parameters<CheckDependencyFreshnessInput>,
     ) -> Result<CallToolResult, ErrorData> {
-        let project_root = resolve_project_root(&peer).await?;
-        let target = path_or_root(input.path, &project_root);
+        let project_root = Path::new(&input.project_root);
+        let target = path_or_root(input.path, project_root);
         run_check(
-            &project_root,
+            project_root,
             dependency_freshness::CHECK_NAME,
             |def: &dependency_freshness::Definition| dependency_freshness::check(&target, def),
         )
@@ -193,48 +179,29 @@ impl ServerHandler for ScuteMcp {
     }
 }
 
-async fn run_source_check<D: Default + DeserializeOwned>(
-    peer: &Peer<RoleServer>,
+fn run_source_check<D: Default + DeserializeOwned>(
     input: CheckSourceFilesInput,
     check_name: &str,
     execute: impl FnOnce(&Path, &[PathBuf], &D) -> Result<Vec<scute_core::Evaluation>, ExecutionError>,
 ) -> Result<CallToolResult, ErrorData> {
-    let project_root = resolve_project_root(peer).await?;
-    let source_dir = input
-        .source_dir
-        .map(PathBuf::from)
-        .unwrap_or(project_root.clone());
-    let focus_files: Vec<PathBuf> = input
-        .files
-        .unwrap_or_default()
-        .into_iter()
-        .map(PathBuf::from)
-        .collect();
-    run_check(&project_root, check_name, |def: &D| {
+    let project_root = Path::new(&input.project_root);
+    let source_dir = path_or_root(input.source_dir, project_root);
+    let focus_files = resolve_paths(project_root, input.files);
+    run_check(project_root, check_name, |def: &D| {
         execute(&source_dir, &focus_files, def)
     })
 }
 
 fn path_or_root(input: Option<String>, project_root: &Path) -> PathBuf {
-    input
-        .map(PathBuf::from)
-        .unwrap_or(project_root.to_path_buf())
+    input.map_or(project_root.to_path_buf(), |path| project_root.join(path))
 }
 
-async fn resolve_project_root(peer: &Peer<RoleServer>) -> Result<PathBuf, ErrorData> {
-    let roots = peer
-        .list_roots()
-        .await
-        .map_err(|e| ErrorData::internal_error(e.to_string(), None))?;
-
-    match roots.roots.first() {
-        Some(root) => root
-            .uri
-            .strip_prefix("file://")
-            .map(PathBuf::from)
-            .ok_or_else(|| ErrorData::invalid_params("root URI must use file:// scheme", None)),
-        None => std::env::current_dir().map_err(|e| ErrorData::internal_error(e.to_string(), None)),
-    }
+fn resolve_paths(project_root: &Path, paths: Option<Vec<String>>) -> Vec<PathBuf> {
+    paths
+        .unwrap_or_default()
+        .into_iter()
+        .map(|path| project_root.join(path))
+        .collect()
 }
 
 fn run_check<D: Default + DeserializeOwned>(
@@ -242,23 +209,37 @@ fn run_check<D: Default + DeserializeOwned>(
     check_name: &str,
     execute: impl FnOnce(&D) -> Result<Vec<scute_core::Evaluation>, ExecutionError>,
 ) -> Result<CallToolResult, ErrorData> {
-    let definition =
-        match ScuteConfig::load(project_root).and_then(|c: ScuteConfig| c.definition(check_name)) {
-            Ok(def) => def,
-            Err(e) => {
-                let report = CheckReport::new(
-                    check_name,
-                    Err(ExecutionError {
-                        code: "invalid_config".into(),
-                        message: format!("{e}"),
-                        recovery: "check your .scute.yml syntax".into(),
-                    }),
-                );
-                return report_to_result(&report);
-            }
-        };
-    let result = execute(&definition);
+    let result = validate_project_root(project_root)
+        .and_then(|()| load_definition(project_root, check_name))
+        .and_then(|definition: D| execute(&definition));
     report_to_result(&CheckReport::new(check_name, result))
+}
+
+fn validate_project_root(project_root: &Path) -> Result<(), ExecutionError> {
+    if project_root.is_absolute() && project_root.is_dir() {
+        return Ok(());
+    }
+    Err(ExecutionError {
+        code: "invalid_project_root".into(),
+        message: format!(
+            "project_root must be the absolute path of an existing directory, got {}",
+            project_root.display()
+        ),
+        recovery: "pass the absolute path of the project you're working on".into(),
+    })
+}
+
+fn load_definition<D: Default + DeserializeOwned>(
+    project_root: &Path,
+    check_name: &str,
+) -> Result<D, ExecutionError> {
+    ScuteConfig::load(project_root)
+        .and_then(|config: ScuteConfig| config.definition(check_name))
+        .map_err(|e| ExecutionError {
+            code: "invalid_config".into(),
+            message: format!("{e}"),
+            recovery: "check your .scute.yml syntax".into(),
+        })
 }
 
 fn report_to_result(report: &CheckReport) -> Result<CallToolResult, ErrorData> {

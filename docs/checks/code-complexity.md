@@ -94,9 +94,10 @@ git diff --name-only HEAD~1 | scute check code-complexity
 
 Tool name: `check_code_complexity`
 
-| Parameter | Type            | Required | Description                                                                      |
-| --------- | --------------- | -------- | -------------------------------------------------------------------------------- |
-| `paths`   | array\<string\> | no       | Files or directories to check. Defaults to the project root. |
+| Parameter      | Type            | Required | Description                                                           |
+| -------------- | --------------- | -------- | --------------------------------------------------------------------- |
+| `project_root` | string          | yes      | Absolute path to the project root. Relative paths resolve against it. |
+| `paths`        | array\<string\> | no       | Files or directories to check. Defaults to the project root.          |
 
 ## Configuration
 

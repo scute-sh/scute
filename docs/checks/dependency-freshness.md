@@ -29,9 +29,10 @@ scute check dependency-freshness crates/
 
 Tool name: `check_dependency_freshness`
 
-| Parameter | Type   | Required | Description                                                       |
-| --------- | ------ | -------- | ----------------------------------------------------------------- |
-| `path`    | string | no       | Path to the project directory. Defaults to the project root.      |
+| Parameter      | Type   | Required | Description                                                                         |
+| -------------- | ------ | -------- | ----------------------------------------------------------------------------------- |
+| `project_root` | string | yes      | Absolute path to the project root. Relative paths resolve against it.               |
+| `path`         | string | no       | Directory to check, for a project inside a monorepo. Defaults to the project root.  |
 
 ## Configuration
 

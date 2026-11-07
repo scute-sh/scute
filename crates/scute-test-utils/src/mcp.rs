@@ -1,12 +1,9 @@
 use std::path::Path;
 
 use rmcp::{
-    ClientHandler, ErrorData, ServiceExt,
-    model::{
-        CallToolRequestParams, CallToolResult, ClientCapabilities, ClientInfo, Implementation,
-        InitializeRequestParams, ListRootsResult, Root, Tool,
-    },
-    service::{RequestContext, RoleClient, RunningService},
+    ServiceExt,
+    model::{CallToolRequestParams, CallToolResult, Tool},
+    service::{RoleClient, RunningService},
     transport::TokioChildProcess,
 };
 use tempfile::TempDir;
@@ -24,8 +21,10 @@ impl McpBackend {
         tool_args: &serde_json::Value,
     ) -> CheckResult {
         let project_dir = working_dir.canonicalize().unwrap();
-        let client = McpTestClient::connect(&project_dir);
-        let result = client.call_tool(tool_name, tool_args);
+        let client = McpTestClient::connect();
+        let mut args = tool_args.clone();
+        args["project_root"] = serde_json::json!(project_dir);
+        let result = client.call_tool(tool_name, &args);
 
         let json = result
             .structured_content
@@ -58,8 +57,7 @@ impl Backend for McpBackend {
     }
 
     fn list_checks(&self, dir: TempDir) -> ListChecksResult {
-        let project_dir = dir.path().canonicalize().unwrap_or(dir.path().into());
-        let client = McpTestClient::connect(&project_dir);
+        let client = McpTestClient::connect();
         let checks = client
             .list_tools()
             .iter()
@@ -79,32 +77,30 @@ impl Backend for McpBackend {
 /// Wraps rmcp's client with its own tokio runtime so callers don't need async.
 /// Use for protocol-level tests that need direct access beyond the `Scute` harness.
 pub struct McpTestClient {
-    service: RunningService<RoleClient, RootsProvider>,
+    service: RunningService<RoleClient, ()>,
     rt: tokio::runtime::Runtime,
 }
 
 impl McpTestClient {
-    pub fn connect(project_root: &std::path::Path) -> Self {
+    /// Starts the server outside any project: it only knows about a project
+    /// through the `project_root` of each tool call.
+    pub fn connect() -> Self {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
             .unwrap();
 
-        let root: Root = serde_json::from_value(serde_json::json!({
-            "uri": format!("file://{}", project_root.display())
-        }))
-        .expect("valid root");
         let service = rt
             .block_on(async {
                 let transport = TokioChildProcess::new({
                     let mut cmd = Command::new(target_bin("scute"));
                     cmd.arg("mcp");
-                    cmd.current_dir(project_root);
+                    cmd.current_dir(std::env::temp_dir());
                     cmd
                 })
                 .expect("failed to spawn scute mcp");
 
-                RootsProvider(vec![root]).serve(transport).await
+                ().serve(transport).await
             })
             .expect("failed to connect to scute mcp");
 
@@ -126,27 +122,6 @@ impl McpTestClient {
         self.rt
             .block_on(self.service.list_all_tools())
             .expect("list_all_tools failed")
-    }
-}
-
-/// A [`ClientHandler`] that provides project roots to the server.
-struct RootsProvider(Vec<Root>);
-
-impl ClientHandler for RootsProvider {
-    fn get_info(&self) -> ClientInfo {
-        InitializeRequestParams::new(
-            ClientCapabilities::builder().enable_roots().build(),
-            Implementation::new("scute-test", env!("CARGO_PKG_VERSION")),
-        )
-    }
-
-    fn list_roots(
-        &self,
-        _: RequestContext<RoleClient>,
-    ) -> impl Future<Output = Result<ListRootsResult, ErrorData>> + Send + '_ {
-        let result: ListRootsResult =
-            serde_json::from_value(serde_json::json!({ "roots": self.0 })).expect("valid roots");
-        std::future::ready(Ok(result))
     }
 }
 
