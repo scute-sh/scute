@@ -11,7 +11,7 @@ use rmcp::{
     ErrorData, ServerHandler, ServiceExt,
     handler::server::tool::schema_for_output,
     handler::server::wrapper::Parameters,
-    model::{CallToolResult, ServerCapabilities, ServerInfo},
+    model::{CallToolResult, ServerCapabilities, ServerConfig},
     schemars, tool, tool_handler, tool_router,
     transport::stdio,
 };
@@ -78,7 +78,7 @@ impl ScuteMcp {
     /// footer syntax, and breaking change markers against the Conventional Commits spec.
     #[tool(
         name = "check_commit_message",
-        output_schema = schema_for_output::<CheckReportSchema>().unwrap(),
+        output_schema = schema_for_output::<CheckReportSchema>(),
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -103,7 +103,7 @@ impl ScuteMcp {
     /// exceed the configured threshold.
     #[tool(
         name = "check_code_complexity",
-        output_schema = schema_for_output::<CheckReportSchema>().unwrap(),
+        output_schema = schema_for_output::<CheckReportSchema>(),
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -130,7 +130,7 @@ impl ScuteMcp {
     /// specific files to only report clones involving them.
     #[tool(
         name = "check_code_similarity",
-        output_schema = schema_for_output::<CheckReportSchema>().unwrap(),
+        output_schema = schema_for_output::<CheckReportSchema>(),
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -150,7 +150,7 @@ impl ScuteMcp {
     /// (patch, minor, major), and what to update to.
     #[tool(
         name = "check_dependency_freshness",
-        output_schema = schema_for_output::<CheckReportSchema>().unwrap(),
+        output_schema = schema_for_output::<CheckReportSchema>(),
         annotations(
             read_only_hint = true,
             destructive_hint = false,
@@ -173,8 +173,8 @@ impl ScuteMcp {
 
 #[tool_handler]
 impl ServerHandler for ScuteMcp {
-    fn get_info(&self) -> ServerInfo {
-        ServerInfo::new(ServerCapabilities::builder().enable_tools().build())
+    fn get_info(&self) -> ServerConfig {
+        ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_instructions(INSTRUCTIONS)
     }
 }
