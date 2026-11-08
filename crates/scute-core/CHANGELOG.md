@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.14](https://github.com/scute-sh/scute/compare/scute-core-v0.0.13...scute-core-v0.0.14) - 2026-11-08
+
+### Other
+
+- *(deps)* bump minreq to 3 ([#144](https://github.com/scute-sh/scute/pull/144))
+
 ## [0.0.13](https://github.com/scute-sh/scute/compare/scute-core-v0.0.12...scute-core-v0.0.13) - 2026-11-06
 
 ### Fixed

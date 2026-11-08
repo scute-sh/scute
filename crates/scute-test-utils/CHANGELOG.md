@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.7](https://github.com/scute-sh/scute/compare/scute-test-utils-v0.0.6...scute-test-utils-v0.0.7) - 2026-11-08
+
+### Added
+
+- *(mcp)* require project_root on every tool ([#146](https://github.com/scute-sh/scute/pull/146))
+
 ## [0.0.6](https://github.com/scute-sh/scute/compare/scute-test-utils-v0.0.5...scute-test-utils-v0.0.6) - 2026-11-06
 
 ### Other
