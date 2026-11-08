@@ -28,9 +28,10 @@ scute check commit-message "feat(auth): add OAuth2 support"
 
 Tool name: `check_commit_message`
 
-| Parameter | Type   | Required | Description                         |
-| --------- | ------ | -------- | ----------------------------------- |
-| `message` | string | yes      | The full commit message to validate |
+| Parameter      | Type   | Required | Description                         |
+| -------------- | ------ | -------- | ----------------------------------- |
+| `project_root` | string | yes      | Absolute path to the project root   |
+| `message`      | string | yes      | The full commit message to validate |
 
 ## Configuration
 
