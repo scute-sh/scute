@@ -109,9 +109,10 @@ fn run(cli: Cli) -> Result<()> {
                 }
                 Checks::CodeSimilarity { source_dir, files } => {
                     let source_dir = source_dir.unwrap_or_else(|| project_root.clone());
-                    let focus_paths = read_from_stdin_if_empty(files);
+                    let focus_paths = given_paths(files);
                     let definition = check_definition(&config, code_similarity::CHECK_NAME);
-                    let result = code_similarity::check(&source_dir, &focus_paths, &definition);
+                    let result =
+                        code_similarity::check(&source_dir, focus_paths.as_deref(), &definition);
                     output(&CheckReport::new(code_similarity::CHECK_NAME, result))
                 }
                 Checks::CommitMessage { message } => {
@@ -218,6 +219,12 @@ fn resolve_target_path(path: Option<String>) -> PathBuf {
 fn resolve_paths(paths: Vec<PathBuf>, default_dir: &Path) -> Vec<PathBuf> {
     let paths = read_from_stdin_if_empty(paths);
     scute_core::files::paths_or_default(paths, default_dir)
+}
+
+/// Paths from the arguments, or from stdin when there are none.
+/// `None` when neither holds any.
+fn given_paths(args: Vec<PathBuf>) -> Option<Vec<PathBuf>> {
+    Some(read_from_stdin_if_empty(args)).filter(|paths| !paths.is_empty())
 }
 
 fn read_from_stdin_if_empty(paths: Vec<PathBuf>) -> Vec<PathBuf> {

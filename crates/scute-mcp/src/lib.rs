@@ -141,7 +141,16 @@ impl ScuteMcp {
     fn check_code_similarity(
         Parameters(input): Parameters<CheckSourceFilesInput>,
     ) -> Result<CallToolResult, ErrorData> {
-        run_source_check(input, code_similarity::CHECK_NAME, code_similarity::check)
+        let project_root = Path::new(&input.project_root);
+        let source_dir = path_or_root(input.source_dir, project_root);
+        let focus_paths = rooted_paths(project_root, input.files);
+        run_check(
+            project_root,
+            code_similarity::CHECK_NAME,
+            |def: &code_similarity::Definition| {
+                code_similarity::check(&source_dir, focus_paths.as_deref(), def)
+            },
+        )
     }
 
     /// Find outdated dependencies in your project.
@@ -179,21 +188,15 @@ impl ServerHandler for ScuteMcp {
     }
 }
 
-fn run_source_check<D: Default + DeserializeOwned>(
-    input: CheckSourceFilesInput,
-    check_name: &str,
-    execute: impl FnOnce(&Path, &[PathBuf], &D) -> Result<Vec<scute_core::Evaluation>, ExecutionError>,
-) -> Result<CallToolResult, ErrorData> {
-    let project_root = Path::new(&input.project_root);
-    let source_dir = path_or_root(input.source_dir, project_root);
-    let focus_files = resolve_paths(project_root, input.files);
-    run_check(project_root, check_name, |def: &D| {
-        execute(&source_dir, &focus_files, def)
-    })
-}
-
 fn path_or_root(input: Option<String>, project_root: &Path) -> PathBuf {
     input.map_or(project_root.to_path_buf(), |path| project_root.join(path))
+}
+
+/// Joins the given paths onto the project root. `None` when no paths were given.
+fn rooted_paths(project_root: &Path, paths: Option<Vec<String>>) -> Option<Vec<PathBuf>> {
+    paths
+        .filter(|paths| !paths.is_empty())
+        .map(|paths| paths.iter().map(|path| project_root.join(path)).collect())
 }
 
 fn resolve_paths(project_root: &Path, paths: Option<Vec<String>>) -> Vec<PathBuf> {
