@@ -62,9 +62,9 @@ Constructs in the same cognitive role follow the same scoring rules. A `switch` 
 scute check code-complexity [PATHS]...
 ```
 
-| Argument    | Description                                                                                  |
-| ----------- | -------------------------------------------------------------------------------------------- |
-| `[PATHS]...` | Files or directories to check. Directories are walked for supported files. Reads from stdin if piped. Defaults to the working directory. |
+| Argument     | Description                                                                                                                                       |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `[PATHS]...` | Files or directories to check. Directories are walked for supported files. Also read from stdin, one per line. Defaults to the working directory. |
 
 Scan the full project:
 
@@ -84,11 +84,24 @@ Check a directory:
 scute check code-complexity src/
 ```
 
-Pipe changed files from git:
+Pipe the files changed in the last commit:
 
 ```sh
-git diff --name-only HEAD~1 | scute check code-complexity
+git diff --diff-filter=d --name-only HEAD~1 | scute check code-complexity
 ```
+
+### Which files get checked
+
+- **Files in a supported language get checked.** Anything else you pass (`Cargo.toml`, `README.md`, images) is skipped, so you can hand over every file in a change without filtering it first.
+- **A path that doesn't exist gets an error finding** naming it, next to the results for the other paths. The check exits with `2`. Leave deleted files out with `--diff-filter=d`.
+- **Files matching an `exclude` pattern are skipped,** even when you name them.
+- **Nothing left to check passes** with `0 evaluated` in the summary.
+
+### No paths checks the whole project
+
+With no arguments and nothing on stdin, the check covers the whole working directory. That includes an empty pipe: when `git diff` lists no files (say, a commit that only deletes files), piping it into the check scans everything. To check only a change's files, skip the check when there are none, like the [pre-commit hook](../../README.md#guide-your-commits) does. With `xargs`, use `xargs -r`: plain `xargs` runs the check once with no paths.
+
+Over MCP, leaving out `paths` checks the whole project, and `paths: []` checks nothing.
 
 ### MCP tool
 

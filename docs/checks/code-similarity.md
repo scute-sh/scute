@@ -18,10 +18,10 @@ Catching it before it reaches a PR saves review cycles and keeps the codebase ho
 scute check code-similarity [OPTIONS] [FILES]...
 ```
 
-| Argument/Option      | Description                                                                       |
-| -------------------- | --------------------------------------------------------------------------------- |
-| `[FILES]...`         | Focus files. Only report clones involving these files. Reads from stdin if piped.  |
-| `--source-dir <DIR>` | Directory to scan for source files. Defaults to the working directory.             |
+| Argument/Option      | Description                                                                                    |
+| -------------------- | ---------------------------------------------------------------------------------------------- |
+| `[FILES]...`         | Focus files. Only report clones involving these files. Also read from stdin, one per line.     |
+| `--source-dir <DIR>` | Directory to scan for source files. Defaults to the working directory.                         |
 
 Scan the full project:
 
@@ -35,11 +35,24 @@ Focus on specific files:
 scute check code-similarity src/utils/format.rs
 ```
 
-Pipe changed files from git:
+Pipe the files changed in the last commit:
 
 ```sh
-git diff --name-only HEAD~1 | scute check code-similarity
+git diff --diff-filter=d --name-only HEAD~1 | scute check code-similarity
 ```
+
+### Which files get compared
+
+- **Every supported file under the source directory gets compared,** except the ones matching an `exclude` pattern.
+- **Focus files narrow the report** to clones involving them. Focus files in a language the check doesn't support are skipped, so you can hand over every file in a change without filtering it first.
+- **A focus file that doesn't exist gets an error finding** naming it, next to the results for the other files. The check exits with `2`. Leave deleted files out with `--diff-filter=d`.
+- **Nothing left to compare passes** with `0 evaluated` in the summary.
+
+### No focus files reports every clone
+
+With no arguments and nothing on stdin, the check reports every clone in the source directory. That includes an empty pipe: when `git diff` lists no files (say, a commit that only deletes files), piping it into the check reports clones anywhere in the project. To check only a change's files, skip the check when there are none, like the [pre-commit hook](../../README.md#guide-your-commits) does. With `xargs`, use `xargs -r`: plain `xargs` runs the check once with no files.
+
+Over MCP, leaving out `files` reports every clone, and `files: []` reports nothing.
 
 ### MCP tool
 

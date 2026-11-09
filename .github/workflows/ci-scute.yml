@@ -63,7 +63,10 @@ jobs:
       - name: Check for duplication in changed files
         env:
           BASE: origin/${{ github.base_ref }}
-        run: git diff --diff-filter=d --name-only --relative $BASE...HEAD -- '*.rs' '*.js' '*.jsx' '*.mjs' '*.cjs' '*.ts' '*.tsx' | $SCUTE check code-similarity
+        run: |
+          files=$(git diff --diff-filter=d --name-only --relative $BASE...HEAD)
+          [ -n "$files" ] || exit 0
+          printf '%s\n' "$files" | $SCUTE check code-similarity
         working-directory: crates
 
   code-complexity:
@@ -86,5 +89,8 @@ jobs:
       - name: Check complexity of changed files
         env:
           BASE: origin/${{ github.base_ref }}
-        run: git diff --diff-filter=d --name-only --relative $BASE...HEAD -- '*.rs' '*.ts' '*.tsx' | $SCUTE check code-complexity
+        run: |
+          files=$(git diff --diff-filter=d --name-only --relative $BASE...HEAD)
+          [ -n "$files" ] || exit 0
+          printf '%s\n' "$files" | $SCUTE check code-complexity
         working-directory: crates
