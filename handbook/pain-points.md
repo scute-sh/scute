@@ -53,6 +53,10 @@ value.
   - Unit tests mocking so heavily they're testing wiring instead of logic.
   - Unit tests with handcrafted external tool output testing assumptions
     about a contract instead of border tests validating the real interaction.
+- **Pinning what you don't own.** (×1) Strict tests over output shaped by a
+  third party (a protocol, an SDK) with no consumer that would break on a
+  change. They fail on every upgrade without protecting anyone. Ask who gets
+  hurt if this changes before pinning it.
 - **Core logic left untested.** Tests skipped entirely, jumping straight to
   implementation. TDD isn't mandatory, but core logic without tests is a
   fitness problem.
@@ -146,11 +150,11 @@ value.
   change signatures or restructure code before writing a failing test that
   requires the change. The test should drive the design, not the other way
   around.
-- **Dismissing review findings as "pre-existing".** (×2) Labeling issues as
+- **Dismissing review findings as "pre-existing".** (×3) Labeling issues as
   "pre-existing" or "out of scope" to avoid fixing or even considering them.
   Every finding deserves honest evaluation on its own merits, not a label
   that shuts down the conversation.
-- **Dismissing tool feedback without verifying.** (×2) Tool reports a warning,
+- **Dismissing tool feedback without verifying.** (×3) Tool reports a warning,
   agent rationalizes why it's acceptable without actually trying to fix it.
   The rationalization sounds reasonable but turns out to be wrong when
   challenged. "It's fine" is not analysis.
