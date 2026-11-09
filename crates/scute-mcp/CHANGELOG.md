@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.16](https://github.com/scute-sh/scute/compare/scute-mcp-v0.0.15...scute-mcp-v0.0.16) - 2026-11-08
+
+### Added
+
+- *(mcp)* require project_root on every tool ([#146](https://github.com/scute-sh/scute/pull/146))
+
+### Other
+
+- *(deps)* bump rmcp to 3.9 ([#148](https://github.com/scute-sh/scute/pull/148))
+
 ## [0.0.15](https://github.com/scute-sh/scute/compare/scute-mcp-v0.0.14...scute-mcp-v0.0.15) - 2026-11-06
 
 ### Other
