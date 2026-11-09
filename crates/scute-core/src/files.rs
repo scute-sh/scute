@@ -98,7 +98,7 @@ pub fn paths_or_default(paths: Vec<PathBuf>, default: &Path) -> Vec<PathBuf> {
     }
 }
 
-/// Source files found at a set of paths, and the paths that didn't lead to any.
+/// Source files found at a set of paths, and the paths that couldn't be resolved.
 #[derive(Debug, Default)]
 pub struct ResolvedPaths {
     pub files: Vec<PathBuf>,

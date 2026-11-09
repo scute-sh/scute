@@ -90,9 +90,10 @@ impl Definition {
 /// clone detection, and returns one [`Evaluation`] per clone group found.
 /// When no clones are detected, returns a single passing evaluation.
 ///
-/// When `focus_files` is non-empty, only clone groups involving at least
-/// one focus file are reported. An empty slice means full-project scan.
-/// Focus files with unsupported extensions or that can't be read produce
+/// When `focus_paths` is non-empty, only clone groups involving at least
+/// one file at those paths are reported. Directories count for the
+/// supported files inside them. An empty slice means full-project scan.
+/// Focus paths with unsupported extensions or that can't be read produce
 /// errored evaluations.
 ///
 /// ```no_run
@@ -112,7 +113,7 @@ impl Definition {
 /// Returns `ExecutionError` if `source_dir` is not a valid directory.
 pub fn check(
     source_dir: &Path,
-    focus_files: &[PathBuf],
+    focus_paths: &[PathBuf],
     definition: &Definition,
 ) -> Result<Vec<Evaluation>, ExecutionError> {
     let canonical_dir = files::validate_source_dir(source_dir).map_err(|e| ExecutionError {
@@ -121,11 +122,11 @@ pub fn check(
         recovery: "check that the path exists and is a directory".into(),
     })?;
     let languages = languages();
-    let focus = files::resolve_paths(focus_files, &languages.supported_extensions(), &[]);
+    let focus = files::resolve_paths(focus_paths, &languages.supported_extensions(), &[]);
     if !focus.invalid.is_empty() {
         return Ok(focus.invalid.into_iter().map(invalid_focus_path).collect());
     }
-    let focus_files = (!focus_files.is_empty()).then_some(focus.files);
+    let focus_files = (!focus_paths.is_empty()).then_some(focus.files);
 
     let source_files = read_sources(&canonical_dir, definition, &languages);
     let trees = parse_trees(&source_files, &languages)?;
