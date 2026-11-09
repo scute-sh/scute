@@ -109,14 +109,15 @@ fn run(cli: Cli) -> Result<()> {
                     let result = code_complexity::check(&paths, &definition);
                     output(&CheckReport::new(code_complexity::CHECK_NAME, result))
                 }
-                Checks::CodeSimilarity { source_dir, files } => run_source_check(
-                    &config,
-                    &project_root,
-                    source_dir,
-                    files,
-                    code_similarity::CHECK_NAME,
-                    code_similarity::check,
-                ),
+                Checks::CodeSimilarity { source_dir, files } => {
+                    let source_dir = source_dir.unwrap_or_else(|| project_root.clone());
+                    let focus_paths = read_from_stdin_if_empty(files);
+                    let definition: code_similarity::Definition = config
+                        .definition(code_similarity::CHECK_NAME)
+                        .unwrap_or_else(|e| invalid_config(&e));
+                    let result = code_similarity::check(&source_dir, &focus_paths, &definition);
+                    output(&CheckReport::new(code_similarity::CHECK_NAME, result))
+                }
                 Checks::CommitMessage { message } => {
                     let message = resolve_message(message)?;
                     let definition: commit_message::Definition = config
@@ -209,23 +210,6 @@ fn project_root() -> PathBuf {
     std::env::current_dir().expect("working directory accessible")
 }
 
-fn run_source_check<D: Default + serde::de::DeserializeOwned>(
-    config: &ScuteConfig,
-    project_root: &Path,
-    source_dir: Option<PathBuf>,
-    files: Vec<PathBuf>,
-    check_name: &str,
-    execute: impl FnOnce(&Path, &[PathBuf], &D) -> Result<Vec<scute_core::Evaluation>, ExecutionError>,
-) -> Result<()> {
-    let source_dir = source_dir.unwrap_or_else(|| project_root.to_path_buf());
-    let focus_files = resolve_focus_files(files);
-    let definition: D = config
-        .definition(check_name)
-        .unwrap_or_else(|e| invalid_config(&e));
-    let result = execute(&source_dir, &focus_files, &definition);
-    output(&CheckReport::new(check_name, result))
-}
-
 fn resolve_target_path(path: Option<String>) -> PathBuf {
     path.map_or_else(project_root, PathBuf::from)
 }
@@ -233,10 +217,6 @@ fn resolve_target_path(path: Option<String>) -> PathBuf {
 fn resolve_paths(paths: Vec<PathBuf>, default_dir: &Path) -> Vec<PathBuf> {
     let paths = read_from_stdin_if_empty(paths);
     scute_core::files::paths_or_default(paths, default_dir)
-}
-
-fn resolve_focus_files(files: Vec<PathBuf>) -> Vec<PathBuf> {
-    read_from_stdin_if_empty(files)
 }
 
 fn read_from_stdin_if_empty(paths: Vec<PathBuf>) -> Vec<PathBuf> {
