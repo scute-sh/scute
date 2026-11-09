@@ -186,7 +186,7 @@ value.
   behaves (an API, an edge case, a library quirk), the agent reads source or
   writes throwaway scripts instead of writing a test. The test harness gives
   faster feedback and the answer persists as documentation.
-- **Stated assumptions without verifying.** (×6) Confidently claimed a tool's
+- **Stated assumptions without verifying.** (×7) Confidently claimed a tool's
   fallback behavior ("it installs latest by default") without checking. The
   claim was plausible but wrong, caught only after CI failed. When behavior
   isn't documented in memory, verify it before asserting it.
