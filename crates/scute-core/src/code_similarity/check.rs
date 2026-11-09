@@ -8,7 +8,7 @@ use super::parse_source;
 use super::rules::SimilarityRules;
 use super::tree::SourceTree;
 use crate::files;
-use crate::files::{InvalidPath, InvalidPathKind, SourceFile};
+use crate::files::{Exclusions, InvalidPath, InvalidPathKind, SourceFile};
 use crate::language::{self, JsFamily, LanguageRegistry, Rust};
 use crate::{Evaluation, ExecutionError, Thresholds};
 
@@ -90,6 +90,9 @@ impl Definition {
 /// clone detection, and returns one [`Evaluation`] per clone group found.
 /// When no clones are detected, returns a single passing evaluation.
 ///
+/// Only files inside `source_dir` are compared. `exclude` patterns match
+/// paths relative to `project_root`, wherever `source_dir` points.
+///
 /// With `focus_paths`, only clone groups involving at least one file at
 /// those paths are reported. Directories count for the supported files
 /// inside them. Without focus paths (`None`), every clone group in
@@ -100,7 +103,7 @@ impl Definition {
 /// use std::path::Path;
 /// use scute_core::code_similarity::{Definition, check};
 ///
-/// let evals = check(Path::new("."), None, &Definition::default()).unwrap();
+/// let evals = check(Path::new("."), Path::new("."), None, &Definition::default()).unwrap();
 /// for eval in &evals {
 ///     if eval.is_fail() {
 ///         eprintln!("duplication found: {}", eval.target);
@@ -112,6 +115,7 @@ impl Definition {
 ///
 /// Returns `ExecutionError` if `source_dir` is not a valid directory.
 pub fn check(
+    project_root: &Path,
     source_dir: &Path,
     focus_paths: Option<&[PathBuf]>,
     definition: &Definition,
@@ -130,7 +134,7 @@ pub fn check(
         Err(invalid) => return Ok(invalid),
     };
 
-    let source_files = read_sources(&canonical_dir, definition, &languages);
+    let source_files = read_sources(&canonical_dir, project_root, definition, &languages);
     let trees = parse_trees(&source_files, &languages)?;
     let token_sets: Vec<Vec<_>> = trees.iter().map(SourceTree::tokens).collect();
     let contexts = build_contexts(&trees, &token_sets, &source_files);
@@ -156,7 +160,11 @@ fn resolve_focus(
     focus_paths: &[PathBuf],
     languages: &LanguageRegistry<dyn SimilarityRules>,
 ) -> Result<Vec<PathBuf>, Vec<Evaluation>> {
-    let resolved = files::resolve_paths(focus_paths, &languages.supported_extensions(), &[]);
+    let resolved = files::resolve_paths(
+        focus_paths,
+        &languages.supported_extensions(),
+        &Exclusions::none(),
+    );
     if resolved.invalid.is_empty() {
         Ok(resolved.files)
     } else {
@@ -236,23 +244,22 @@ fn filter_by_focus<'a>(
 
 fn read_sources(
     dir: &Path,
+    project_root: &Path,
     definition: &Definition,
     languages: &LanguageRegistry<dyn SimilarityRules>,
 ) -> Vec<SourceFile> {
-    let mut result: Vec<SourceFile> = files::walk_source_files(
-        dir,
-        definition.skip_ignored(),
-        definition.exclude_patterns(),
-    )
-    .filter_map(|entry| {
-        languages.for_path(entry.path())?;
-        let content = std::fs::read_to_string(entry.path()).ok()?;
-        Some(SourceFile {
-            path: entry.into_path(),
-            content,
-        })
-    })
-    .collect();
+    let exclusions = Exclusions::new(project_root, definition.exclude_patterns());
+    let mut result: Vec<SourceFile> =
+        files::walk_source_files(dir, definition.skip_ignored(), &exclusions)
+            .filter_map(|entry| {
+                languages.for_path(entry.path())?;
+                let content = std::fs::read_to_string(entry.path()).ok()?;
+                Some(SourceFile {
+                    path: entry.into_path(),
+                    content,
+                })
+            })
+            .collect();
     result.sort_by(|a, b| a.path.cmp(&b.path));
     result
 }
@@ -319,11 +326,11 @@ mod tests {
     }
 
     fn check_dir(dir: &Path) -> Vec<Evaluation> {
-        check(dir, None, &low_threshold()).unwrap()
+        check(dir, dir, None, &low_threshold()).unwrap()
     }
 
     fn check_focused(dir: &Path, focus_files: &[PathBuf]) -> Vec<Evaluation> {
-        check(dir, Some(focus_files), &low_threshold()).unwrap()
+        check(dir, dir, Some(focus_files), &low_threshold()).unwrap()
     }
 
     fn clone_pair() -> TestDir {
@@ -335,6 +342,7 @@ mod tests {
     fn check_clone_pair_with_thresholds(warn: u64, fail: u64) -> Vec<Evaluation> {
         let dir = clone_pair();
         check(
+            &dir.root(),
             &dir.root(),
             None,
             &Definition {
@@ -450,6 +458,7 @@ mod tests {
 
         let evals = check(
             &dir.root(),
+            &dir.root(),
             None,
             &Definition {
                 skip_ignored_files: Some(false),
@@ -475,7 +484,12 @@ mod tests {
 
     #[test]
     fn nonexistent_target_returns_error() {
-        let result = check(Path::new("/nonexistent/path"), None, &Definition::default());
+        let result = check(
+            Path::new("."),
+            Path::new("/nonexistent/path"),
+            None,
+            &Definition::default(),
+        );
 
         let err = result.unwrap_err();
         assert_that!(err.code, eq("invalid_target"));
@@ -620,6 +634,7 @@ mod tests {
 
         let evals = check(
             &dir.root(),
+            &dir.root(),
             None,
             &Definition {
                 exclude: Some(vec!["b.rs".to_string()]),
@@ -643,6 +658,7 @@ mod tests {
 
         let evals = check(
             &dir.root(),
+            &dir.root(),
             None,
             &Definition {
                 exclude: Some(vec!["b.rs".to_string(), "*.ts".to_string()]),
@@ -665,6 +681,7 @@ mod tests {
 
         let evals = check(
             &dir.root(),
+            &dir.root(),
             None,
             &Definition {
                 exclude: Some(vec!["generated/**".to_string()]),
@@ -684,7 +701,7 @@ mod tests {
         let dir = clone_pair();
 
         // 14 tokens < default min_tokens of 50 → no clones detected → pass
-        let evals = check(&dir.root(), None, &Definition::default()).unwrap();
+        let evals = check(&dir.root(), &dir.root(), None, &Definition::default()).unwrap();
 
         assert_that!(evals, len(eq(1)));
         assert!(evals[0].is_pass());

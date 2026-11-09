@@ -132,7 +132,7 @@ With defaults: score 5 passes, 6 warns, 10 warns, 11 fails.
 | --------- | --------------- | ------- | ---------------------------------------------- |
 | `exclude` | array\<string\> | `[]`    | Glob patterns for files to skip during scanning |
 
-`exclude` patterns follow `.gitignore` semantics. Useful for generated code, vendored dependencies, or other directories you don't control.
+`exclude` patterns follow `.gitignore` semantics and match paths relative to the project root, whatever paths you pass to the check. A file matching a pattern is skipped even when you name it directly, so a pre-commit hook passing staged files won't flag your generated code. Useful for generated code, vendored dependencies, or other directories you don't control.
 
 ### Evidence rules
 

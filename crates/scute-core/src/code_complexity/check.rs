@@ -5,7 +5,7 @@ use serde::Deserialize;
 use super::rules::ComplexityRules;
 use super::score;
 use crate::files;
-use crate::files::SourceFile;
+use crate::files::{Exclusions, SourceFile};
 use crate::language::{self, LanguageRegistry};
 use crate::{Evaluation, Evidence, ExecutionError, Expected, Thresholds};
 
@@ -43,8 +43,9 @@ impl Definition {
 /// Score cognitive complexity for every function in the given paths.
 ///
 /// Accepts a mix of files and directories. Directories are walked to
-/// discover supported files (respecting `exclude` patterns). Without paths
-/// (`None`), the whole `project_root` is scored.
+/// discover supported files. Without paths (`None`), the whole
+/// `project_root` is scored. Files matching `exclude` patterns, relative to
+/// `project_root`, are skipped whether found in a directory or given directly.
 ///
 /// Returns one [`Evaluation`] per function found. When no supported files
 /// exist, returns a single passing evaluation.
@@ -77,7 +78,7 @@ pub fn check(
     let paths = paths.unwrap_or(&whole_project);
     let thresholds = definition.thresholds();
     let languages = languages();
-    let files = resolve_files(paths, definition, &languages)?;
+    let files = resolve_files(project_root, paths, definition, &languages)?;
 
     let evaluations: Vec<Evaluation> = files
         .iter()
@@ -110,13 +111,17 @@ fn with_fallback(
 }
 
 fn resolve_files(
+    project_root: &Path,
     paths: &[PathBuf],
     definition: &Definition,
     languages: &LanguageRegistry<dyn ComplexityRules>,
 ) -> Result<Vec<PathBuf>, ExecutionError> {
-    let exclude = definition.exclude.as_deref().unwrap_or_default();
+    let exclusions = Exclusions::new(
+        project_root,
+        definition.exclude.as_deref().unwrap_or_default(),
+    );
     let extensions = languages.supported_extensions();
-    let resolved = files::resolve_paths(paths, &extensions, exclude);
+    let resolved = files::resolve_paths(paths, &extensions, &exclusions);
     match resolved.invalid.into_iter().next() {
         Some(invalid) => Err(ExecutionError {
             code: "invalid_target".into(),

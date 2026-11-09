@@ -112,8 +112,12 @@ fn run(cli: Cli) -> Result<()> {
                     let source_dir = source_dir.unwrap_or_else(|| project_root.clone());
                     let focus_paths = requested_paths(files);
                     let definition = check_definition(&config, code_similarity::CHECK_NAME);
-                    let result =
-                        code_similarity::check(&source_dir, focus_paths.as_deref(), &definition);
+                    let result = code_similarity::check(
+                        &project_root,
+                        &source_dir,
+                        focus_paths.as_deref(),
+                        &definition,
+                    );
                     output(&CheckReport::new(code_similarity::CHECK_NAME, result))
                 }
                 Checks::CommitMessage { message } => {
