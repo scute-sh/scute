@@ -87,17 +87,6 @@ pub enum InvalidPathKind {
     InvalidDirectory(io::Error),
 }
 
-/// Returns `paths` as-is if non-empty, otherwise a single-element vec
-/// containing `default`.
-#[must_use]
-pub fn paths_or_default(paths: Vec<PathBuf>, default: &Path) -> Vec<PathBuf> {
-    if paths.is_empty() {
-        vec![default.to_path_buf()]
-    } else {
-        paths
-    }
-}
-
 /// Source files found at a set of paths, and the paths that couldn't be resolved.
 #[derive(Debug, Default)]
 pub struct ResolvedPaths {

@@ -1,5 +1,5 @@
 use std::io::{BufRead, IsTerminal, Read};
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::Result;
 use clap::{Parser, Subcommand};
@@ -102,9 +102,10 @@ fn run(cli: Cli) -> Result<()> {
                     Ok(())
                 }
                 Checks::CodeComplexity { paths } => {
-                    let paths = resolve_paths(paths, &project_root);
+                    let paths = given_paths(paths);
                     let definition = check_definition(&config, code_complexity::CHECK_NAME);
-                    let result = code_complexity::check(&paths, &definition);
+                    let result =
+                        code_complexity::check(&project_root, paths.as_deref(), &definition);
                     output(&CheckReport::new(code_complexity::CHECK_NAME, result))
                 }
                 Checks::CodeSimilarity { source_dir, files } => {
@@ -214,11 +215,6 @@ fn project_root() -> PathBuf {
 
 fn resolve_target_path(path: Option<String>) -> PathBuf {
     path.map_or_else(project_root, PathBuf::from)
-}
-
-fn resolve_paths(paths: Vec<PathBuf>, default_dir: &Path) -> Vec<PathBuf> {
-    let paths = read_from_stdin_if_empty(paths);
-    scute_core::files::paths_or_default(paths, default_dir)
 }
 
 /// Paths from the arguments, or from stdin when there are none.

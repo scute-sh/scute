@@ -115,12 +115,13 @@ impl ScuteMcp {
         Parameters(input): Parameters<CheckCodeComplexityInput>,
     ) -> Result<CallToolResult, ErrorData> {
         let project_root = Path::new(&input.project_root);
-        let paths = resolve_paths(project_root, input.paths);
-        let paths = scute_core::files::paths_or_default(paths, project_root);
+        let paths = rooted_paths(project_root, input.paths);
         run_check(
             project_root,
             code_complexity::CHECK_NAME,
-            |def: &code_complexity::Definition| code_complexity::check(&paths, def),
+            |def: &code_complexity::Definition| {
+                code_complexity::check(project_root, paths.as_deref(), def)
+            },
         )
     }
 
@@ -197,14 +198,6 @@ fn rooted_paths(project_root: &Path, paths: Option<Vec<String>>) -> Option<Vec<P
     paths
         .filter(|paths| !paths.is_empty())
         .map(|paths| paths.iter().map(|path| project_root.join(path)).collect())
-}
-
-fn resolve_paths(project_root: &Path, paths: Option<Vec<String>>) -> Vec<PathBuf> {
-    paths
-        .unwrap_or_default()
-        .into_iter()
-        .map(|path| project_root.join(path))
-        .collect()
 }
 
 fn run_check<D: Default + DeserializeOwned>(
