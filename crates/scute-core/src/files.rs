@@ -81,9 +81,6 @@ pub struct InvalidPath {
 impl fmt::Display for InvalidPath {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.kind {
-            InvalidPathKind::UnsupportedExtension => {
-                write!(f, "unsupported file type: {}", self.path)
-            }
             InvalidPathKind::Unreadable(e) => write!(f, "cannot read {}: {e}", self.path),
             InvalidPathKind::ExpectedDirectory => {
                 write!(f, "not a directory: {}", self.path)
@@ -99,7 +96,6 @@ impl std::error::Error for InvalidPath {}
 
 #[derive(Debug)]
 pub enum InvalidPathKind {
-    UnsupportedExtension,
     Unreadable(io::Error),
     ExpectedDirectory,
     InvalidDirectory(io::Error),
@@ -114,10 +110,11 @@ pub struct ResolvedPaths {
 
 /// Resolve mixed file/directory paths into a flat list of source files.
 ///
-/// Files are validated individually (extension + readability), directories
-/// are walked to discover matching files. Files matching `exclusions` are
-/// left out either way. A path that can't be resolved is
-/// reported in [`ResolvedPaths::invalid`] without stopping the others.
+/// Directories are walked to discover files with a supported extension.
+/// Files given directly must exist, and are kept only if their extension is
+/// supported. Files matching `exclusions` are left out either way. A path
+/// that doesn't exist or can't be read is reported in
+/// [`ResolvedPaths::invalid`] without stopping the others.
 #[must_use]
 pub fn resolve_paths(
     paths: &[PathBuf],
@@ -143,12 +140,14 @@ fn resolve_path(
         let dir = validate_source_dir(path)?;
         return Ok(discover_files(&dir, supported_extensions, exclusions));
     }
-    let file = resolve_file(path, supported_extensions)?;
-    Ok(if exclusions.matches(&file) {
-        vec![]
-    } else {
-        vec![file]
-    })
+    let file = resolve_file(path)?;
+    Ok(
+        if has_extension(path, supported_extensions) && !exclusions.matches(&file) {
+            vec![file]
+        } else {
+            vec![]
+        },
+    )
 }
 
 fn discover_files(dir: &Path, extensions: &[&str], exclusions: &Exclusions) -> Vec<PathBuf> {
@@ -160,13 +159,7 @@ fn discover_files(dir: &Path, extensions: &[&str], exclusions: &Exclusions) -> V
     files
 }
 
-fn resolve_file(path: &Path, supported_extensions: &[&str]) -> Result<PathBuf, InvalidPath> {
-    if !has_extension(path, supported_extensions) {
-        return Err(InvalidPath {
-            path: path.display().to_string(),
-            kind: InvalidPathKind::UnsupportedExtension,
-        });
-    }
+fn resolve_file(path: &Path) -> Result<PathBuf, InvalidPath> {
     path.canonicalize().map_err(|e| InvalidPath {
         path: path.display().to_string(),
         kind: InvalidPathKind::Unreadable(e),
@@ -353,18 +346,13 @@ mod tests {
         }
 
         #[test]
-        fn rejects_unsupported_extension() {
+        fn skips_file_with_unsupported_extension() {
             let dir = TestDir::new().file("script.py");
 
             let result = resolve_paths(&[dir.path("script.py")], &["rs"], &Exclusions::none());
 
-            assert_that!(
-                result.invalid,
-                elements_are![field!(
-                    InvalidPath.kind,
-                    pat!(InvalidPathKind::UnsupportedExtension)
-                )]
-            );
+            assert_that!(result.files, is_empty());
+            assert_that!(result.invalid, is_empty());
         }
 
         #[test]

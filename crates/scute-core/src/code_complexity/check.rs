@@ -454,17 +454,17 @@ mod tests {
     }
 
     #[test]
-    fn rejects_unsupported_file_extension() {
+    fn skips_file_in_unsupported_language() {
         let dir = TestDir::new().source_file("code.py", "def foo(): pass");
 
-        let result = check(
+        let evals = check(
             &dir.root(),
             Some(&[dir.path("code.py")]),
             &Definition::default(),
-        );
+        )
+        .unwrap();
 
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err().code, "invalid_target");
+        assert!(evals.is_empty(), "got: {evals:?}");
     }
 
     #[test]
