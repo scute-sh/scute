@@ -517,6 +517,35 @@ mod tests {
         assert_that!(evals, len(eq(2)));
     }
 
+    fn error_code(eval: &Evaluation) -> &str {
+        let crate::Outcome::Errored(error) = &eval.outcome else {
+            panic!("expected an errored evaluation, got: {eval:?}")
+        };
+        &error.code
+    }
+
+    #[test]
+    fn unsupported_focus_file_reports_an_error_naming_it() {
+        let dir = clone_pair().source_file("notes.md", "# notes");
+
+        let evals = check_focused(&dir.root(), &[dir.path("notes.md")]);
+
+        assert_that!(evals, len(eq(1)));
+        assert_that!(evals[0].target, ends_with("notes.md"));
+        assert_eq!(error_code(&evals[0]), "unsupported_language");
+    }
+
+    #[test]
+    fn missing_focus_file_reports_an_error_naming_it() {
+        let dir = clone_pair();
+
+        let evals = check_focused(&dir.root(), &[dir.path("gone.rs")]);
+
+        assert_that!(evals, len(eq(1)));
+        assert_that!(evals[0].target, ends_with("gone.rs"));
+        assert_eq!(error_code(&evals[0]), "unreadable_file");
+    }
+
     #[test]
     fn excludes_files_matching_a_glob_pattern() {
         let dir = clone_pair();
