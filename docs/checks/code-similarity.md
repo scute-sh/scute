@@ -66,6 +66,8 @@ checks:
     test-thresholds:
       warn: 100
       fail: 130
+    exclude:
+      - 'generated/**'
 ```
 
 ### Thresholds
@@ -86,6 +88,9 @@ With defaults: 70 tokens passes, 71 warns, 100 warns, 101 fails.
 | `min-tokens`         | integer    | `50`                 | Minimum token sequence length to consider as duplication        |
 | `skip-ignored-files` | boolean    | `true`               | Skip files matched by `.gitignore` during file discovery        |
 | `test-thresholds`    | thresholds | warn: 100, fail: 130 | Separate thresholds for clone groups where every occurrence lives in test code |
+| `exclude`            | array\<string\> | `[]`            | Glob patterns for files to leave out of the comparison          |
+
+`exclude` patterns follow `.gitignore` semantics and match paths relative to the project root, even when `--source-dir` points somewhere narrower. Excluded files are never compared, so they can't show up in a clone. Useful for generated code, vendored dependencies, or other directories you don't control.
 
 `min-tokens` controls sensitivity. Lower values catch smaller clones but produce more noise. 50 works well for most projects.
 
