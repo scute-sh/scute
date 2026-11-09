@@ -224,6 +224,10 @@ value.
   descriptions, or argument docs describe behavior the code doesn't actually
   have. The copy is plausible but wrong because nobody checked the
   implementation before writing it.
+- **Usage examples that lose sight of the goal.** (×1) A documented example
+  gets verified as correct but never weighed against why the work started.
+  The feature existed to make a one-liner reliable, and the example grew into
+  a multi-line shell guard that also merged steps the reader wanted separate.
 
 ## Agent-Driven Codebase Decay
 
