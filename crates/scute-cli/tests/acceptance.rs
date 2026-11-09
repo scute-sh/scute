@@ -319,6 +319,54 @@ checks:
             .expect_finding_count(1)
             .expect_target_contains("a.rs");
     }
+
+    #[test_case(Cli)]
+    #[test_case(CliStdin)]
+    #[test_case(Mcp)]
+    fn reports_only_on_supported_files_in_a_mixed_list(interface: Interface) {
+        Scute::new(interface)
+            .source_file("a.rs", "fn foo(x: i32) -> i32 { x + 1 }")
+            .source_file("b.rs", "fn bar(y: i32) -> i32 { y + 1 }")
+            .source_file("pom.xml", "<project/>")
+            .scute_config(
+                r"
+checks:
+  code-similarity:
+    thresholds:
+      fail: 0
+    min-tokens: 5
+",
+            )
+            .code_similarity()
+            .files(&["a.rs", "pom.xml"])
+            .run()
+            .expect_fail()
+            .expect_finding_count(1)
+            .expect_target_contains("a.rs");
+    }
+
+    #[test_case(Cli)]
+    #[test_case(CliStdin)]
+    #[test_case(Mcp)]
+    fn list_without_supported_files_reports_nothing_checked(interface: Interface) {
+        Scute::new(interface)
+            .source_file("a.rs", "fn foo(x: i32) -> i32 { x + 1 }")
+            .source_file("b.rs", "fn bar(y: i32) -> i32 { y + 1 }")
+            .source_file("README.md", "# Hello")
+            .scute_config(
+                r"
+checks:
+  code-similarity:
+    thresholds:
+      fail: 0
+    min-tokens: 5
+",
+            )
+            .code_similarity()
+            .files(&["README.md"])
+            .run()
+            .expect_nothing_checked();
+    }
 }
 
 mod code_complexity {
@@ -558,6 +606,34 @@ checks:
             .paths(&["src/simple.rs"])
             .run()
             .expect_pass();
+    }
+
+    #[test_case(Cli)]
+    #[test_case(CliStdin)]
+    #[test_case(Mcp)]
+    fn reports_only_on_supported_files_in_a_mixed_list(interface: Interface) {
+        Scute::new(interface)
+            .source_file("src/complex.rs", COMPLEX_SOURCE)
+            .source_file("pom.xml", "<project/>")
+            .code_complexity()
+            .paths(&["src/complex.rs", "pom.xml"])
+            .run()
+            .expect_warn()
+            .expect_finding_count(1)
+            .expect_target_contains("complex.rs");
+    }
+
+    #[test_case(Cli)]
+    #[test_case(CliStdin)]
+    #[test_case(Mcp)]
+    fn list_without_supported_files_reports_nothing_checked(interface: Interface) {
+        Scute::new(interface)
+            .source_file("src/complex.rs", COMPLEX_SOURCE)
+            .source_file("README.md", "# Hello")
+            .code_complexity()
+            .paths(&["README.md"])
+            .run()
+            .expect_nothing_checked();
     }
 }
 

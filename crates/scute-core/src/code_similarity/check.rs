@@ -8,7 +8,7 @@ use super::parse_source;
 use super::rules::SimilarityRules;
 use super::tree::SourceTree;
 use crate::files;
-use crate::files::{Exclusions, InvalidPath, InvalidPathKind, SourceFile};
+use crate::files::{Exclusions, InvalidPath, SourceFile};
 use crate::language::{self, JsFamily, LanguageRegistry, Rust};
 use crate::{Evaluation, ExecutionError, Thresholds};
 
@@ -98,8 +98,9 @@ impl Definition {
 /// With `focus_paths`, only clone groups involving at least one file at
 /// those paths are reported. Directories count for the supported files
 /// inside them. Without focus paths (`None`), every clone group in
-/// `source_dir` is reported. Focus paths with unsupported extensions or
-/// that can't be read produce errored evaluations.
+/// `source_dir` is reported. Focus files in an unsupported language are
+/// skipped, and when no supported focus file remains, nothing is checked. Focus paths that don't exist or can't be read produce errored
+/// evaluations.
 ///
 /// ```no_run
 /// use std::path::Path;
@@ -132,6 +133,7 @@ pub fn check(
         .map(|paths| resolve_focus(paths, &languages))
         .transpose()
     {
+        Ok(Some(focus_files)) if focus_files.is_empty() => return Ok(vec![]),
         Ok(focus_files) => focus_files,
         Err(invalid) => return Ok(invalid),
     };
@@ -182,25 +184,13 @@ fn resolve_focus(
 }
 
 fn invalid_focus_path(invalid: InvalidPath) -> Evaluation {
-    let (code, recovery) = match invalid.kind {
-        InvalidPathKind::UnsupportedExtension => (
-            "unsupported_language",
-            "only Rust, JavaScript, and TypeScript files are supported",
-        ),
-        InvalidPathKind::Unreadable(_)
-        | InvalidPathKind::ExpectedDirectory
-        | InvalidPathKind::InvalidDirectory(_) => (
-            "unreadable_file",
-            "check that the file exists and is readable",
-        ),
-    };
     let message = invalid.to_string();
     Evaluation::errored(
         invalid.path,
         ExecutionError {
-            code: code.into(),
+            code: "unreadable_file".into(),
             message,
-            recovery: recovery.into(),
+            recovery: "check that the file exists and is readable".into(),
         },
     )
 }
@@ -591,15 +581,12 @@ mod tests {
     }
 
     #[test]
-    fn focus_directory_without_supported_files_reports_no_clones() {
+    fn focus_directory_without_supported_files_returns_no_evaluations() {
         let dir = clone_pair().source_file("docs/guide.md", "# guide");
 
         let evals = check_focused(&dir.root(), &[dir.path("docs")]);
 
-        assert!(
-            evals.iter().all(Evaluation::is_pass),
-            "expected no clones reported, got: {evals:?}"
-        );
+        assert_that!(evals, is_empty());
     }
 
     fn error_code(eval: &Evaluation) -> &str {
@@ -610,14 +597,14 @@ mod tests {
     }
 
     #[test]
-    fn unsupported_focus_file_reports_an_error_naming_it() {
+    fn unsupported_focus_file_is_skipped_and_the_rest_still_reported() {
         let dir = clone_pair().source_file("notes.md", "# notes");
 
-        let evals = check_focused(&dir.root(), &[dir.path("notes.md")]);
+        let evals = check_focused(&dir.root(), &[dir.path("a.rs"), dir.path("notes.md")]);
 
         assert_that!(evals, len(eq(1)));
-        assert_that!(evals[0].target, ends_with("notes.md"));
-        assert_eq!(error_code(&evals[0]), "unsupported_language");
+        assert!(evals[0].is_fail(), "got: {evals:?}");
+        assert_that!(evals[0].target, contains_substring("a.rs"));
     }
 
     #[test]
