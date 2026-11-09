@@ -99,8 +99,9 @@ impl Definition {
 /// those paths are reported. Directories count for the supported files
 /// inside them. Without focus paths (`None`), every clone group in
 /// `source_dir` is reported. Focus files in an unsupported language are
-/// skipped, and when no supported focus file remains, nothing is checked. Focus paths that don't exist or can't be read produce errored
-/// evaluations.
+/// skipped, and when no supported focus file remains, nothing is checked.
+/// Focus paths that don't exist or can't be read get their own errored
+/// evaluation, next to the results for the rest.
 ///
 /// ```no_run
 /// use std::path::Path;
@@ -129,25 +130,48 @@ pub fn check(
         recovery: "check that the path exists and is a directory".into(),
     })?;
     let languages = languages();
-    let focus_files = match focus_paths
-        .map(|paths| resolve_focus(paths, &languages))
-        .transpose()
-    {
-        Ok(Some(focus_files)) if focus_files.is_empty() => return Ok(vec![]),
-        Ok(focus_files) => focus_files,
-        Err(invalid) => return Ok(invalid),
+    let (focus_files, invalid) = match focus_paths {
+        Some(paths) => {
+            let resolved = resolve_focus(paths, &languages);
+            (Some(resolved.files), resolved.invalid)
+        }
+        None => (None, vec![]),
     };
+    let errors = invalid.into_iter().map(invalid_focus_path);
 
-    let source_files = read_sources(&canonical_dir, project_root, definition, &languages);
+    let clones = if focus_files.as_ref().is_some_and(Vec::is_empty) {
+        vec![]
+    } else {
+        let source_files = read_sources(&canonical_dir, project_root, definition, &languages);
+        find_clones(
+            source_dir,
+            &source_files,
+            focus_files.as_deref(),
+            definition,
+            &languages,
+        )?
+    };
+    Ok(errors.chain(clones).collect())
+}
+
+/// Clone groups among `source_files` involving a focus file, or a single
+/// pass for `source_dir` when there's none. No evaluation without sources.
+fn find_clones(
+    source_dir: &Path,
+    source_files: &[SourceFile],
+    focus_files: Option<&[PathBuf]>,
+    definition: &Definition,
+    languages: &LanguageRegistry<dyn SimilarityRules>,
+) -> Result<Vec<Evaluation>, ExecutionError> {
     if source_files.is_empty() {
         return Ok(vec![]);
     }
-    let trees = parse_trees(&source_files, &languages)?;
+    let trees = parse_trees(source_files, languages)?;
     let token_sets: Vec<Vec<_>> = trees.iter().map(SourceTree::tokens).collect();
-    let contexts = build_contexts(&trees, &token_sets, &source_files);
+    let contexts = build_contexts(&trees, &token_sets, source_files);
 
     let clone_groups = run_detection(&token_sets, definition.min_tokens());
-    let relevant = filter_by_focus(&clone_groups, focus_files.as_deref(), &contexts);
+    let relevant = filter_by_focus(&clone_groups, focus_files, &contexts);
     let thresholds = definition.thresholds();
     let evaluations = evaluate_groups(&relevant, &contexts, &thresholds);
 
@@ -159,40 +183,23 @@ pub fn check(
             vec![],
         )]);
     }
-
     Ok(evaluations)
 }
 
 fn resolve_focus(
     focus_paths: &[PathBuf],
     languages: &LanguageRegistry<dyn SimilarityRules>,
-) -> Result<Vec<PathBuf>, Vec<Evaluation>> {
-    let resolved = files::resolve_paths(
+) -> files::ResolvedPaths {
+    files::resolve_paths(
         focus_paths,
         &languages.supported_extensions(),
         &Exclusions::none(),
-    );
-    if resolved.invalid.is_empty() {
-        Ok(resolved.files)
-    } else {
-        Err(resolved
-            .invalid
-            .into_iter()
-            .map(invalid_focus_path)
-            .collect())
-    }
+    )
 }
 
 fn invalid_focus_path(invalid: InvalidPath) -> Evaluation {
-    let message = invalid.to_string();
-    Evaluation::errored(
-        invalid.path,
-        ExecutionError {
-            code: "unreadable_file".into(),
-            message,
-            recovery: "check that the file exists and is readable".into(),
-        },
-    )
+    let error = ExecutionError::from(&invalid);
+    Evaluation::errored(invalid.path, error)
 }
 
 fn build_contexts<'a>(
@@ -615,7 +622,7 @@ mod tests {
 
         assert_that!(evals, len(eq(1)));
         assert_that!(evals[0].target, ends_with("gone.rs"));
-        assert_eq!(error_code(&evals[0]), "unreadable_file");
+        assert_eq!(error_code(&evals[0]), "invalid_target");
     }
 
     #[test]

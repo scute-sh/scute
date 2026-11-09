@@ -33,7 +33,7 @@ impl McpBackend {
         let is_error = result.is_error.unwrap_or(false);
         let exit_status = if !is_error {
             ExitStatus::Success
-        } else if json.get("error").is_some() {
+        } else if json.get("error").is_some() || json["summary"]["errored"].as_u64() > Some(0) {
             ExitStatus::Error
         } else {
             ExitStatus::Failure
