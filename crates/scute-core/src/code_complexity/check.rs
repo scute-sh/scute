@@ -421,18 +421,19 @@ mod tests {
         assert!(evidence[0].location.as_ref().unwrap().contains("a.rs:1"));
     }
 
-    #[test]
-    fn nonexistent_path_without_extension_returns_an_error_naming_it() {
+    #[test_case::test_case("/does/not/exist" ; "without extension")]
+    #[test_case::test_case("/nonexistent/file.rs" ; "source file")]
+    fn nonexistent_path_returns_an_error_naming_it(path: &str) {
         let evals = check(
             Path::new("."),
-            Some(&[PathBuf::from("/does/not/exist")]),
+            Some(&[PathBuf::from(path)]),
             &Definition::default(),
         )
         .unwrap();
 
         assert_eq!(evals.len(), 1, "got: {evals:?}");
         assert!(evals[0].is_error());
-        assert_eq!(evals[0].target, "/does/not/exist");
+        assert_eq!(evals[0].target, path);
     }
 
     #[test]
@@ -442,20 +443,6 @@ mod tests {
         let evals = check_dir(&dir.root());
 
         assert!(evals.is_empty(), "got: {evals:?}");
-    }
-
-    #[test]
-    fn nonexistent_source_file_returns_an_error_naming_it() {
-        let evals = check(
-            Path::new("."),
-            Some(&[PathBuf::from("/nonexistent/file.rs")]),
-            &Definition::default(),
-        )
-        .unwrap();
-
-        assert_eq!(evals.len(), 1, "got: {evals:?}");
-        assert!(evals[0].is_error());
-        assert_eq!(evals[0].target, "/nonexistent/file.rs");
     }
 
     #[test]
