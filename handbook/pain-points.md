@@ -21,6 +21,9 @@ value.
   review harder and bisecting less useful.
 - **Breaking changes unannounced.** Public API signatures changed without
   corresponding version bumps, changelog entries, or migration notes.
+- **Contradictory commit semantics.** (×1) Type and markers that say opposite
+  things, like a `refactor` (no behavior change) flagged as breaking. Each
+  part is valid on its own, so format checks pass while the message misleads.
 
 ## Tests
 
