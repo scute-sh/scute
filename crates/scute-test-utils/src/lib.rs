@@ -12,7 +12,7 @@ use std::path::{Path, PathBuf};
 
 use cli::CliBackend;
 use mcp::McpBackend;
-pub use project::TestProject;
+pub use project::{PackageManager, TestProject};
 use tempfile::TempDir;
 
 /// Lightweight temp directory builder for unit tests that just need files on disk.
@@ -136,7 +136,7 @@ impl Scute {
     pub fn cli() -> Self {
         Self {
             backend: Box::new(CliBackend { via_stdin: false }),
-            project: TestProject::cargo(),
+            project: TestProject::empty(),
             cwd: None,
         }
     }
@@ -144,7 +144,7 @@ impl Scute {
     pub fn cli_stdin() -> Self {
         Self {
             backend: Box::new(CliBackend { via_stdin: true }),
-            project: TestProject::cargo(),
+            project: TestProject::empty(),
             cwd: None,
         }
     }
@@ -152,9 +152,29 @@ impl Scute {
     pub fn mcp() -> Self {
         Self {
             backend: Box::new(McpBackend),
-            project: TestProject::cargo(),
+            project: TestProject::empty(),
             cwd: None,
         }
+    }
+
+    /// Set up the project's manifest with this package manager, so it can
+    /// hold dependencies. Without one, the project is a plain directory with
+    /// only the files you add, which is all code checks need: the language
+    /// comes from the files themselves.
+    ///
+    /// ```no_run
+    /// use scute_test_utils::{Interface, PackageManager, Scute};
+    ///
+    /// Scute::new(Interface::Cli)
+    ///     .package_manager(PackageManager::Cargo)
+    ///     .dependency("itoa", "=0.4.8")
+    ///     .dependency_freshness()
+    ///     .run()
+    ///     .expect_fail();
+    /// ```
+    pub fn package_manager(mut self, package_manager: PackageManager) -> Self {
+        self.project = self.project.package_manager(package_manager);
+        self
     }
 
     pub fn dependency(mut self, name: &str, version: &str) -> Self {
@@ -535,4 +555,51 @@ pub fn target_bin(name: &str) -> std::path::PathBuf {
         dir.pop();
     }
     dir.join(format!("{name}{}", std::env::consts::EXE_SUFFIX))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entries(dir: &Path) -> Vec<String> {
+        let mut names: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test]
+    fn project_without_package_manager_holds_only_the_files_added() {
+        let scute = Scute::new(Interface::Cli).source_file("notes.md", "# Notes");
+
+        let dir = scute.project.build();
+
+        assert_eq!(entries(dir.path()), [".git", ".gitignore", "notes.md"]);
+    }
+
+    #[test]
+    #[should_panic(expected = "pick a package manager")]
+    fn dependency_without_package_manager_refuses_to_build() {
+        let scute = Scute::new(Interface::Cli).dependency("itoa", "1.0.0");
+
+        scute.project.build();
+    }
+
+    #[test]
+    #[should_panic(expected = "pick a package manager")]
+    fn dev_dependency_without_package_manager_refuses_to_build() {
+        let scute = Scute::new(Interface::Cli).dev_dependency("itoa", "1.0.0");
+
+        scute.project.build();
+    }
+
+    #[test]
+    #[should_panic(expected = "pick a package manager")]
+    fn workspace_member_without_package_manager_refuses_to_build() {
+        let project = TestProject::empty().member("apps/web", |member| member);
+
+        project.build();
+    }
 }
