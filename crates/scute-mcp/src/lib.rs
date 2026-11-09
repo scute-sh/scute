@@ -149,7 +149,7 @@ impl ScuteMcp {
             project_root,
             code_similarity::CHECK_NAME,
             |def: &code_similarity::Definition| {
-                code_similarity::check(&source_dir, focus_paths.as_deref(), def)
+                code_similarity::check(project_root, &source_dir, focus_paths.as_deref(), def)
             },
         )
     }

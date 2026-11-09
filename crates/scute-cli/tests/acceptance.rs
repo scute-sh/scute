@@ -237,6 +237,29 @@ checks:
 
     #[test_case(Cli)]
     #[test_case(Mcp)]
+    fn exclude_patterns_match_from_project_root_when_scanning_a_subdirectory(interface: Interface) {
+        Scute::new(interface)
+            .source_file("src/a.rs", "fn foo(x: i32) -> i32 { x + 1 }")
+            .source_file("src/b.rs", "fn bar(y: i32) -> i32 { y + 1 }")
+            .scute_config(
+                r"
+checks:
+  code-similarity:
+    thresholds:
+      fail: 0
+    min-tokens: 5
+    exclude:
+      - 'src/b.rs'
+",
+            )
+            .code_similarity()
+            .source_dir("src")
+            .run()
+            .expect_pass();
+    }
+
+    #[test_case(Cli)]
+    #[test_case(Mcp)]
     fn nonexistent_source_dir_produces_error(interface: Interface) {
         Scute::new(interface)
             .code_similarity()
@@ -376,6 +399,27 @@ checks:
             .code_complexity()
             .run()
             .expect_pass();
+    }
+
+    #[test_case(Cli)]
+    #[test_case(Mcp)]
+    fn exclude_patterns_match_from_project_root_when_checking_a_directory(interface: Interface) {
+        Scute::new(interface)
+            .source_file("src/complex.rs", COMPLEX_SOURCE)
+            .scute_config(
+                r"
+checks:
+  code-complexity:
+    thresholds:
+      warn: 1
+    exclude:
+      - 'src/complex.rs'
+",
+            )
+            .code_complexity()
+            .paths(&["src"])
+            .run()
+            .expect_no_findings();
     }
 
     #[test_case(Cli)]
