@@ -125,17 +125,15 @@ impl McpTestClient {
     }
 }
 
-fn json_object(entries: &[(&str, Option<serde_json::Value>)]) -> serde_json::Value {
+/// Builds a JSON object, leaving out fields whose value is `null`.
+fn json_object(entries: &[(&str, serde_json::Value)]) -> serde_json::Value {
     serde_json::Value::Object(
         entries
             .iter()
-            .filter_map(|(k, v)| v.as_ref().map(|v| ((*k).into(), v.clone())))
+            .filter(|(_, v)| !v.is_null())
+            .map(|(k, v)| ((*k).into(), v.clone()))
             .collect(),
     )
-}
-
-fn non_empty(slice: &[String]) -> Option<serde_json::Value> {
-    (!slice.is_empty()).then(|| serde_json::json!(slice))
 }
 
 fn mcp_tool_call(input: &CheckInput) -> (&'static str, serde_json::Value) {
@@ -146,21 +144,55 @@ fn mcp_tool_call(input: &CheckInput) -> (&'static str, serde_json::Value) {
         ),
         CheckInput::DependencyFreshness { path } => (
             "check_dependency_freshness",
-            json_object(&[("path", path.as_ref().map(|p| serde_json::json!(p)))]),
+            json_object(&[("path", serde_json::json!(path))]),
         ),
         CheckInput::CodeComplexity { paths } => (
             "check_code_complexity",
-            json_object(&[("paths", non_empty(paths))]),
+            json_object(&[("paths", serde_json::json!(paths))]),
         ),
         CheckInput::CodeSimilarity { source_dir, files } => (
             "check_code_similarity",
             json_object(&[
-                (
-                    "source_dir",
-                    source_dir.as_ref().map(|d| serde_json::json!(d)),
-                ),
-                ("files", non_empty(files)),
+                ("source_dir", serde_json::json!(source_dir)),
+                ("files", serde_json::json!(files)),
             ]),
         ),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sends_empty_path_list_as_empty_array() {
+        let input = CheckInput::CodeComplexity {
+            paths: Some(vec![]),
+        };
+
+        let (_, args) = mcp_tool_call(&input);
+
+        assert_eq!(args, serde_json::json!({ "paths": [] }));
+    }
+
+    #[test]
+    fn sends_empty_focus_file_list_as_empty_array() {
+        let input = CheckInput::CodeSimilarity {
+            source_dir: None,
+            files: Some(vec![]),
+        };
+
+        let (_, args) = mcp_tool_call(&input);
+
+        assert_eq!(args, serde_json::json!({ "files": [] }));
+    }
+
+    #[test]
+    fn leaves_out_path_list_without_input() {
+        let input = CheckInput::CodeComplexity { paths: None };
+
+        let (_, args) = mcp_tool_call(&input);
+
+        assert_eq!(args, serde_json::json!({}));
     }
 }
