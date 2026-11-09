@@ -424,6 +424,27 @@ checks:
 
     #[test_case(Cli)]
     #[test_case(Mcp)]
+    fn exclude_patterns_skip_a_file_given_explicitly(interface: Interface) {
+        Scute::new(interface)
+            .source_file("src/complex.rs", COMPLEX_SOURCE)
+            .scute_config(
+                r"
+checks:
+  code-complexity:
+    thresholds:
+      warn: 1
+    exclude:
+      - 'src/complex.rs'
+",
+            )
+            .code_complexity()
+            .paths(&["src/complex.rs"])
+            .run()
+            .expect_no_findings();
+    }
+
+    #[test_case(Cli)]
+    #[test_case(Mcp)]
     fn complex_typescript_function_gets_flagged(interface: Interface) {
         Scute::new(interface)
             .scute_config(

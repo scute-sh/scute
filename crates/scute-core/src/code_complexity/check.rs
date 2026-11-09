@@ -43,8 +43,9 @@ impl Definition {
 /// Score cognitive complexity for every function in the given paths.
 ///
 /// Accepts a mix of files and directories. Directories are walked to
-/// discover supported files (respecting `exclude` patterns). Without paths
-/// (`None`), the whole `project_root` is scored.
+/// discover supported files. Without paths (`None`), the whole
+/// `project_root` is scored. Files matching `exclude` patterns, relative to
+/// `project_root`, are skipped whether found in a directory or given directly.
 ///
 /// Returns one [`Evaluation`] per function found. When no supported files
 /// exist, returns a single passing evaluation.

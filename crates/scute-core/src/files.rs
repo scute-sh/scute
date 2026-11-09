@@ -17,6 +17,7 @@ impl Exclusions {
     /// Patterns that aren't valid globs are ignored.
     #[must_use]
     pub fn new(root: &Path, patterns: &[String]) -> Self {
+        let root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
         let mut builder = OverrideBuilder::new(root);
         for pattern in patterns {
             builder.add(&format!("!{pattern}")).ok();
@@ -27,6 +28,10 @@ impl Exclusions {
     #[must_use]
     pub fn none() -> Self {
         Self(Override::empty())
+    }
+
+    fn matches(&self, file: &Path) -> bool {
+        self.0.matched(file, false).is_ignore()
     }
 }
 
@@ -110,7 +115,8 @@ pub struct ResolvedPaths {
 /// Resolve mixed file/directory paths into a flat list of source files.
 ///
 /// Files are validated individually (extension + readability), directories
-/// are walked to discover matching files. A path that can't be resolved is
+/// are walked to discover matching files. Files matching `exclusions` are
+/// left out either way. A path that can't be resolved is
 /// reported in [`ResolvedPaths::invalid`] without stopping the others.
 #[must_use]
 pub fn resolve_paths(
@@ -137,7 +143,12 @@ fn resolve_path(
         let dir = validate_source_dir(path)?;
         return Ok(discover_files(&dir, supported_extensions, exclusions));
     }
-    resolve_file(path, supported_extensions).map(|file| vec![file])
+    let file = resolve_file(path, supported_extensions)?;
+    Ok(if exclusions.matches(&file) {
+        vec![]
+    } else {
+        vec![file]
+    })
 }
 
 fn discover_files(dir: &Path, extensions: &[&str], exclusions: &Exclusions) -> Vec<PathBuf> {
@@ -319,6 +330,26 @@ mod tests {
             let files = result.files;
             assert_eq!(files.len(), 1);
             assert!(files[0].ends_with("keep.rs"));
+        }
+
+        #[cfg(unix)]
+        #[test]
+        fn excludes_matching_files_when_root_is_reached_through_a_symlink() {
+            let dir = TestDir::new().file("keep.rs").file("gen/skip.rs");
+            let links = tempfile::tempdir().unwrap();
+            let root = links.path().join("project");
+            std::os::unix::fs::symlink(dir.root(), &root).unwrap();
+
+            let result = resolve_paths(
+                &[root.clone(), root.join("gen/skip.rs")],
+                &["rs"],
+                &Exclusions::new(&root, &["gen/**".into()]),
+            );
+
+            assert_that!(
+                result.files,
+                elements_are![eq(&dir.path("keep.rs").canonicalize().unwrap())]
+            );
         }
 
         #[test]
