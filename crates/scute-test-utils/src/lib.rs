@@ -105,11 +105,11 @@ pub(crate) enum CheckInput {
         path: Option<String>,
     },
     CodeComplexity {
-        paths: Vec<String>,
+        paths: Option<Vec<String>>,
     },
     CodeSimilarity {
         source_dir: Option<String>,
-        files: Vec<String>,
+        files: Option<Vec<String>>,
     },
 }
 
@@ -135,7 +135,7 @@ impl Scute {
 
     pub fn cli() -> Self {
         Self {
-            backend: Box::new(CliBackend { stdin: false }),
+            backend: Box::new(CliBackend { via_stdin: false }),
             project: TestProject::cargo(),
             cwd: None,
         }
@@ -143,7 +143,7 @@ impl Scute {
 
     pub fn cli_stdin() -> Self {
         Self {
-            backend: Box::new(CliBackend { stdin: true }),
+            backend: Box::new(CliBackend { via_stdin: true }),
             project: TestProject::cargo(),
             cwd: None,
         }
@@ -200,7 +200,7 @@ impl Scute {
     pub fn code_complexity(self) -> CodeComplexityCheck {
         CodeComplexityCheck {
             scute: self,
-            paths: Vec::new(),
+            paths: None,
         }
     }
 
@@ -208,7 +208,7 @@ impl Scute {
         CodeSimilarityCheck {
             scute: self,
             source_dir: None,
-            files: Vec::new(),
+            files: None,
         }
     }
 
@@ -267,12 +267,15 @@ impl DependencyFreshnessCheck {
 
 pub struct CodeComplexityCheck {
     scute: Scute,
-    paths: Vec<String>,
+    paths: Option<Vec<String>>,
 }
 
 impl CodeComplexityCheck {
+    /// Hands the check these paths. Without this call, the check gets no
+    /// input at all. An empty slice is an explicitly empty list, which only
+    /// `CliStdin` (an empty pipe) and `Mcp` (`[]`) can express: `Cli` refuses it.
     pub fn paths(mut self, paths: &[&str]) -> Self {
-        self.paths = paths.iter().map(|s| (*s).into()).collect();
+        self.paths = Some(paths.iter().map(|s| (*s).into()).collect());
         self
     }
 
@@ -285,7 +288,7 @@ impl CodeComplexityCheck {
 pub struct CodeSimilarityCheck {
     scute: Scute,
     source_dir: Option<String>,
-    files: Vec<String>,
+    files: Option<Vec<String>>,
 }
 
 impl CodeSimilarityCheck {
@@ -294,8 +297,11 @@ impl CodeSimilarityCheck {
         self
     }
 
+    /// Focuses the check on these files. Without this call, the check gets
+    /// no input at all. An empty slice is an explicitly empty list, which only
+    /// `CliStdin` (an empty pipe) and `Mcp` (`[]`) can express: `Cli` refuses it.
     pub fn files(mut self, files: &[&str]) -> Self {
-        self.files = files.iter().map(|s| (*s).into()).collect();
+        self.files = Some(files.iter().map(|s| (*s).into()).collect());
         self
     }
 
