@@ -103,34 +103,26 @@ fn run(cli: Cli) -> Result<()> {
                 }
                 Checks::CodeComplexity { paths } => {
                     let paths = resolve_paths(paths, &project_root);
-                    let definition: code_complexity::Definition = config
-                        .definition(code_complexity::CHECK_NAME)
-                        .unwrap_or_else(|e| invalid_config(&e));
+                    let definition = check_definition(&config, code_complexity::CHECK_NAME);
                     let result = code_complexity::check(&paths, &definition);
                     output(&CheckReport::new(code_complexity::CHECK_NAME, result))
                 }
                 Checks::CodeSimilarity { source_dir, files } => {
                     let source_dir = source_dir.unwrap_or_else(|| project_root.clone());
                     let focus_paths = read_from_stdin_if_empty(files);
-                    let definition: code_similarity::Definition = config
-                        .definition(code_similarity::CHECK_NAME)
-                        .unwrap_or_else(|e| invalid_config(&e));
+                    let definition = check_definition(&config, code_similarity::CHECK_NAME);
                     let result = code_similarity::check(&source_dir, &focus_paths, &definition);
                     output(&CheckReport::new(code_similarity::CHECK_NAME, result))
                 }
                 Checks::CommitMessage { message } => {
                     let message = resolve_message(message)?;
-                    let definition: commit_message::Definition = config
-                        .definition(commit_message::CHECK_NAME)
-                        .unwrap_or_else(|e| invalid_config(&e));
+                    let definition = check_definition(&config, commit_message::CHECK_NAME);
                     let result = commit_message::check(&message, &definition);
                     output(&CheckReport::new(commit_message::CHECK_NAME, result))
                 }
                 Checks::DependencyFreshness { path } => {
                     let target = resolve_target_path(path);
-                    let definition: dependency_freshness::Definition = config
-                        .definition(dependency_freshness::CHECK_NAME)
-                        .unwrap_or_else(|e| invalid_config(&e));
+                    let definition = check_definition(&config, dependency_freshness::CHECK_NAME);
                     let result = dependency_freshness::check(&target, &definition);
                     output(&CheckReport::new(dependency_freshness::CHECK_NAME, result))
                 }
@@ -170,6 +162,15 @@ fn classify_clap_error(err: &clap::Error) -> ExecutionError {
 fn is_check_level(err: &clap::Error) -> bool {
     err.get(clap::error::ContextKind::Usage)
         .is_some_and(|usage| usage.to_string().contains("scute check"))
+}
+
+fn check_definition<D: Default + serde::de::DeserializeOwned>(
+    config: &ScuteConfig,
+    check_name: &str,
+) -> D {
+    config
+        .definition(check_name)
+        .unwrap_or_else(|e| invalid_config(&e))
 }
 
 fn invalid_config(err: &scute_config::ConfigError) -> ! {
