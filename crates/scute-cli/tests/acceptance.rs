@@ -221,7 +221,6 @@ checks:
     #[test_case(Mcp)]
     fn project_without_supported_files_reports_nothing_checked(interface: Interface) {
         Scute::new(interface)
-            .bare_project()
             .source_file("pom.xml", "<project/>")
             .code_similarity()
             .run()
@@ -393,7 +392,6 @@ checks:
     #[test_case(Mcp)]
     fn project_without_supported_files_reports_nothing_checked(interface: Interface) {
         Scute::new(interface)
-            .bare_project()
             .source_file("pom.xml", "<project/>")
             .code_complexity()
             .run()

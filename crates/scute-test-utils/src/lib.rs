@@ -192,12 +192,6 @@ impl Scute {
         self
     }
 
-    /// Skip the Cargo scaffolding: the project holds only the files you add.
-    pub fn bare_project(mut self) -> Self {
-        self.project = self.project.bare();
-        self
-    }
-
     pub fn scute_config(mut self, yaml: &str) -> Self {
         self.project = self.project.scute_config(yaml);
         self
