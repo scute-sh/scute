@@ -66,18 +66,18 @@ impl CliBackend {
     }
 
     fn invocation(&self, input: &CheckInput) -> Invocation {
+        let empty_path_list = given_paths(input).is_some_and(Vec::is_empty);
+        assert!(
+            !empty_path_list,
+            "only Interface::Mcp can pass an empty path list: the CLI reads no paths as no input"
+        );
         let mut args = cli_base_args(input);
         if self.via_stdin {
             return Invocation {
                 args,
-                stdin: stdin_content(input),
+                stdin: Some(stdin_content(input)),
             };
         }
-        let empty_path_list = given_paths(input).is_some_and(Vec::is_empty);
-        assert!(
-            !empty_path_list,
-            "Interface::Cli can't pass an empty path list as arguments: use CliStdin or Mcp for this scenario"
-        );
         args.extend(cli_positional_args(input));
         Invocation { args, stdin: None }
     }
@@ -112,11 +112,13 @@ fn cli_base_args(input: &CheckInput) -> Vec<String> {
     }
 }
 
-/// Content to pipe into stdin, or `None` to run with stdin closed.
-fn stdin_content(input: &CheckInput) -> Option<String> {
+/// Content to pipe into stdin. No input pipes nothing at all.
+fn stdin_content(input: &CheckInput) -> String {
     match input {
-        CheckInput::CommitMessage { message } => Some(message.clone()),
-        _ => given_paths(input).map(|paths| paths.join("\n")),
+        CheckInput::CommitMessage { message } => message.clone(),
+        _ => given_paths(input)
+            .map(|paths| paths.join("\n"))
+            .unwrap_or_default(),
     }
 }
 
@@ -153,7 +155,7 @@ mod tests {
     use super::*;
 
     #[test]
-    #[should_panic(expected = "can't pass an empty path list as arguments")]
+    #[should_panic(expected = "only Interface::Mcp can pass an empty path list")]
     fn args_driver_refuses_empty_path_list() {
         let driver = CliBackend { via_stdin: false };
 
@@ -163,7 +165,7 @@ mod tests {
     }
 
     #[test]
-    #[should_panic(expected = "can't pass an empty path list as arguments")]
+    #[should_panic(expected = "only Interface::Mcp can pass an empty path list")]
     fn args_driver_refuses_empty_focus_file_list() {
         let driver = CliBackend { via_stdin: false };
 
@@ -208,7 +210,7 @@ mod tests {
     }
 
     #[test]
-    fn stdin_driver_runs_similarity_without_focus_files_with_stdin_closed() {
+    fn stdin_driver_runs_similarity_without_focus_files_as_empty_pipe() {
         let driver = CliBackend { via_stdin: true };
 
         let invocation = driver.invocation(&CheckInput::CodeSimilarity {
@@ -220,13 +222,13 @@ mod tests {
             invocation,
             Invocation {
                 args: vec!["check".into(), "code-similarity".into()],
-                stdin: None,
+                stdin: Some(String::new()),
             }
         );
     }
 
     #[test]
-    fn stdin_driver_runs_without_input_with_stdin_closed() {
+    fn stdin_driver_runs_without_input_as_empty_pipe() {
         let driver = CliBackend { via_stdin: true };
 
         let invocation = driver.invocation(&CheckInput::CodeComplexity { paths: None });
@@ -235,20 +237,19 @@ mod tests {
             invocation,
             Invocation {
                 args: vec!["check".into(), "code-complexity".into()],
-                stdin: None,
+                stdin: Some(String::new()),
             }
         );
     }
 
     #[test]
-    fn stdin_driver_pipes_empty_path_list_as_empty_stdin() {
+    #[should_panic(expected = "only Interface::Mcp can pass an empty path list")]
+    fn stdin_driver_refuses_empty_path_list() {
         let driver = CliBackend { via_stdin: true };
 
-        let invocation = driver.invocation(&CheckInput::CodeComplexity {
+        driver.invocation(&CheckInput::CodeComplexity {
             paths: Some(vec![]),
         });
-
-        assert_eq!(invocation.stdin, Some(String::new()));
     }
 
     #[test]

@@ -198,6 +198,7 @@ mod code_similarity {
     use Interface::{Cli, CliStdin, Mcp};
 
     #[test_case(Cli)]
+    #[test_case(CliStdin)]
     #[test_case(Mcp)]
     fn duplicated_code_reports_failure(interface: Interface) {
         Scute::new(interface)
@@ -223,6 +224,26 @@ checks:
         Scute::new(interface)
             .source_file("pom.xml", "<project/>")
             .code_similarity()
+            .run()
+            .expect_nothing_checked();
+    }
+
+    #[test_case(Mcp)]
+    fn empty_focus_file_list_reports_nothing_checked(interface: Interface) {
+        Scute::new(interface)
+            .source_file("a.rs", "fn foo(x: i32) -> i32 { x + 1 }")
+            .source_file("b.rs", "fn bar(y: i32) -> i32 { y + 1 }")
+            .scute_config(
+                r"
+checks:
+  code-similarity:
+    thresholds:
+      fail: 0
+    min-tokens: 5
+",
+            )
+            .code_similarity()
+            .files(&[])
             .run()
             .expect_nothing_checked();
     }
@@ -465,6 +486,16 @@ checks:
         Scute::new(interface)
             .source_file("pom.xml", "<project/>")
             .code_complexity()
+            .run()
+            .expect_nothing_checked();
+    }
+
+    #[test_case(Mcp)]
+    fn empty_path_list_reports_nothing_checked(interface: Interface) {
+        Scute::new(interface)
+            .source_file("src/complex.rs", COMPLEX_SOURCE)
+            .code_complexity()
+            .paths(&[])
             .run()
             .expect_nothing_checked();
     }

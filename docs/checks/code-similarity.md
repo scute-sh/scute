@@ -45,11 +45,11 @@ git diff --name-only HEAD~1 | scute check code-similarity
 
 Tool name: `check_code_similarity`
 
-| Parameter      | Type            | Required | Description                                                           |
-| -------------- | --------------- | -------- | --------------------------------------------------------------------- |
-| `project_root` | string          | yes      | Absolute path to the project root. Relative paths resolve against it. |
-| `files`        | array\<string\> | no       | Focus files. Only report clones involving these files.                |
-| `source_dir`   | string          | no       | Directory to scan for source files. Defaults to the project root.     |
+| Parameter      | Type            | Required | Description                                                                                                               |
+| -------------- | --------------- | -------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `project_root` | string          | yes      | Absolute path to the project root. Relative paths resolve against it.                                                     |
+| `files`        | array\<string\> | no       | Focus files. Only report clones involving these files. Leave it out to report every clone; an empty list reports nothing. |
+| `source_dir`   | string          | no       | Directory to scan for source files. Defaults to the project root.                                                         |
 
 ## Configuration
 
