@@ -76,8 +76,12 @@ pub(crate) enum ExitStatus {
 
 #[derive(Debug, Clone, Copy)]
 pub enum Interface {
+    /// The CLI with input as arguments and stdin closed.
     Cli,
+    /// The CLI with input piped into stdin, paths one per line. No input
+    /// pipes an empty stdin.
     CliStdin,
+    /// The MCP server, with input as tool parameters.
     Mcp,
 }
 
@@ -294,7 +298,7 @@ pub struct CodeComplexityCheck {
 impl CodeComplexityCheck {
     /// Hands the check these paths. Without this call, the check gets no
     /// input at all. An empty slice is an explicitly empty list, which only
-    /// `CliStdin` (an empty pipe) and `Mcp` (`[]`) can express: `Cli` refuses it.
+    /// `Mcp` can express (`[]`): both CLI interfaces refuse it.
     pub fn paths(mut self, paths: &[&str]) -> Self {
         self.paths = Some(paths.iter().map(|s| (*s).into()).collect());
         self
@@ -320,7 +324,7 @@ impl CodeSimilarityCheck {
 
     /// Focuses the check on these files. Without this call, the check gets
     /// no input at all. An empty slice is an explicitly empty list, which only
-    /// `CliStdin` (an empty pipe) and `Mcp` (`[]`) can express: `Cli` refuses it.
+    /// `Mcp` can express (`[]`): both CLI interfaces refuse it.
     pub fn files(mut self, files: &[&str]) -> Self {
         self.files = Some(files.iter().map(|s| (*s).into()).collect());
         self

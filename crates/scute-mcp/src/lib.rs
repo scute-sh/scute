@@ -53,7 +53,7 @@ struct CheckDependencyFreshnessInput {
 struct CheckCodeComplexityInput {
     /// Absolute path to the project root. Relative paths resolve against it.
     project_root: String,
-    /// Files or directories to check. Defaults to the project root.
+    /// Files or directories to check. Leave it out to check the whole project; an empty list checks nothing.
     paths: Option<Vec<String>>,
 }
 
@@ -63,7 +63,7 @@ struct CheckSourceFilesInput {
     project_root: String,
     /// Directory to scan for source files. Defaults to the project root.
     source_dir: Option<String>,
-    /// Files to focus on. When empty, all discovered files are checked.
+    /// Files to focus on: only clones involving them get reported. Leave it out to report every clone; an empty list reports nothing.
     files: Option<Vec<String>>,
 }
 
@@ -193,12 +193,8 @@ fn path_or_root(input: Option<String>, project_root: &Path) -> PathBuf {
     input.map_or(project_root.to_path_buf(), |path| project_root.join(path))
 }
 
-/// Joins the given paths onto the project root. `None` when no paths were
-/// given, or an empty list.
 fn rooted_paths(project_root: &Path, paths: Option<Vec<String>>) -> Option<Vec<PathBuf>> {
-    paths
-        .filter(|paths| !paths.is_empty())
-        .map(|paths| paths.iter().map(|path| project_root.join(path)).collect())
+    paths.map(|paths| paths.iter().map(|path| project_root.join(path)).collect())
 }
 
 fn run_check<D: Default + DeserializeOwned>(
