@@ -47,8 +47,8 @@ impl Definition {
 /// `project_root` is scored. Files matching `exclude` patterns, relative to
 /// `project_root`, are skipped whether found in a directory or given directly.
 ///
-/// Returns one [`Evaluation`] per function found. When no supported files
-/// exist, returns a single passing evaluation.
+/// Returns one [`Evaluation`] per function found, and none when there's no
+/// function to score (no supported files, or files without functions).
 ///
 /// ```no_run
 /// use std::path::{Path, PathBuf};
@@ -80,7 +80,7 @@ pub fn check(
     let languages = languages();
     let files = resolve_files(project_root, paths, definition, &languages)?;
 
-    let evaluations: Vec<Evaluation> = files
+    Ok(files
         .iter()
         .filter_map(|path| {
             let content = std::fs::read_to_string(path).ok()?;
@@ -91,23 +91,7 @@ pub fn check(
             Some(score_file(&file, &languages, &thresholds))
         })
         .flatten()
-        .collect();
-
-    Ok(with_fallback(evaluations, paths, thresholds))
-}
-
-fn with_fallback(
-    evaluations: Vec<Evaluation>,
-    paths: &[PathBuf],
-    thresholds: Thresholds,
-) -> Vec<Evaluation> {
-    if !evaluations.is_empty() {
-        return evaluations;
-    }
-    let label = paths
-        .first()
-        .map_or_else(|| ".".into(), |p| p.display().to_string());
-    vec![Evaluation::completed(label, 0, thresholds, vec![])]
+        .collect())
 }
 
 fn resolve_files(
@@ -300,13 +284,12 @@ mod tests {
     }
 
     #[test]
-    fn returns_single_pass_for_empty_directory() {
+    fn empty_directory_returns_no_evaluations() {
         let dir = TestDir::new();
 
         let evals = check_dir(&dir.root());
 
-        assert_eq!(evals.len(), 1);
-        assert!(evals[0].is_pass());
+        assert!(evals.is_empty(), "got: {evals:?}");
     }
 
     #[test]
@@ -450,13 +433,12 @@ mod tests {
     }
 
     #[test]
-    fn skips_unsupported_files() {
+    fn directory_with_only_unsupported_files_returns_no_evaluations() {
         let dir = TestDir::new().source_file("code.py", "def foo(): pass");
 
         let evals = check_dir(&dir.root());
 
-        assert_eq!(evals.len(), 1);
-        assert!(evals[0].is_pass());
+        assert!(evals.is_empty(), "got: {evals:?}");
     }
 
     #[test]

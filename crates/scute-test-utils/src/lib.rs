@@ -373,6 +373,18 @@ impl CheckResult {
         self
     }
 
+    /// Nothing was evaluated, and the run still succeeded.
+    pub fn expect_nothing_checked(&self) -> &Self {
+        assert_eq!(
+            self.summary(),
+            &serde_json::json!({"evaluated": 0, "passed": 0, "warned": 0, "failed": 0, "errored": 0}),
+            "expected nothing checked, got: {}",
+            self.json
+        );
+        self.assert_exit_status(ExitStatus::Success);
+        self
+    }
+
     pub fn expect_warn(&self) -> &Self {
         self.assert_summary_nonzero("warned");
         self.assert_exit_status(ExitStatus::Success);
