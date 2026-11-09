@@ -219,6 +219,29 @@ checks:
 
     #[test_case(Cli)]
     #[test_case(Mcp)]
+    fn project_without_supported_files_reports_nothing_checked(interface: Interface) {
+        Scute::new(interface)
+            .bare_project()
+            .source_file("pom.xml", "<project/>")
+            .code_similarity()
+            .run()
+            .expect_nothing_checked();
+    }
+
+    #[test_case(Cli)]
+    #[test_case(Mcp)]
+    fn source_dir_without_supported_files_reports_nothing_checked(interface: Interface) {
+        Scute::new(interface)
+            .source_file("src/a.rs", "fn foo(x: i32) -> i32 { x + 1 }")
+            .source_file("docs/README.md", "# Docs")
+            .code_similarity()
+            .source_dir("docs")
+            .run()
+            .expect_nothing_checked();
+    }
+
+    #[test_case(Cli)]
+    #[test_case(Mcp)]
     fn exclude_patterns_skip_matching_files(interface: Interface) {
         Scute::new(interface)
             .source_file("a.rs", "fn foo(x: i32) -> i32 { x + 1 }")
@@ -368,6 +391,30 @@ checks:
 
     #[test_case(Cli)]
     #[test_case(Mcp)]
+    fn project_without_supported_files_reports_nothing_checked(interface: Interface) {
+        Scute::new(interface)
+            .bare_project()
+            .source_file("pom.xml", "<project/>")
+            .code_complexity()
+            .run()
+            .expect_nothing_checked();
+    }
+
+    #[test_case(Cli)]
+    #[test_case(CliStdin)]
+    #[test_case(Mcp)]
+    fn directory_without_supported_files_reports_nothing_checked(interface: Interface) {
+        Scute::new(interface)
+            .source_file("src/complex.rs", COMPLEX_SOURCE)
+            .source_file("docs/README.md", "# Docs")
+            .code_complexity()
+            .paths(&["docs"])
+            .run()
+            .expect_nothing_checked();
+    }
+
+    #[test_case(Cli)]
+    #[test_case(Mcp)]
     fn config_thresholds_override_defaults(interface: Interface) {
         Scute::new(interface)
             .source_file("src/complex.rs", COMPLEX_SOURCE)
@@ -402,7 +449,7 @@ checks:
             )
             .code_complexity()
             .run()
-            .expect_pass();
+            .expect_nothing_checked();
     }
 
     #[test_case(Cli)]
@@ -423,7 +470,7 @@ checks:
             .code_complexity()
             .paths(&["src"])
             .run()
-            .expect_no_findings();
+            .expect_nothing_checked();
     }
 
     #[test_case(Cli)]
@@ -444,7 +491,7 @@ checks:
             .code_complexity()
             .paths(&["src/complex.rs"])
             .run()
-            .expect_no_findings();
+            .expect_nothing_checked();
     }
 
     #[test_case(Cli)]

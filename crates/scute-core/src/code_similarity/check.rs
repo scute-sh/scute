@@ -88,7 +88,9 @@ impl Definition {
 ///
 /// Discovers supported source files (Rust, JavaScript, TypeScript), runs
 /// clone detection, and returns one [`Evaluation`] per clone group found.
-/// When no clones are detected, returns a single passing evaluation.
+/// When no clones are detected, returns a single passing evaluation. When
+/// `source_dir` holds no supported files, there's nothing to compare and
+/// no evaluation is returned.
 ///
 /// Only files inside `source_dir` are compared. `exclude` patterns match
 /// paths relative to `project_root`, wherever `source_dir` points.
@@ -135,6 +137,9 @@ pub fn check(
     };
 
     let source_files = read_sources(&canonical_dir, project_root, definition, &languages);
+    if source_files.is_empty() {
+        return Ok(vec![]);
+    }
     let trees = parse_trees(&source_files, &languages)?;
     let token_sets: Vec<Vec<_>> = trees.iter().map(SourceTree::tokens).collect();
     let contexts = build_contexts(&trees, &token_sets, &source_files);
@@ -383,13 +388,12 @@ mod tests {
     }
 
     #[test]
-    fn empty_directory_passes_with_zero_observed() {
+    fn empty_directory_returns_no_evaluations() {
         let dir = TestDir::new();
 
         let evals = check_dir(&dir.root());
 
-        assert_that!(evals, len(eq(1)));
-        assert!(evals[0].is_pass());
+        assert_that!(evals, is_empty());
     }
 
     #[test]
@@ -407,15 +411,14 @@ mod tests {
     }
 
     #[test]
-    fn directory_with_only_unsupported_files_passes() {
+    fn directory_with_only_unsupported_files_returns_no_evaluations() {
         let dir = TestDir::new()
             .source_file("readme.md", "# Hello")
             .source_file("data.json", "{}");
 
         let evals = check_dir(&dir.root());
 
-        assert_that!(evals, len(eq(1)));
-        assert!(evals[0].is_pass());
+        assert_that!(evals, is_empty());
     }
 
     #[test]
