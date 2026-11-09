@@ -40,7 +40,7 @@ pub fn check_with_low_thresholds(dir: &Path) -> Vec<Evaluation> {
 
     check(
         dir,
-        &[],
+        None,
         &Definition {
             min_tokens: Some(5),
             thresholds: Some(Thresholds {

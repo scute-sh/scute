@@ -12,12 +12,13 @@
 //! # Usage
 //!
 //! ```no_run
-//! use std::path::PathBuf;
+//! use std::path::{Path, PathBuf};
 //! use scute_core::code_complexity::{self, Definition};
 //!
 //! let results = code_complexity::check(
-//!     &[PathBuf::from("src/")],  // files or directories to check
-//!     &Definition::default(),    // warn: 5, fail: 10
+//!     Path::new("."),                 // project root, checked when no paths are given
+//!     Some(&[PathBuf::from("src/")]), // files or directories to check
+//!     &Definition::default(),         // warn: 5, fail: 10
 //! );
 //! ```
 //!

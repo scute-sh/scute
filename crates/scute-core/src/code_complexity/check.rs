@@ -43,17 +43,19 @@ impl Definition {
 /// Score cognitive complexity for every function in the given paths.
 ///
 /// Accepts a mix of files and directories. Directories are walked to
-/// discover supported files (respecting `exclude` patterns).
+/// discover supported files (respecting `exclude` patterns). Without paths
+/// (`None`), the whole `project_root` is scored.
 ///
 /// Returns one [`Evaluation`] per function found. When no supported files
 /// exist, returns a single passing evaluation.
 ///
 /// ```no_run
-/// use std::path::PathBuf;
+/// use std::path::{Path, PathBuf};
 /// use scute_core::code_complexity::{self, Definition};
 ///
 /// let evals = code_complexity::check(
-///     &[PathBuf::from("src/")],
+///     Path::new("."),
+///     Some(&[PathBuf::from("src/")]),
 ///     &Definition::default(),
 /// ).unwrap();
 /// for eval in &evals {
@@ -67,9 +69,12 @@ impl Definition {
 ///
 /// Returns `ExecutionError` if any path is invalid.
 pub fn check(
-    paths: &[PathBuf],
+    project_root: &Path,
+    paths: Option<&[PathBuf]>,
     definition: &Definition,
 ) -> Result<Vec<Evaluation>, ExecutionError> {
+    let whole_project = [project_root.to_path_buf()];
+    let paths = paths.unwrap_or(&whole_project);
     let thresholds = definition.thresholds();
     let languages = languages();
     let files = resolve_files(paths, definition, &languages)?;
@@ -259,7 +264,7 @@ mod tests {
     use test_case::test_case;
 
     fn check_dir(dir: &Path) -> Vec<Evaluation> {
-        check(&[dir.to_path_buf()], &Definition::default()).unwrap()
+        check(dir, None, &Definition::default()).unwrap()
     }
 
     #[test]
@@ -305,7 +310,12 @@ mod tests {
             .source_file("target.rs", "fn focused() { if true {} }")
             .source_file("other.rs", "fn ignored() { if true {} }");
 
-        let evals = check(&[dir.path("target.rs")], &Definition::default()).unwrap();
+        let evals = check(
+            &dir.root(),
+            Some(&[dir.path("target.rs")]),
+            &Definition::default(),
+        )
+        .unwrap();
 
         assert!(evals.iter().all(|e| e.target.contains("focused")));
     }
@@ -424,7 +434,11 @@ mod tests {
 
     #[test]
     fn rejects_nonexistent_path() {
-        let result = check(&[PathBuf::from("/does/not/exist")], &Definition::default());
+        let result = check(
+            Path::new("."),
+            Some(&[PathBuf::from("/does/not/exist")]),
+            &Definition::default(),
+        );
 
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().code, "invalid_target");
@@ -443,7 +457,8 @@ mod tests {
     #[test]
     fn rejects_nonexistent_file() {
         let result = check(
-            &[PathBuf::from("/nonexistent/file.rs")],
+            Path::new("."),
+            Some(&[PathBuf::from("/nonexistent/file.rs")]),
             &Definition::default(),
         );
 
@@ -455,7 +470,11 @@ mod tests {
     fn rejects_unsupported_file_extension() {
         let dir = TestDir::new().source_file("code.py", "def foo(): pass");
 
-        let result = check(&[dir.path("code.py")], &Definition::default());
+        let result = check(
+            &dir.root(),
+            Some(&[dir.path("code.py")]),
+            &Definition::default(),
+        );
 
         assert!(result.is_err());
         assert_eq!(result.unwrap_err().code, "invalid_target");
