@@ -8,7 +8,7 @@ use super::parse_source;
 use super::rules::SimilarityRules;
 use super::tree::SourceTree;
 use crate::files;
-use crate::files::SourceFile;
+use crate::files::{InvalidPath, InvalidPathKind, SourceFile};
 use crate::language::{self, JsFamily, LanguageRegistry, Rust};
 use crate::{Evaluation, ExecutionError, Thresholds};
 
@@ -121,14 +121,11 @@ pub fn check(
         recovery: "check that the path exists and is a directory".into(),
     })?;
     let languages = languages();
-    let focus_files = match files::validate_focus_files(
-        focus_files,
-        &languages.supported_extensions(),
-        "only Rust, JavaScript, and TypeScript files are supported",
-    ) {
-        Ok(files) => files,
-        Err(errors) => return Ok(errors),
-    };
+    let focus = files::resolve_paths(focus_files, &languages.supported_extensions(), &[]);
+    if !focus.invalid.is_empty() {
+        return Ok(focus.invalid.into_iter().map(invalid_focus_path).collect());
+    }
+    let focus_files = (!focus_files.is_empty()).then_some(focus.files);
 
     let source_files = read_sources(&canonical_dir, definition, &languages);
     let trees = parse_trees(&source_files, &languages)?;
@@ -136,7 +133,7 @@ pub fn check(
     let contexts = build_contexts(&trees, &token_sets, &source_files);
 
     let clone_groups = run_detection(&token_sets, definition.min_tokens());
-    let relevant = filter_by_focus(&clone_groups, &focus_files, &contexts);
+    let relevant = filter_by_focus(&clone_groups, focus_files.as_deref(), &contexts);
     let thresholds = definition.thresholds();
     let evaluations = evaluate_groups(&relevant, &contexts, &thresholds);
 
@@ -150,6 +147,30 @@ pub fn check(
     }
 
     Ok(evaluations)
+}
+
+fn invalid_focus_path(invalid: InvalidPath) -> Evaluation {
+    let (code, recovery) = match invalid.kind {
+        InvalidPathKind::UnsupportedExtension => (
+            "unsupported_language",
+            "only Rust, JavaScript, and TypeScript files are supported",
+        ),
+        InvalidPathKind::Unreadable(_)
+        | InvalidPathKind::ExpectedDirectory
+        | InvalidPathKind::InvalidDirectory(_) => (
+            "unreadable_file",
+            "check that the file exists and is readable",
+        ),
+    };
+    let message = invalid.to_string();
+    Evaluation::errored(
+        invalid.path,
+        ExecutionError {
+            code: code.into(),
+            message,
+            recovery: recovery.into(),
+        },
+    )
 }
 
 fn build_contexts<'a>(
@@ -169,11 +190,16 @@ fn build_contexts<'a>(
         .collect()
 }
 
+/// Keeps the clone groups involving a focus file. Without focus files,
+/// every group is relevant.
 fn filter_by_focus<'a>(
     clone_groups: &'a [CloneGroup],
-    focus_files: &[PathBuf],
+    focus_files: Option<&[PathBuf]>,
     contexts: &[SourceContext],
 ) -> Vec<&'a CloneGroup> {
+    let Some(focus_files) = focus_files else {
+        return clone_groups.iter().collect();
+    };
     let focus_strings: Vec<String> = focus_files
         .iter()
         .map(|p| p.display().to_string())
@@ -182,10 +208,9 @@ fn filter_by_focus<'a>(
     clone_groups
         .iter()
         .filter(|group| {
-            focus_strings.is_empty()
-                || group.occurrences.iter().any(|occ| {
-                    focus_strings.contains(&contexts[occ.source_idx].tree.source_id().to_string())
-                })
+            group.occurrences.iter().any(|occ| {
+                focus_strings.contains(&contexts[occ.source_idx].tree.source_id().to_string())
+            })
         })
         .collect()
 }
@@ -515,6 +540,30 @@ mod tests {
         let evals = check_focused(&dir.root(), &[dir.path("a.rs"), dir.path("c.rs")]);
 
         assert_that!(evals, len(eq(2)));
+    }
+
+    #[test]
+    fn focus_directory_reports_clone_groups_involving_its_files() {
+        let dir = TestDir::new()
+            .source_file("feature/a.rs", "fn foo(x: i32) -> i32 { x + 1 }")
+            .source_file("b.rs", "fn bar(y: i32) -> i32 { y + 1 }");
+
+        let evals = check_focused(&dir.root(), &[dir.path("feature")]);
+
+        assert_that!(evals, len(eq(1)));
+        assert_location_contains(unwrap_evidence(&evals[0]), "feature/a.rs");
+    }
+
+    #[test]
+    fn focus_directory_without_supported_files_reports_no_clones() {
+        let dir = clone_pair().source_file("docs/guide.md", "# guide");
+
+        let evals = check_focused(&dir.root(), &[dir.path("docs")]);
+
+        assert!(
+            evals.iter().all(Evaluation::is_pass),
+            "expected no clones reported, got: {evals:?}"
+        );
     }
 
     fn error_code(eval: &Evaluation) -> &str {
