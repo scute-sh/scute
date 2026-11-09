@@ -64,8 +64,9 @@ impl TestDir {
 /// How the check process terminated, from the interface's perspective.
 ///
 /// CLI maps exit codes: 0 → Success, 1 → Failure, 2 → Error.
-/// MCP maps `isError` + JSON shape: no error → Success, isError + findings → Failure,
-/// isError + error object → Error.
+/// MCP maps `isError` + JSON shape: no error → Success, isError + error object or
+/// errored findings → Error, isError otherwise → Failure. Errors take precedence
+/// over failures, like the CLI's exit codes.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub(crate) enum ExitStatus {
     Success,
@@ -503,6 +504,24 @@ impl CheckResult {
             "expected no findings, got: {:?}",
             self.findings()
         );
+        self
+    }
+
+    /// One finding is an error with this code, for a target containing
+    /// `target`, and the run exits with an error.
+    pub fn expect_error_finding(&self, target: &str, code: &str) -> &Self {
+        assert!(
+            self.findings().iter().any(|finding| {
+                finding["status"] == "error"
+                    && finding["error"]["code"] == code
+                    && finding["target"]
+                        .as_str()
+                        .is_some_and(|t| t.contains(target))
+            }),
+            "expected a {code} error finding for {target}, got: {}",
+            self.json
+        );
+        self.assert_exit_status(ExitStatus::Error);
         self
     }
 
