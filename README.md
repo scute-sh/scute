@@ -189,15 +189,14 @@ Wire Scute into git hooks so every commit gets checked automatically.
 # .git/hooks/pre-commit
 #!/bin/sh
 set -e
-files=$(git diff --cached --diff-filter=d --name-only)
-[ -n "$files" ] || exit 0
-printf '%s\n' "$files" | scute check code-complexity
-printf '%s\n' "$files" | scute check code-similarity
+git diff --cached -z --diff-filter=d --name-only | xargs -0r scute check code-complexity
+git diff --cached -z --diff-filter=d --name-only | xargs -0r scute check code-similarity
 ```
 
 Hand over every staged file: the checks skip the ones in languages they don't
-support. When the list comes out empty (a commit that only deletes files, say),
-skip the checks: with no files, they cover the whole project.
+support. `xargs -r` skips the checks when there's nothing to hand over (a
+commit that only deletes files, say), since with no files they cover the whole
+project. `-z` and `-0` keep names with spaces, quotes, or accents intact.
 
 ```sh
 # .git/hooks/commit-msg
@@ -217,11 +216,8 @@ Exit codes are designed for automation: `0` pass, `1` fail, `2` error.
 
 ```yaml
 # GitHub Actions — runs on pull requests
-- run: |
-    files=$(git diff --diff-filter=d --name-only origin/main...HEAD)
-    [ -n "$files" ] || exit 0
-    printf '%s\n' "$files" | scute check code-complexity
-    printf '%s\n' "$files" | scute check code-similarity
+- run: git diff -z --diff-filter=d --name-only origin/main...HEAD | xargs -0r scute check code-complexity
+- run: git diff -z --diff-filter=d --name-only origin/main...HEAD | xargs -0r scute check code-similarity
 - run: scute check commit-message "${{ github.event.pull_request.title }}"
 ```
 

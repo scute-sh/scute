@@ -84,10 +84,10 @@ Check a directory:
 scute check code-complexity src/
 ```
 
-Pipe the files changed in the last commit:
+Check the files changed in the last commit:
 
 ```sh
-git diff --diff-filter=d --name-only HEAD~1 | scute check code-complexity
+git diff -z --diff-filter=d --name-only HEAD~1 | xargs -0r scute check code-complexity
 ```
 
 ### Which files get checked
@@ -99,7 +99,11 @@ git diff --diff-filter=d --name-only HEAD~1 | scute check code-complexity
 
 ### No paths checks the whole project
 
-With no arguments and nothing on stdin, the check covers the whole working directory. That includes an empty pipe: when `git diff` lists no files (say, a commit that only deletes files), piping it into the check scans everything. To check only a change's files, skip the check when there are none, like the [pre-commit hook](../../README.md#guide-your-commits) does. With `xargs`, use `xargs -r`: plain `xargs` runs the check once with no paths.
+With no arguments and nothing on stdin, the check covers the whole working directory. That includes an empty pipe: when `git diff` lists no files (say, a commit that only deletes files), piping it straight into the check scans everything. To check only a change's files, go through `xargs -0r` as in the example above:
+
+- `-r` skips the check when there are no files. Plain `xargs` runs it once with no paths.
+- `git diff -z` with `xargs -0` keeps names with spaces, quotes, or accents intact.
+- On a very long list, `xargs` splits the files across several runs, each printing its own report.
 
 Over MCP, leaving out `paths` checks the whole project, and `paths: []` checks nothing.
 

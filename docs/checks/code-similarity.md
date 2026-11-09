@@ -35,10 +35,10 @@ Focus on specific files:
 scute check code-similarity src/utils/format.rs
 ```
 
-Pipe the files changed in the last commit:
+Focus on the files changed in the last commit:
 
 ```sh
-git diff --diff-filter=d --name-only HEAD~1 | scute check code-similarity
+git diff -z --diff-filter=d --name-only HEAD~1 | xargs -0r scute check code-similarity
 ```
 
 ### Which files get compared
@@ -50,7 +50,11 @@ git diff --diff-filter=d --name-only HEAD~1 | scute check code-similarity
 
 ### No focus files reports every clone
 
-With no arguments and nothing on stdin, the check reports every clone in the source directory. That includes an empty pipe: when `git diff` lists no files (say, a commit that only deletes files), piping it into the check reports clones anywhere in the project. To check only a change's files, skip the check when there are none, like the [pre-commit hook](../../README.md#guide-your-commits) does. With `xargs`, use `xargs -r`: plain `xargs` runs the check once with no files.
+With no arguments and nothing on stdin, the check reports every clone in the source directory. That includes an empty pipe: when `git diff` lists no files (say, a commit that only deletes files), piping it straight into the check reports clones anywhere in the project. To check only a change's files, go through `xargs -0r` as in the example above:
+
+- `-r` skips the check when there are no files. Plain `xargs` runs it once with no files.
+- `git diff -z` with `xargs -0` keeps names with spaces, quotes, or accents intact.
+- On a very long list, `xargs` splits the files across several runs, each printing its own report.
 
 Over MCP, leaving out `files` reports every clone, and `files: []` reports nothing.
 
