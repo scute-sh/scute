@@ -348,6 +348,29 @@ checks:
     #[test_case(Cli)]
     #[test_case(CliStdin)]
     #[test_case(Mcp)]
+    fn missing_focus_file_reports_an_error_next_to_the_other_results(interface: Interface) {
+        Scute::new(interface)
+            .source_file("a.rs", "fn foo(x: i32) -> i32 { x + 1 }")
+            .source_file("b.rs", "fn bar(y: i32) -> i32 { y + 1 }")
+            .scute_config(
+                r"
+checks:
+  code-similarity:
+    thresholds:
+      fail: 0
+    min-tokens: 5
+",
+            )
+            .code_similarity()
+            .files(&["a.rs", "gone.rs"])
+            .run()
+            .expect_finding_count(2)
+            .expect_error_finding("gone.rs", "invalid_target");
+    }
+
+    #[test_case(Cli)]
+    #[test_case(CliStdin)]
+    #[test_case(Mcp)]
     fn list_without_supported_files_reports_nothing_checked(interface: Interface) {
         Scute::new(interface)
             .source_file("a.rs", "fn foo(x: i32) -> i32 { x + 1 }")
@@ -579,12 +602,26 @@ function process(items: number[]): number {
 
     #[test_case(Cli)]
     #[test_case(Mcp)]
-    fn nonexistent_path_produces_error(interface: Interface) {
+    fn nonexistent_path_reports_an_error_naming_it(interface: Interface) {
         Scute::new(interface)
             .code_complexity()
             .paths(&["/nonexistent/path"])
             .run()
-            .expect_error("invalid_target");
+            .expect_finding_count(1)
+            .expect_error_finding("/nonexistent/path", "invalid_target");
+    }
+
+    #[test_case(Cli)]
+    #[test_case(CliStdin)]
+    #[test_case(Mcp)]
+    fn missing_path_reports_an_error_next_to_the_other_results(interface: Interface) {
+        Scute::new(interface)
+            .source_file("src/complex.rs", COMPLEX_SOURCE)
+            .code_complexity()
+            .paths(&["src/complex.rs", "src/gone.rs"])
+            .run()
+            .expect_finding_count(2)
+            .expect_error_finding("gone.rs", "invalid_target");
     }
 
     #[test_case(Cli)]

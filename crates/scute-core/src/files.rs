@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 use std::{fmt, io};
 
+use crate::ExecutionError;
 use ignore::WalkBuilder;
 use ignore::overrides::{Override, OverrideBuilder};
 
@@ -93,6 +94,16 @@ impl fmt::Display for InvalidPath {
 }
 
 impl std::error::Error for InvalidPath {}
+
+impl From<&InvalidPath> for ExecutionError {
+    fn from(invalid: &InvalidPath) -> Self {
+        Self {
+            code: "invalid_target".into(),
+            message: invalid.to_string(),
+            recovery: "check that the path exists and is readable".into(),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub enum InvalidPathKind {

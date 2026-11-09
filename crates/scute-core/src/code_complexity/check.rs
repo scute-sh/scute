@@ -48,7 +48,9 @@ impl Definition {
 /// `project_root`, are skipped whether found in a directory or given directly.
 ///
 /// Returns one [`Evaluation`] per function found, and none when there's no
-/// function to score (no supported files, or files without functions).
+/// function to score (no supported files, or files without functions). A
+/// path that doesn't exist or can't be read gets its own errored evaluation,
+/// and the other paths are still scored.
 ///
 /// ```no_run
 /// use std::path::{Path, PathBuf};
@@ -68,7 +70,8 @@ impl Definition {
 ///
 /// # Errors
 ///
-/// Returns `ExecutionError` if any path is invalid.
+/// Doesn't fail as a whole: problems with individual paths are reported as
+/// errored evaluations instead.
 pub fn check(
     project_root: &Path,
     paths: Option<&[PathBuf]>,
@@ -78,9 +81,11 @@ pub fn check(
     let paths = paths.unwrap_or(&whole_project);
     let thresholds = definition.thresholds();
     let languages = languages();
-    let files = resolve_files(project_root, paths, definition, &languages)?;
+    let resolved = resolve_files(project_root, paths, definition, &languages);
 
-    Ok(files
+    let errors = resolved.invalid.into_iter().map(invalid_path);
+    let scores = resolved
+        .files
         .iter()
         .filter_map(|path| {
             let content = std::fs::read_to_string(path).ok()?;
@@ -90,8 +95,8 @@ pub fn check(
             };
             Some(score_file(&file, &languages, &thresholds))
         })
-        .flatten()
-        .collect())
+        .flatten();
+    Ok(errors.chain(scores).collect())
 }
 
 fn resolve_files(
@@ -99,21 +104,17 @@ fn resolve_files(
     paths: &[PathBuf],
     definition: &Definition,
     languages: &LanguageRegistry<dyn ComplexityRules>,
-) -> Result<Vec<PathBuf>, ExecutionError> {
+) -> files::ResolvedPaths {
     let exclusions = Exclusions::new(
         project_root,
         definition.exclude.as_deref().unwrap_or_default(),
     );
-    let extensions = languages.supported_extensions();
-    let resolved = files::resolve_paths(paths, &extensions, &exclusions);
-    match resolved.invalid.into_iter().next() {
-        Some(invalid) => Err(ExecutionError {
-            code: "invalid_target".into(),
-            message: invalid.to_string(),
-            recovery: "check that the path exists and is readable".into(),
-        }),
-        None => Ok(resolved.files),
-    }
+    files::resolve_paths(paths, &languages.supported_extensions(), &exclusions)
+}
+
+fn invalid_path(invalid: files::InvalidPath) -> Evaluation {
+    let error = ExecutionError::from(&invalid);
+    Evaluation::errored(invalid.path, error)
 }
 
 pub(crate) fn languages() -> LanguageRegistry<dyn ComplexityRules> {
@@ -421,15 +422,17 @@ mod tests {
     }
 
     #[test]
-    fn rejects_nonexistent_path() {
-        let result = check(
+    fn nonexistent_path_without_extension_returns_an_error_naming_it() {
+        let evals = check(
             Path::new("."),
             Some(&[PathBuf::from("/does/not/exist")]),
             &Definition::default(),
-        );
+        )
+        .unwrap();
 
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err().code, "invalid_target");
+        assert_eq!(evals.len(), 1, "got: {evals:?}");
+        assert!(evals[0].is_error());
+        assert_eq!(evals[0].target, "/does/not/exist");
     }
 
     #[test]
@@ -442,15 +445,17 @@ mod tests {
     }
 
     #[test]
-    fn rejects_nonexistent_file() {
-        let result = check(
+    fn nonexistent_source_file_returns_an_error_naming_it() {
+        let evals = check(
             Path::new("."),
             Some(&[PathBuf::from("/nonexistent/file.rs")]),
             &Definition::default(),
-        );
+        )
+        .unwrap();
 
-        assert!(result.is_err());
-        assert_eq!(result.unwrap_err().code, "invalid_target");
+        assert_eq!(evals.len(), 1, "got: {evals:?}");
+        assert!(evals[0].is_error());
+        assert_eq!(evals[0].target, "/nonexistent/file.rs");
     }
 
     #[test]
