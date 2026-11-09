@@ -193,7 +193,8 @@ fn path_or_root(input: Option<String>, project_root: &Path) -> PathBuf {
     input.map_or(project_root.to_path_buf(), |path| project_root.join(path))
 }
 
-/// Joins the given paths onto the project root. `None` when no paths were given.
+/// Joins the given paths onto the project root. `None` when no paths were
+/// given, or an empty list.
 fn rooted_paths(project_root: &Path, paths: Option<Vec<String>>) -> Option<Vec<PathBuf>> {
     paths
         .filter(|paths| !paths.is_empty())
