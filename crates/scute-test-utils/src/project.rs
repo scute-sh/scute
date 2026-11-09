@@ -2,8 +2,9 @@ use std::path::Path;
 
 use tempfile::TempDir;
 
-enum ProjectKind {
-    Empty,
+/// The tool that owns a project's manifest and installs its dependencies.
+#[derive(Clone, Copy)]
+pub enum PackageManager {
     Cargo,
     Npm,
     Pnpm,
@@ -16,7 +17,7 @@ enum ProjectKind {
 /// [`build()`](Self::build) to materialize the directory. The returned
 /// [`TempDir`] is cleaned up on drop.
 pub struct TestProject {
-    kind: ProjectKind,
+    package_manager: Option<PackageManager>,
     dependencies: Vec<(String, String)>,
     dev_dependencies: Vec<(String, String)>,
     members: Vec<(String, TestMember)>,
@@ -44,9 +45,9 @@ impl TestMember {
 }
 
 impl TestProject {
-    fn new(kind: ProjectKind) -> Self {
+    fn new(package_manager: Option<PackageManager>) -> Self {
         Self {
-            kind,
+            package_manager,
             dependencies: Vec::new(),
             dev_dependencies: Vec::new(),
             members: Vec::new(),
@@ -58,22 +59,29 @@ impl TestProject {
 
     /// A bare directory with no project scaffolding.
     pub fn empty() -> Self {
-        Self::new(ProjectKind::Empty)
+        Self::new(None)
     }
 
     /// A minimal npm project. Runs `npm install` on build to resolve dependencies.
     pub fn npm() -> Self {
-        Self::new(ProjectKind::Npm)
+        Self::new(Some(PackageManager::Npm))
     }
 
     /// A minimal pnpm project. Runs `pnpm install` on build to resolve dependencies.
     pub fn pnpm() -> Self {
-        Self::new(ProjectKind::Pnpm)
+        Self::new(Some(PackageManager::Pnpm))
     }
 
     /// A minimal Cargo project with `Cargo.toml` and empty `src/lib.rs`.
     pub fn cargo() -> Self {
-        Self::new(ProjectKind::Cargo)
+        Self::new(Some(PackageManager::Cargo))
+    }
+
+    pub(crate) fn package_manager(self, package_manager: PackageManager) -> Self {
+        Self {
+            package_manager: Some(package_manager),
+            ..self
+        }
     }
 
     pub fn dependency(mut self, name: &str, version: &str) -> Self {
@@ -125,30 +133,39 @@ impl TestProject {
         dir
     }
 
+    fn needs_manifest(&self) -> bool {
+        !(self.dependencies.is_empty()
+            && self.dev_dependencies.is_empty()
+            && self.members.is_empty())
+    }
+
     fn setup_at(self, root: &Path) {
         std::fs::create_dir_all(root).unwrap();
-        match self.kind {
-            ProjectKind::Cargo => setup_cargo_project(
+        match self.package_manager {
+            Some(PackageManager::Cargo) => setup_cargo_project(
                 root,
                 &self.dependencies,
                 &self.dev_dependencies,
                 &self.members,
             ),
-            ProjectKind::Npm => setup_js_project(
+            Some(PackageManager::Npm) => setup_js_project(
                 root,
                 &self.dependencies,
                 &self.dev_dependencies,
                 &self.members,
                 &JsToolchain::Npm,
             ),
-            ProjectKind::Pnpm => setup_js_project(
+            Some(PackageManager::Pnpm) => setup_js_project(
                 root,
                 &self.dependencies,
                 &self.dev_dependencies,
                 &self.members,
                 &JsToolchain::Pnpm,
             ),
-            ProjectKind::Empty => {}
+            None => assert!(
+                !self.needs_manifest(),
+                "dependencies need a manifest: pick a package manager, e.g. PackageManager::Cargo"
+            ),
         }
         write_source_files(root, &self.source_files);
         if let Some(yaml) = &self.scute_config {

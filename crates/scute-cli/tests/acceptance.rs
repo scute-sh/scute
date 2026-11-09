@@ -103,7 +103,7 @@ checks:
 }
 
 mod dependency_freshness {
-    use scute_test_utils::{Interface, Scute, TestProject};
+    use scute_test_utils::{Interface, PackageManager::Cargo, Scute, TestProject};
     use test_case::test_case;
 
     use Interface::{Cli, Mcp};
@@ -112,6 +112,7 @@ mod dependency_freshness {
     #[test_case(Mcp)]
     fn fresh_project_passes(interface: Interface) {
         Scute::new(interface)
+            .package_manager(Cargo)
             .dependency_freshness()
             .run()
             .expect_pass();
@@ -121,6 +122,7 @@ mod dependency_freshness {
     #[test_case(Mcp)]
     fn outdated_deps_fail(interface: Interface) {
         Scute::new(interface)
+            .package_manager(Cargo)
             .dependency("itoa", "=0.4.8")
             .dependency_freshness()
             .run()
@@ -153,6 +155,7 @@ mod dependency_freshness {
     #[test_case(Mcp)]
     fn config_thresholds_override_defaults(interface: Interface) {
         Scute::new(interface)
+            .package_manager(Cargo)
             .dependency("itoa", "=0.4.8")
             .scute_config(
                 r"
@@ -171,6 +174,7 @@ checks:
     #[test_case(Mcp)]
     fn warn_between_thresholds(interface: Interface) {
         Scute::new(interface)
+            .package_manager(Cargo)
             .dependency("itoa", "=0.4.8")
             .scute_config(
                 r"
