@@ -102,7 +102,7 @@ fn run(cli: Cli) -> Result<()> {
                     Ok(())
                 }
                 Checks::CodeComplexity { paths } => {
-                    let paths = given_paths(paths);
+                    let paths = requested_paths(paths);
                     let definition = check_definition(&config, code_complexity::CHECK_NAME);
                     let result =
                         code_complexity::check(&project_root, paths.as_deref(), &definition);
@@ -110,7 +110,7 @@ fn run(cli: Cli) -> Result<()> {
                 }
                 Checks::CodeSimilarity { source_dir, files } => {
                     let source_dir = source_dir.unwrap_or_else(|| project_root.clone());
-                    let focus_paths = given_paths(files);
+                    let focus_paths = requested_paths(files);
                     let definition = check_definition(&config, code_similarity::CHECK_NAME);
                     let result =
                         code_similarity::check(&source_dir, focus_paths.as_deref(), &definition);
@@ -219,7 +219,7 @@ fn resolve_target_path(path: Option<String>) -> PathBuf {
 
 /// Paths from the arguments, or from stdin when there are none.
 /// `None` when neither holds any.
-fn given_paths(args: Vec<PathBuf>) -> Option<Vec<PathBuf>> {
+fn requested_paths(args: Vec<PathBuf>) -> Option<Vec<PathBuf>> {
     Some(read_from_stdin_if_empty(args)).filter(|paths| !paths.is_empty())
 }
 
