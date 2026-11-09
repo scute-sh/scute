@@ -62,6 +62,14 @@ impl TestProject {
         Self::new(None)
     }
 
+    /// Drop the project scaffolding, keeping everything else added so far.
+    pub(crate) fn bare(self) -> Self {
+        Self {
+            kind: ProjectKind::Empty,
+            ..self
+        }
+    }
+
     /// A minimal npm project. Runs `npm install` on build to resolve dependencies.
     pub fn npm() -> Self {
         Self::new(Some(PackageManager::Npm))

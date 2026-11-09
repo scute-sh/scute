@@ -192,6 +192,12 @@ impl Scute {
         self
     }
 
+    /// Skip the Cargo scaffolding: the project holds only the files you add.
+    pub fn bare_project(mut self) -> Self {
+        self.project = self.project.bare();
+        self
+    }
+
     pub fn scute_config(mut self, yaml: &str) -> Self {
         self.project = self.project.scute_config(yaml);
         self
@@ -367,6 +373,18 @@ impl CheckResult {
                 && summary["errored"] == 0
                 && summary["passed"].as_u64() > Some(0),
             "expected pass, got: {}",
+            self.json
+        );
+        self.assert_exit_status(ExitStatus::Success);
+        self
+    }
+
+    /// Nothing was evaluated, and the run still succeeded.
+    pub fn expect_nothing_checked(&self) -> &Self {
+        assert_eq!(
+            self.summary(),
+            &serde_json::json!({"evaluated": 0, "passed": 0, "warned": 0, "failed": 0, "errored": 0}),
+            "expected nothing checked, got: {}",
             self.json
         );
         self.assert_exit_status(ExitStatus::Success);
