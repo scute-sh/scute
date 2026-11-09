@@ -111,11 +111,15 @@ fn resolve_files(
 ) -> Result<Vec<PathBuf>, ExecutionError> {
     let exclude = definition.exclude.as_deref().unwrap_or_default();
     let extensions = languages.supported_extensions();
-    files::resolve_paths(paths, &extensions, exclude).map_err(|e| ExecutionError {
-        code: "invalid_target".into(),
-        message: e.to_string(),
-        recovery: "check that the path exists and is readable".into(),
-    })
+    let resolved = files::resolve_paths(paths, &extensions, exclude);
+    match resolved.invalid.into_iter().next() {
+        Some(invalid) => Err(ExecutionError {
+            code: "invalid_target".into(),
+            message: invalid.to_string(),
+            recovery: "check that the path exists and is readable".into(),
+        }),
+        None => Ok(resolved.files),
+    }
 }
 
 pub(crate) fn languages() -> LanguageRegistry<dyn ComplexityRules> {

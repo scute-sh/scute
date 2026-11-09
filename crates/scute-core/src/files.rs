@@ -158,32 +158,44 @@ pub fn paths_or_default(paths: Vec<PathBuf>, default: &Path) -> Vec<PathBuf> {
     }
 }
 
+/// Source files found at a set of paths, and the paths that didn't lead to any.
+#[derive(Debug, Default)]
+pub struct ResolvedPaths {
+    pub files: Vec<PathBuf>,
+    pub invalid: Vec<InvalidPath>,
+}
+
 /// Resolve mixed file/directory paths into a flat list of source files.
 ///
-/// Each path is classified: files are validated individually (extension +
-/// readability), directories are walked to discover matching files.
-///
-/// Fails fast on the first invalid path.
-///
-/// # Errors
-///
-/// Returns `InvalidPath` if any path has an unsupported extension,
-/// doesn't exist, or is an unreadable directory.
+/// Files are validated individually (extension + readability), directories
+/// are walked to discover matching files. A path that can't be resolved is
+/// reported in [`ResolvedPaths::invalid`] without stopping the others.
+#[must_use]
 pub fn resolve_paths(
     paths: &[PathBuf],
     supported_extensions: &[&str],
     exclude: &[String],
-) -> Result<Vec<PathBuf>, InvalidPath> {
-    let mut resolved = Vec::new();
+) -> ResolvedPaths {
+    let mut resolved = ResolvedPaths::default();
     for path in paths {
-        if path.is_dir() {
-            let dir = validate_source_dir(path)?;
-            resolved.extend(discover_files(&dir, supported_extensions, exclude));
-        } else {
-            resolved.push(resolve_file(path, supported_extensions)?);
+        match resolve_path(path, supported_extensions, exclude) {
+            Ok(files) => resolved.files.extend(files),
+            Err(invalid) => resolved.invalid.push(invalid),
         }
     }
-    Ok(resolved)
+    resolved
+}
+
+fn resolve_path(
+    path: &Path,
+    supported_extensions: &[&str],
+    exclude: &[String],
+) -> Result<Vec<PathBuf>, InvalidPath> {
+    if path.is_dir() {
+        let dir = validate_source_dir(path)?;
+        return Ok(discover_files(&dir, supported_extensions, exclude));
+    }
+    resolve_file(path, supported_extensions).map(|file| vec![file])
 }
 
 fn discover_files(dir: &Path, extensions: &[&str], exclude: &[String]) -> Vec<PathBuf> {
@@ -348,7 +360,7 @@ mod tests {
 
             let result = resolve_paths(&[dir.path("main.rs")], &["rs"], &[]);
 
-            assert_that!(result, ok(len(eq(1))));
+            assert_that!(result.files, len(eq(1)));
         }
 
         #[test]
@@ -357,7 +369,7 @@ mod tests {
 
             let result = resolve_paths(&[dir.root()], &["rs"], &[]);
 
-            assert_that!(result, ok(len(eq(2))));
+            assert_that!(result.files, len(eq(2)));
         }
 
         #[test]
@@ -366,25 +378,31 @@ mod tests {
 
             let result = resolve_paths(&[dir.path("main.rs"), dir.path("src")], &["rs"], &[]);
 
-            assert_that!(result, ok(len(eq(2))));
+            assert_that!(result.files, len(eq(2)));
         }
 
         #[test]
         fn returns_empty_for_empty_input() {
             let result = resolve_paths(&[], &["rs"], &[]);
 
-            assert_that!(result, ok(is_empty()));
+            assert_that!(result.files, is_empty());
         }
 
         #[test]
-        fn fails_fast_on_first_invalid_path() {
+        fn reports_invalid_path_and_still_resolves_the_valid_ones() {
             let dir = TestDir::new().file("good.rs");
             let bad = PathBuf::from("/nonexistent/file.rs");
 
-            let result = resolve_paths(&[bad.clone(), dir.path("good.rs")], &["rs"], &[]);
+            let resolved = resolve_paths(&[bad.clone(), dir.path("good.rs")], &["rs"], &[]);
 
-            let err = result.unwrap_err();
-            assert_eq!(err.path, bad.display().to_string());
+            assert_that!(
+                resolved.files,
+                elements_are![eq(&dir.path("good.rs").canonicalize().unwrap())]
+            );
+            assert_that!(
+                resolved.invalid,
+                elements_are![field!(InvalidPath.path, eq(&bad.display().to_string()))]
+            );
         }
 
         #[test]
@@ -393,7 +411,7 @@ mod tests {
 
             let result = resolve_paths(&[dir.root()], &["rs"], &["gen/**".into()]);
 
-            let files = result.unwrap();
+            let files = result.files;
             assert_eq!(files.len(), 1);
             assert!(files[0].ends_with("keep.rs"));
         }
@@ -405,11 +423,11 @@ mod tests {
             let result = resolve_paths(&[dir.path("script.py")], &["rs"], &[]);
 
             assert_that!(
-                result,
-                err(field!(
+                result.invalid,
+                elements_are![field!(
                     InvalidPath.kind,
                     pat!(InvalidPathKind::UnsupportedExtension)
-                ))
+                )]
             );
         }
 
@@ -418,11 +436,11 @@ mod tests {
             let result = resolve_paths(&[PathBuf::from("/nonexistent/file.rs")], &["rs"], &[]);
 
             assert_that!(
-                result,
-                err(field!(
+                result.invalid,
+                elements_are![field!(
                     InvalidPath.kind,
                     pat!(InvalidPathKind::Unreadable(_))
-                ))
+                )]
             );
         }
     }
