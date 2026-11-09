@@ -33,66 +33,6 @@ pub fn walk_source_files(
         .filter(|e| e.file_type().is_some_and(|ft| ft.is_file()))
 }
 
-/// Validate and canonicalize focus files.
-///
-/// Checks that each file has a supported extension and exists on disk.
-/// Returns canonical paths on success, or errored evaluations on failure.
-///
-/// # Errors
-///
-/// Returns errored [`Evaluation`](crate::Evaluation)s when any file has an
-/// unsupported extension or cannot be read.
-pub fn validate_focus_files(
-    files: &[PathBuf],
-    supported_extensions: &[&str],
-    supported_msg: &str,
-) -> Result<Vec<PathBuf>, Vec<crate::Evaluation>> {
-    let mut canonical = Vec::new();
-    let mut errors = Vec::new();
-    for path in files {
-        match validate_focus_file(path, supported_extensions, supported_msg) {
-            Ok(p) => canonical.push(p),
-            Err(e) => errors.push(e),
-        }
-    }
-    if errors.is_empty() {
-        Ok(canonical)
-    } else {
-        Err(errors)
-    }
-}
-
-fn validate_focus_file(
-    path: &Path,
-    supported_extensions: &[&str],
-    supported_msg: &str,
-) -> Result<PathBuf, crate::Evaluation> {
-    let has_supported_ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .is_some_and(|ext| supported_extensions.contains(&ext));
-    if !has_supported_ext {
-        return Err(crate::Evaluation::errored(
-            path.display().to_string(),
-            crate::ExecutionError {
-                code: "unsupported_language".into(),
-                message: format!("unsupported file type: {}", path.display()),
-                recovery: supported_msg.into(),
-            },
-        ));
-    }
-    path.canonicalize().map_err(|_| {
-        crate::Evaluation::errored(
-            path.display().to_string(),
-            crate::ExecutionError {
-                code: "unreadable_file".into(),
-                message: format!("cannot read file: {}", path.display()),
-                recovery: "check that the file exists and is readable".into(),
-            },
-        )
-    })
-}
-
 /// Validate and canonicalize a directory path.
 ///
 /// # Errors
@@ -158,32 +98,44 @@ pub fn paths_or_default(paths: Vec<PathBuf>, default: &Path) -> Vec<PathBuf> {
     }
 }
 
+/// Source files found at a set of paths, and the paths that couldn't be resolved.
+#[derive(Debug, Default)]
+pub struct ResolvedPaths {
+    pub files: Vec<PathBuf>,
+    pub invalid: Vec<InvalidPath>,
+}
+
 /// Resolve mixed file/directory paths into a flat list of source files.
 ///
-/// Each path is classified: files are validated individually (extension +
-/// readability), directories are walked to discover matching files.
-///
-/// Fails fast on the first invalid path.
-///
-/// # Errors
-///
-/// Returns `InvalidPath` if any path has an unsupported extension,
-/// doesn't exist, or is an unreadable directory.
+/// Files are validated individually (extension + readability), directories
+/// are walked to discover matching files. A path that can't be resolved is
+/// reported in [`ResolvedPaths::invalid`] without stopping the others.
+#[must_use]
 pub fn resolve_paths(
     paths: &[PathBuf],
     supported_extensions: &[&str],
     exclude: &[String],
-) -> Result<Vec<PathBuf>, InvalidPath> {
-    let mut resolved = Vec::new();
+) -> ResolvedPaths {
+    let mut resolved = ResolvedPaths::default();
     for path in paths {
-        if path.is_dir() {
-            let dir = validate_source_dir(path)?;
-            resolved.extend(discover_files(&dir, supported_extensions, exclude));
-        } else {
-            resolved.push(resolve_file(path, supported_extensions)?);
+        match resolve_path(path, supported_extensions, exclude) {
+            Ok(files) => resolved.files.extend(files),
+            Err(invalid) => resolved.invalid.push(invalid),
         }
     }
-    Ok(resolved)
+    resolved
+}
+
+fn resolve_path(
+    path: &Path,
+    supported_extensions: &[&str],
+    exclude: &[String],
+) -> Result<Vec<PathBuf>, InvalidPath> {
+    if path.is_dir() {
+        let dir = validate_source_dir(path)?;
+        return Ok(discover_files(&dir, supported_extensions, exclude));
+    }
+    resolve_file(path, supported_extensions).map(|file| vec![file])
 }
 
 fn discover_files(dir: &Path, extensions: &[&str], exclude: &[String]) -> Vec<PathBuf> {
@@ -260,55 +212,6 @@ mod tests {
     }
 
     #[test]
-    fn focus_files_rejects_unsupported_extension() {
-        let dir = tempfile::tempdir().unwrap();
-        let py_file = dir.path().join("script.py");
-        fs::write(&py_file, "").unwrap();
-
-        let result = validate_focus_files(&[py_file], &["rs"], "only Rust files are supported");
-
-        let errors = result.unwrap_err();
-        assert_eq!(errors.len(), 1);
-        assert!(errors[0].is_error());
-        assert!(errors[0].target.contains("script.py"));
-    }
-
-    #[test]
-    fn focus_files_rejects_nonexistent_file() {
-        let missing = PathBuf::from("/does/not/exist.rs");
-
-        let result = validate_focus_files(&[missing], &["rs"], "only Rust files are supported");
-
-        let errors = result.unwrap_err();
-        assert_eq!(errors.len(), 1);
-        assert!(errors[0].is_error());
-    }
-
-    #[test]
-    fn focus_files_canonicalizes_valid_paths() {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("real.rs");
-        fs::write(&file, "").unwrap();
-
-        let result = validate_focus_files(
-            std::slice::from_ref(&file),
-            &["rs"],
-            "only Rust files are supported",
-        );
-
-        let paths = result.unwrap();
-        assert_eq!(paths.len(), 1);
-        assert_eq!(paths[0], file.canonicalize().unwrap());
-    }
-
-    #[test]
-    fn focus_files_returns_empty_for_no_files() {
-        let result = validate_focus_files(&[], &["rs"], "only Rust files are supported");
-
-        assert_that!(result, ok(is_empty()));
-    }
-
-    #[test]
     fn excludes_matching_patterns() {
         let dir = tempfile::tempdir().unwrap();
         fs::write(dir.path().join("keep.rs"), "").unwrap();
@@ -348,7 +251,7 @@ mod tests {
 
             let result = resolve_paths(&[dir.path("main.rs")], &["rs"], &[]);
 
-            assert_that!(result, ok(len(eq(1))));
+            assert_that!(result.files, len(eq(1)));
         }
 
         #[test]
@@ -357,7 +260,7 @@ mod tests {
 
             let result = resolve_paths(&[dir.root()], &["rs"], &[]);
 
-            assert_that!(result, ok(len(eq(2))));
+            assert_that!(result.files, len(eq(2)));
         }
 
         #[test]
@@ -366,25 +269,31 @@ mod tests {
 
             let result = resolve_paths(&[dir.path("main.rs"), dir.path("src")], &["rs"], &[]);
 
-            assert_that!(result, ok(len(eq(2))));
+            assert_that!(result.files, len(eq(2)));
         }
 
         #[test]
         fn returns_empty_for_empty_input() {
             let result = resolve_paths(&[], &["rs"], &[]);
 
-            assert_that!(result, ok(is_empty()));
+            assert_that!(result.files, is_empty());
         }
 
         #[test]
-        fn fails_fast_on_first_invalid_path() {
+        fn reports_invalid_path_and_still_resolves_the_valid_ones() {
             let dir = TestDir::new().file("good.rs");
             let bad = PathBuf::from("/nonexistent/file.rs");
 
-            let result = resolve_paths(&[bad.clone(), dir.path("good.rs")], &["rs"], &[]);
+            let resolved = resolve_paths(&[bad.clone(), dir.path("good.rs")], &["rs"], &[]);
 
-            let err = result.unwrap_err();
-            assert_eq!(err.path, bad.display().to_string());
+            assert_that!(
+                resolved.files,
+                elements_are![eq(&dir.path("good.rs").canonicalize().unwrap())]
+            );
+            assert_that!(
+                resolved.invalid,
+                elements_are![field!(InvalidPath.path, eq(&bad.display().to_string()))]
+            );
         }
 
         #[test]
@@ -393,7 +302,7 @@ mod tests {
 
             let result = resolve_paths(&[dir.root()], &["rs"], &["gen/**".into()]);
 
-            let files = result.unwrap();
+            let files = result.files;
             assert_eq!(files.len(), 1);
             assert!(files[0].ends_with("keep.rs"));
         }
@@ -405,11 +314,11 @@ mod tests {
             let result = resolve_paths(&[dir.path("script.py")], &["rs"], &[]);
 
             assert_that!(
-                result,
-                err(field!(
+                result.invalid,
+                elements_are![field!(
                     InvalidPath.kind,
                     pat!(InvalidPathKind::UnsupportedExtension)
-                ))
+                )]
             );
         }
 
@@ -418,11 +327,11 @@ mod tests {
             let result = resolve_paths(&[PathBuf::from("/nonexistent/file.rs")], &["rs"], &[]);
 
             assert_that!(
-                result,
-                err(field!(
+                result.invalid,
+                elements_are![field!(
                     InvalidPath.kind,
                     pat!(InvalidPathKind::Unreadable(_))
-                ))
+                )]
             );
         }
     }
