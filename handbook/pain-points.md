@@ -153,10 +153,13 @@ value.
 
 ## Process
 
-- **Superficial application of agreed conventions.** (×3) Convention is understood
+- **Superficial application of agreed conventions.** (×4) Convention is understood
   in principle but applied inconsistently. Fixes address only the examples
   explicitly called out, missing the same issue elsewhere. The pattern is
   understood, but the rigor to apply it exhaustively is missing.
+- **Losing sight of the goal.** (×1) Work gets checked against its immediate
+  requirements but never weighed against why it started. The result is
+  correct and still misses the point.
 - **Production code modified before a test demands it.** (×1) Jumping to
   change signatures or restructure code before writing a failing test that
   requires the change. The test should drive the design, not the other way
@@ -224,10 +227,6 @@ value.
   descriptions, or argument docs describe behavior the code doesn't actually
   have. The copy is plausible but wrong because nobody checked the
   implementation before writing it.
-- **Usage examples that lose sight of the goal.** (×1) A documented example
-  gets verified as correct but never weighed against why the work started.
-  The feature existed to make a one-liner reliable, and the example grew into
-  a multi-line shell guard that also merged steps the reader wanted separate.
 
 ## Agent-Driven Codebase Decay
 
