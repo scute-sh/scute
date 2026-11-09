@@ -40,6 +40,10 @@ value.
   actually proves. The extra detail couples the test to unrelated features,
   making it fragile: changes to those features break tests that weren't
   testing them.
+- **Working around the test harness.** (×1) The harness can't express a
+  scenario, so the test drops down to raw process or library calls instead of
+  extending the harness. The gap stays, and the next test hits the same wall.
+  The harness is the product's test API: when it falls short, grow it.
 - **Helpers that hide the story.** Test helpers that wrap both the action and
   the assertion, making individual tests opaque. Helpers should reduce
   construction boilerplate, not obscure the test narrative.
@@ -75,10 +79,14 @@ value.
 - **Duplicated domain strings.** The same concept hardcoded as a string
   literal in multiple places. The coupling is implicit and breaks silently
   when one occurrence changes without the other.
+- **Silent fallbacks.** (×1) When the requested path can't be honored, the
+  code quietly does something else instead of failing loudly. The caller
+  believes they got what they asked for, and the mismatch surfaces much later,
+  far from its cause.
 - **Overparameterization.** (×1) Extracting a helper but keeping the
   hardcoded value as a parameter instead of encapsulating it. If every
   call site passes the same value, the helper should own that value.
-- **Solution-space anchoring.** (×7) Fixating on how existing code works
+- **Solution-space anchoring.** (×8) Fixating on how existing code works
   (helpers, models, constructors) instead of stepping back to the problem
   space. Leads to contorted designs that serve the implementation rather than
   the user. The question should always be "what does the consumer need?" not
@@ -171,11 +179,11 @@ value.
   The process is known, the trigger is clear, but urgency wins over discipline.
   Especially common with agents who optimize for task completion over process
   compliance.
-- **Exploratory poking instead of testing.** (×2) When exploring how something
+- **Exploratory poking instead of testing.** (×3) When exploring how something
   behaves (an API, an edge case, a library quirk), the agent reads source or
   writes throwaway scripts instead of writing a test. The test harness gives
   faster feedback and the answer persists as documentation.
-- **Stated assumptions without verifying.** (×5) Confidently claimed a tool's
+- **Stated assumptions without verifying.** (×6) Confidently claimed a tool's
   fallback behavior ("it installs latest by default") without checking. The
   claim was plausible but wrong, caught only after CI failed. When behavior
   isn't documented in memory, verify it before asserting it.
@@ -203,6 +211,10 @@ value.
   comments that describe internal mechanics instead of what the reader needs
   to know. The consumer doesn't care how the data got there, they care what
   they can do with it.
+- **Written for insiders.** (×1) Issues, docs, or commits that only make sense
+  to whoever was in the discussion: internal personas, coined terms, decisions
+  referenced but never stated. A stranger landing on it can't tell what's
+  wrong or what done looks like.
 - **CLI docs drift from implementation.** The documented CLI commands don't
   match what the tool actually does. The source of truth and the docs diverge.
 - **User-facing copy written without verifying behavior.** (×1) Help text,
