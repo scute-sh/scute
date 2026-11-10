@@ -21,7 +21,7 @@ pub struct Language {
 /// Both `code_similarity` and `code_complexity` use this to resolve
 /// a file path to the right language + check-specific rules.
 pub struct LanguageRegistry<R: ?Sized> {
-    entries: Vec<LanguageRegistryEntry<R>>,
+    families: Vec<LanguageFamily<R>>,
 }
 
 pub struct LanguageRegistryEntry<R: ?Sized> {
@@ -29,26 +29,46 @@ pub struct LanguageRegistryEntry<R: ?Sized> {
     pub rules: Box<R>,
 }
 
+/// Languages that share one set of check rules.
+struct LanguageFamily<R: ?Sized> {
+    languages: Vec<Language>,
+    rules: Box<R>,
+}
+
 impl<R: ?Sized> LanguageRegistry<R> {
     #[must_use]
     pub fn new(entries: Vec<LanguageRegistryEntry<R>>) -> Self {
-        Self { entries }
+        Self {
+            families: entries
+                .into_iter()
+                .map(|e| LanguageFamily {
+                    languages: vec![e.language],
+                    rules: e.rules,
+                })
+                .collect(),
+        }
+    }
+
+    fn languages(&self) -> impl Iterator<Item = (&Language, &R)> {
+        self.families.iter().flat_map(|family| {
+            family
+                .languages
+                .iter()
+                .map(|language| (language, family.rules.as_ref()))
+        })
     }
 
     #[must_use]
     pub fn for_path(&self, path: &Path) -> Option<(&Language, &R)> {
         let ext = path.extension()?.to_str()?;
-        self.entries
-            .iter()
-            .find(|e| e.language.extensions.contains(&ext))
-            .map(|e| (&e.language, e.rules.as_ref()))
+        self.languages()
+            .find(|(language, _)| language.extensions.contains(&ext))
     }
 
     #[must_use]
     pub fn supported_extensions(&self) -> Vec<&'static str> {
-        self.entries
-            .iter()
-            .flat_map(|e| e.language.extensions.iter().copied())
+        self.languages()
+            .flat_map(|(language, _)| language.extensions.iter().copied())
             .collect()
     }
 }
