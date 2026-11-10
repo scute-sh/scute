@@ -16,39 +16,55 @@ pub struct Language {
     pub extensions: &'static [&'static str],
 }
 
-/// Extension-based registry mapping file extensions to language rules.
+/// The language families a check supports, each with that check's rules.
 ///
-/// Both `code_similarity` and `code_complexity` use this to resolve
-/// a file path to the right language + check-specific rules.
+/// Resolves a file path, by extension, to its language and the check's
+/// rules for it. Each check builds its own, registering only the families
+/// it supports.
 pub struct LanguageRegistry<R: ?Sized> {
-    entries: Vec<LanguageRegistryEntry<R>>,
+    families: Vec<LanguageFamily<R>>,
 }
 
-pub struct LanguageRegistryEntry<R: ?Sized> {
-    pub language: Language,
-    pub rules: Box<R>,
+/// Languages that share one set of check rules.
+struct LanguageFamily<R: ?Sized> {
+    languages: Vec<Language>,
+    rules: Box<R>,
+}
+
+impl<R: ?Sized> Default for LanguageRegistry<R> {
+    fn default() -> Self {
+        Self { families: vec![] }
+    }
 }
 
 impl<R: ?Sized> LanguageRegistry<R> {
+    /// Supports `languages`, applying `rules` to each of them.
     #[must_use]
-    pub fn new(entries: Vec<LanguageRegistryEntry<R>>) -> Self {
-        Self { entries }
+    pub fn with(mut self, rules: Box<R>, languages: Vec<Language>) -> Self {
+        self.families.push(LanguageFamily { languages, rules });
+        self
+    }
+
+    fn languages(&self) -> impl Iterator<Item = (&Language, &R)> {
+        self.families.iter().flat_map(|family| {
+            family
+                .languages
+                .iter()
+                .map(|language| (language, family.rules.as_ref()))
+        })
     }
 
     #[must_use]
     pub fn for_path(&self, path: &Path) -> Option<(&Language, &R)> {
         let ext = path.extension()?.to_str()?;
-        self.entries
-            .iter()
-            .find(|e| e.language.extensions.contains(&ext))
-            .map(|e| (&e.language, e.rules.as_ref()))
+        self.languages()
+            .find(|(language, _)| language.extensions.contains(&ext))
     }
 
     #[must_use]
     pub fn supported_extensions(&self) -> Vec<&'static str> {
-        self.entries
-            .iter()
-            .flat_map(|e| e.language.extensions.iter().copied())
+        self.languages()
+            .flat_map(|(language, _)| language.extensions.iter().copied())
             .collect()
     }
 }
@@ -63,36 +79,32 @@ pub struct Rust;
 /// across all three, so one type handles all variants.
 pub struct JsFamily;
 
+/// The languages [`Rust`] rules apply to.
 #[must_use]
-pub fn rust() -> Language {
-    Language {
+pub fn rust_family() -> Vec<Language> {
+    vec![Language {
         grammar: tree_sitter_rust::LANGUAGE.into(),
         extensions: &["rs"],
-    }
+    }]
 }
 
+/// The languages [`JsFamily`] rules apply to.
 #[must_use]
-pub fn javascript() -> Language {
-    Language {
-        grammar: tree_sitter_javascript::LANGUAGE.into(),
-        extensions: &["js", "jsx", "mjs", "cjs"],
-    }
-}
-
-#[must_use]
-pub fn typescript() -> Language {
-    Language {
-        grammar: tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-        extensions: &["ts"],
-    }
-}
-
-#[must_use]
-pub fn typescript_tsx() -> Language {
-    Language {
-        grammar: tree_sitter_typescript::LANGUAGE_TSX.into(),
-        extensions: &["tsx"],
-    }
+pub fn js_family() -> Vec<Language> {
+    vec![
+        Language {
+            grammar: tree_sitter_javascript::LANGUAGE.into(),
+            extensions: &["js", "jsx", "mjs", "cjs"],
+        },
+        Language {
+            grammar: tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+            extensions: &["ts"],
+        },
+        Language {
+            grammar: tree_sitter_typescript::LANGUAGE_TSX.into(),
+            extensions: &["tsx"],
+        },
+    ]
 }
 
 #[cfg(test)]
@@ -101,22 +113,21 @@ mod tests {
     use std::path::Path;
 
     fn test_registry() -> LanguageRegistry<&'static str> {
-        LanguageRegistry::new(vec![
-            LanguageRegistryEntry {
-                language: Language {
+        LanguageRegistry::default()
+            .with(
+                Box::new("rust"),
+                vec![Language {
                     grammar: tree_sitter_rust::LANGUAGE.into(),
                     extensions: &["rs"],
-                },
-                rules: Box::new("rust"),
-            },
-            LanguageRegistryEntry {
-                language: Language {
+                }],
+            )
+            .with(
+                Box::new("js"),
+                vec![Language {
                     grammar: tree_sitter_javascript::LANGUAGE.into(),
                     extensions: &["js", "jsx"],
-                },
-                rules: Box::new("js"),
-            },
-        ])
+                }],
+            )
     }
 
     #[test]
@@ -147,7 +158,7 @@ mod tests {
 
     #[test]
     fn empty_registry_returns_none() {
-        let reg: LanguageRegistry<&str> = LanguageRegistry::new(vec![]);
+        let reg: LanguageRegistry<&str> = LanguageRegistry::default();
         assert!(reg.for_path(Path::new("main.rs")).is_none());
     }
 

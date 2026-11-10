@@ -6,7 +6,7 @@ use super::rules::ComplexityRules;
 use super::score;
 use crate::files;
 use crate::files::{Exclusions, SourceFile};
-use crate::language::{self, LanguageRegistry};
+use crate::language::{self, JsFamily, LanguageRegistry, Rust};
 use crate::{Evaluation, Evidence, ExecutionError, Expected, Thresholds};
 
 pub const CHECK_NAME: &str = "code-complexity";
@@ -118,26 +118,9 @@ fn invalid_path(invalid: files::InvalidPath) -> Evaluation {
 }
 
 pub(crate) fn languages() -> LanguageRegistry<dyn ComplexityRules> {
-    use crate::language::{JsFamily, Rust};
-    use crate::language::{LanguageRegistry, LanguageRegistryEntry};
-    LanguageRegistry::new(vec![
-        LanguageRegistryEntry {
-            language: language::rust(),
-            rules: Box::new(Rust),
-        },
-        LanguageRegistryEntry {
-            language: language::javascript(),
-            rules: Box::new(JsFamily),
-        },
-        LanguageRegistryEntry {
-            language: language::typescript(),
-            rules: Box::new(JsFamily),
-        },
-        LanguageRegistryEntry {
-            language: language::typescript_tsx(),
-            rules: Box::new(JsFamily),
-        },
-    ])
+    LanguageRegistry::<dyn ComplexityRules>::default()
+        .with(Box::new(Rust), language::rust_family())
+        .with(Box::new(JsFamily), language::js_family())
 }
 
 fn score_file(
