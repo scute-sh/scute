@@ -1142,7 +1142,7 @@ dependencies = [
 
 [[package]]
 name = "scute"
-version = "0.0.17"
+version = "0.0.18"
 dependencies = [
  "anyhow",
  "clap",
@@ -1157,7 +1157,7 @@ dependencies = [
 
 [[package]]
 name = "scute-config"
-version = "0.0.15"
+version = "0.0.16"
 dependencies = [
  "dirs",
  "scute-core",
@@ -1168,7 +1168,7 @@ dependencies = [
 
 [[package]]
 name = "scute-core"
-version = "0.0.14"
+version = "0.0.15"
 dependencies = [
  "glob",
  "googletest",
@@ -1190,7 +1190,7 @@ dependencies = [
 
 [[package]]
 name = "scute-mcp"
-version = "0.0.16"
+version = "0.0.17"
 dependencies = [
  "rmcp",
  "scute-config",
@@ -1202,7 +1202,7 @@ dependencies = [
 
 [[package]]
 name = "scute-test-utils"
-version = "0.0.7"
+version = "0.0.8"
 dependencies = [
  "rmcp",
  "serde_json",

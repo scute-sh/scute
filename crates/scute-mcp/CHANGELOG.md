@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.17](https://github.com/scute-sh/scute/compare/scute-mcp-v0.0.16...scute-mcp-v0.0.17) - 2026-11-09
+
+### Fixed
+
+- *(mcp)* check nothing when an agent sends an empty list ([#161](https://github.com/scute-sh/scute/pull/161))
+- *(core)* match exclude patterns from the project root everywhere ([#156](https://github.com/scute-sh/scute/pull/156))
+
+### Other
+
+- *(core)* decide what "no paths" means inside the checks ([#155](https://github.com/scute-sh/scute/pull/155))
+
 ## [0.0.16](https://github.com/scute-sh/scute/compare/scute-mcp-v0.0.15...scute-mcp-v0.0.16) - 2026-11-08
 
 ### Added

@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.8](https://github.com/scute-sh/scute/compare/scute-test-utils-v0.0.7...scute-test-utils-v0.0.8) - 2026-11-09
+
+### Fixed
+
+- *(mcp)* check nothing when an agent sends an empty list ([#161](https://github.com/scute-sh/scute/pull/161))
+- *(core)* report a missing path as an error next to the other results ([#160](https://github.com/scute-sh/scute/pull/160))
+- *(core)* report nothing checked instead of a made-up pass ([#157](https://github.com/scute-sh/scute/pull/157))
+
+### Other
+
+- *(harness)* let each test pick its package manager ([#158](https://github.com/scute-sh/scute/pull/158))
+- *(harness)* run each input scenario exactly as given ([#151](https://github.com/scute-sh/scute/pull/151))
+
 ## [0.0.7](https://github.com/scute-sh/scute/compare/scute-test-utils-v0.0.6...scute-test-utils-v0.0.7) - 2026-11-08
 
 ### Added

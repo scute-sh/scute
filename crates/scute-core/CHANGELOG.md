@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.15](https://github.com/scute-sh/scute/compare/scute-core-v0.0.14...scute-core-v0.0.15) - 2026-11-09
+
+### Fixed
+
+- *(core)* report a missing path as an error next to the other results ([#160](https://github.com/scute-sh/scute/pull/160))
+- *(core)* skip listed files in languages the checks don't support ([#159](https://github.com/scute-sh/scute/pull/159))
+- *(core)* report nothing checked instead of a made-up pass ([#157](https://github.com/scute-sh/scute/pull/157))
+- *(core)* match exclude patterns from the project root everywhere ([#156](https://github.com/scute-sh/scute/pull/156))
+
+### Other
+
+- *(core)* decide what "no paths" means inside the checks ([#155](https://github.com/scute-sh/scute/pull/155))
+- *(core)* validate paths through one route ([#153](https://github.com/scute-sh/scute/pull/153))
+
 ## [0.0.14](https://github.com/scute-sh/scute/compare/scute-core-v0.0.13...scute-core-v0.0.14) - 2026-11-08
 
 ### Other
