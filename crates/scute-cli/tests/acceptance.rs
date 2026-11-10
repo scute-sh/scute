@@ -465,6 +465,7 @@ checks:
     }
 
     #[test_case(Cli)]
+    #[test_case(CliStdin)]
     #[test_case(Mcp)]
     fn complex_rust_function_gets_flagged(interface: Interface) {
         complex_function_check(interface)
@@ -714,6 +715,18 @@ checks:
             .paths(&["README.md"])
             .run()
             .expect_nothing_checked();
+    }
+
+    #[test_case(Cli)]
+    #[test_case(CliStdin)]
+    #[test_case(Mcp)]
+    fn scores_a_file_once_when_given_both_directly_and_through_its_directory(interface: Interface) {
+        Scute::new(interface)
+            .source_file("src/complex.rs", COMPLEX_SOURCE)
+            .code_complexity()
+            .paths(&["src", "src/complex.rs"])
+            .run()
+            .expect_finding_count(1);
     }
 }
 

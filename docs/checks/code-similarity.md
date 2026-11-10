@@ -18,10 +18,10 @@ Catching it before it reaches a PR saves review cycles and keeps the codebase ho
 scute check code-similarity [OPTIONS] [FILES]...
 ```
 
-| Argument/Option      | Description                                                                                    |
-| -------------------- | ---------------------------------------------------------------------------------------------- |
-| `[FILES]...`         | Focus files. Only report clones involving these files. Also read from stdin, one per line.     |
-| `--source-dir <DIR>` | Directory to scan for source files. Defaults to the working directory.                         |
+| Argument/Option      | Description                                                                                   |
+| -------------------- | --------------------------------------------------------------------------------------------- |
+| `[FILES]...`         | Focus files: only clones involving them get reported. Also read from stdin, one per line.     |
+| `--source-dir <DIR>` | Directory to scan for source files. Defaults to the working directory.                        |
 
 Scan the full project:
 
@@ -39,17 +39,17 @@ scute check code-similarity src/utils/format.rs
 
 Every supported file under the source directory gets compared. Focus files only narrow the report to clones involving them: a focus file's clone in an unchanged file still shows up.
 
-No focus files reports every clone in the source directory. [Choosing files](../input.md) covers how the files you hand over are handled.
+Without focus files, the check reports every clone in the source directory. [Choosing files](../input.md) covers how the files you hand over are handled.
 
 ### MCP tool
 
 Tool name: `check_code_similarity`
 
-| Parameter      | Type            | Required | Description                                                                                                               |
-| -------------- | --------------- | -------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `project_root` | string          | yes      | Absolute path to the project root. Relative paths resolve against it.                                                     |
-| `files`        | array\<string\> | no       | Focus files. Only report clones involving these files. Leave it out to report every clone; an empty list reports nothing. |
-| `source_dir`   | string          | no       | Directory to scan for source files. Defaults to the project root.                                                         |
+| Parameter      | Type            | Required | Description                                                                                                              |
+| -------------- | --------------- | -------- | ------------------------------------------------------------------------------------------------------------------------ |
+| `project_root` | string          | yes      | Absolute path to the project root. Relative paths resolve against it.                                                    |
+| `files`        | array\<string\> | no       | Focus files: only clones involving them get reported. Leave it out to report every clone; an empty list reports nothing. |
+| `source_dir`   | string          | no       | Directory to scan for source files. Defaults to the project root.                                                        |
 
 ## Configuration
 
@@ -90,7 +90,7 @@ With defaults: 70 tokens passes, 71 warns, 100 warns, 101 fails.
 | `test-thresholds`    | thresholds | warn: 100, fail: 130 | Separate thresholds for clone groups where every occurrence lives in test code |
 | `exclude`            | array\<string\> | `[]`            | Glob patterns for files to leave out of the comparison          |
 
-Excluded files are never compared, so they can't show up in a clone, even when `--source-dir` points somewhere narrower. [Excluding files](../configuration.md#excluding-files) explains how patterns match.
+Excluded files are never compared, so they can't show up in a clone. Patterns match from the project root, even when `--source-dir` points at a subdirectory. [Excluding files](../configuration.md#excluding-files) explains how patterns match.
 
 `min-tokens` controls sensitivity. Lower values catch smaller clones but produce more noise. 50 works well for most projects.
 

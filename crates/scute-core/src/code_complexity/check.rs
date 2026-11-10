@@ -49,7 +49,7 @@ impl Definition {
 ///
 /// Returns one [`Evaluation`] per function found, and none when there's no
 /// function to score (no supported files, or files without functions). A
-/// path that doesn't exist or can't be read gets its own errored evaluation,
+/// path that doesn't exist or can't be reached gets its own errored evaluation,
 /// and the other paths are still scored.
 ///
 /// ```no_run
@@ -83,7 +83,7 @@ pub fn check(
     let languages = languages();
     let resolved = resolve_files(project_root, paths, definition, &languages);
 
-    let errors = resolved.invalid.into_iter().map(invalid_path);
+    let errors = resolved.invalid.into_iter().map(Evaluation::from);
     let scores = resolved
         .files
         .iter()
@@ -110,11 +110,6 @@ fn resolve_files(
         definition.exclude.as_deref().unwrap_or_default(),
     );
     files::resolve_paths(paths, &languages.supported_extensions(), &exclusions)
-}
-
-fn invalid_path(invalid: files::InvalidPath) -> Evaluation {
-    let error = ExecutionError::from(&invalid);
-    Evaluation::errored(invalid.path, error)
 }
 
 /// The languages this check scores, each with its scoring rules.

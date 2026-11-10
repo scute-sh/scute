@@ -1,7 +1,8 @@
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::{fmt, io};
 
-use crate::ExecutionError;
+use crate::{Evaluation, ExecutionError};
 use ignore::WalkBuilder;
 use ignore::overrides::{Override, OverrideBuilder};
 
@@ -105,6 +106,13 @@ impl From<&InvalidPath> for ExecutionError {
     }
 }
 
+impl From<InvalidPath> for Evaluation {
+    fn from(invalid: InvalidPath) -> Self {
+        let error = ExecutionError::from(&invalid);
+        Evaluation::errored(invalid.path, error)
+    }
+}
+
 #[derive(Debug)]
 pub enum InvalidPathKind {
     Unreadable(io::Error),
@@ -123,8 +131,9 @@ pub struct ResolvedPaths {
 ///
 /// Directories are walked to discover files with a supported extension.
 /// Files given directly must exist, and are kept only if their extension is
-/// supported. Files matching `exclusions` are left out either way. A path
-/// that doesn't exist or can't be read is reported in
+/// supported. Files matching `exclusions` are left out either way. A file
+/// reached by several paths (a directory and a file inside it) is listed
+/// once. A path that doesn't exist or can't be reached is reported in
 /// [`ResolvedPaths::invalid`] without stopping the others.
 #[must_use]
 pub fn resolve_paths(
@@ -133,9 +142,12 @@ pub fn resolve_paths(
     exclusions: &Exclusions,
 ) -> ResolvedPaths {
     let mut resolved = ResolvedPaths::default();
+    let mut seen = HashSet::new();
     for path in paths {
         match resolve_path(path, supported_extensions, exclusions) {
-            Ok(files) => resolved.files.extend(files),
+            Ok(files) => resolved
+                .files
+                .extend(files.into_iter().filter(|file| seen.insert(file.clone()))),
             Err(invalid) => resolved.invalid.push(invalid),
         }
     }
@@ -267,6 +279,19 @@ mod tests {
             let dir = TestDir::new().file("main.rs");
 
             let result = resolve_paths(&[dir.path("main.rs")], &["rs"], &Exclusions::none());
+
+            assert_that!(result.files, len(eq(1)));
+        }
+
+        #[test]
+        fn lists_a_file_once_when_two_paths_reach_it() {
+            let dir = TestDir::new().file("main.rs");
+
+            let result = resolve_paths(
+                &[dir.root(), dir.path("main.rs")],
+                &["rs"],
+                &Exclusions::none(),
+            );
 
             assert_that!(result.files, len(eq(1)));
         }
