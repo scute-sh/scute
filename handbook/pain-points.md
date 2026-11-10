@@ -153,7 +153,7 @@ value.
 
 ## Process
 
-- **Superficial application of agreed conventions.** (×4) Convention is understood
+- **Superficial application of agreed conventions.** (×5) Convention is understood
   in principle but applied inconsistently. Fixes address only the examples
   explicitly called out, missing the same issue elsewhere. The pattern is
   understood, but the rigor to apply it exhaustively is missing.
