@@ -36,7 +36,7 @@ Tool name: `check_dependency_freshness`
 
 ## Configuration
 
-In your `.scute.yml`:
+In your [`.scute.yml`](../configuration.md):
 
 ```yaml
 checks:
@@ -69,7 +69,7 @@ For example, with `level: minor, warn: 3, fail: 6`:
 
 ### Thresholds
 
-The `observed` value is the version gap for each dependency. Each dependency is evaluated independently.
+The `observed` value is the version gap for each dependency. Each dependency is evaluated independently. [Thresholds](../configuration.md#thresholds) explains how `warn` and `fail` apply.
 
 | Threshold | Default | Description                                       |
 | --------- | ------- | ------------------------------------------------- |

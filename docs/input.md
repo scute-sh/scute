@@ -34,9 +34,8 @@ Over MCP, pass a list (`paths` for `check_code_complexity`, `files` for
 - **A path that doesn't exist gets an error finding** naming it, next to the
   results for the other paths. The check exits with `2`. With git, leave
   deleted files out with `--diff-filter=d`.
-- **Files matching an `exclude` pattern are skipped,** even when you name them
-  directly. Patterns follow `.gitignore` semantics and match from the project
-  root: the working directory on the CLI, `project_root` over MCP.
+- **Files matching an [`exclude`](configuration.md#excluding-files) pattern
+  are skipped,** even when you name them directly.
 - **Nothing left to check passes,** with `0 evaluated` in the summary.
 
 ## Handing over nothing

@@ -103,7 +103,7 @@ Tool name: `check_code_complexity`
 
 ## Configuration
 
-In your `.scute.yml`:
+In your [`.scute.yml`](../configuration.md):
 
 ```yaml
 checks:
@@ -117,7 +117,7 @@ checks:
 
 ### Thresholds
 
-The `observed` value is the cognitive complexity score of a single function. One finding per function.
+The `observed` value is the cognitive complexity score of a single function. One finding per function. [Thresholds](../configuration.md#thresholds) explains how `warn` and `fail` apply.
 
 | Threshold | Default | Description                                    |
 | --------- | ------- | ---------------------------------------------- |
@@ -134,7 +134,7 @@ With defaults: score 5 passes, 6 warns, 10 warns, 11 fails.
 | --------- | --------------- | ------- | ---------------------------------------------- |
 | `exclude` | array\<string\> | `[]`    | Glob patterns for files to skip during scanning |
 
-`exclude` patterns follow `.gitignore` semantics and match paths relative to the project root, whatever paths you pass to the check. A file matching a pattern is skipped even when you name it directly, so a pre-commit hook passing staged files won't flag your generated code. Useful for generated code, vendored dependencies, or other directories you don't control.
+[Excluding files](../configuration.md#excluding-files) explains how patterns match.
 
 ### Evidence rules
 

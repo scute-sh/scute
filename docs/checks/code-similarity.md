@@ -43,7 +43,7 @@ git diff -z --diff-filter=d --name-only HEAD~1 | xargs -0r scute check code-simi
 
 ### Source directory and focus files
 
-Every supported file under the source directory gets compared, except the ones matching an `exclude` pattern. Focus files only narrow the report to clones involving them: a focus file's clone in an unchanged file still shows up.
+Every supported file under the source directory gets compared. Focus files only narrow the report to clones involving them: a focus file's clone in an unchanged file still shows up.
 
 No focus files reports every clone in the source directory. Over MCP, `files: []` reports nothing. Focus files in other languages are skipped and a missing one gets an error finding, like any file you hand over: [Choosing files](../input.md) has the details.
 
@@ -59,7 +59,7 @@ Tool name: `check_code_similarity`
 
 ## Configuration
 
-In your `.scute.yml`:
+In your [`.scute.yml`](../configuration.md):
 
 ```yaml
 checks:
@@ -78,7 +78,7 @@ checks:
 
 ### Thresholds
 
-The `observed` value is the number of duplicated tokens in a clone group. The check reports one finding per clone group.
+The `observed` value is the number of duplicated tokens in a clone group. The check reports one finding per clone group. [Thresholds](../configuration.md#thresholds) explains how `warn` and `fail` apply.
 
 | Threshold | Default | Description                                    |
 | --------- | ------- | ---------------------------------------------- |
@@ -96,7 +96,7 @@ With defaults: 70 tokens passes, 71 warns, 100 warns, 101 fails.
 | `test-thresholds`    | thresholds | warn: 100, fail: 130 | Separate thresholds for clone groups where every occurrence lives in test code |
 | `exclude`            | array\<string\> | `[]`            | Glob patterns for files to leave out of the comparison          |
 
-`exclude` patterns follow `.gitignore` semantics and match paths relative to the project root, even when `--source-dir` points somewhere narrower. Excluded files are never compared, so they can't show up in a clone. Useful for generated code, vendored dependencies, or other directories you don't control.
+Excluded files are never compared, so they can't show up in a clone, even when `--source-dir` points somewhere narrower. [Excluding files](../configuration.md#excluding-files) explains how patterns match.
 
 `min-tokens` controls sensitivity. Lower values catch smaller clones but produce more noise. 50 works well for most projects.
 

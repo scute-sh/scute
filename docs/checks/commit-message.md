@@ -35,7 +35,7 @@ Tool name: `check_commit_message`
 
 ## Configuration
 
-In your `.scute.yml`:
+In your [`.scute.yml`](../configuration.md):
 
 ```yaml
 checks:
@@ -47,7 +47,7 @@ checks:
 
 ### Thresholds
 
-The check reports `observed: 1` if any rule is violated, `observed: 0` if the message is clean. It's a pass/fail signal, not a violation count.
+The check reports `observed: 1` if any rule is violated, `observed: 0` if the message is clean. It's a pass/fail signal, not a violation count. [Thresholds](../configuration.md#thresholds) explains how `warn` and `fail` apply.
 
 | Threshold | Default | Description                                         |
 | --------- | ------- | --------------------------------------------------- |

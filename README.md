@@ -128,6 +128,9 @@ checks:
       fail: 6
 ```
 
+Set both `warn` and `fail` when you override thresholds: the ones you leave out
+are off. More in [Configuration](docs/configuration.md).
+
 ## Guide Your Agents
 
 Scute ships with both a CLI and an MCP server, so it works with any coding
@@ -254,6 +257,8 @@ compounds.
 - [Choosing files](docs/input.md): what the code checks do with the files you
   hand over, and with none.
 - [Reading results](docs/output.md): the report, statuses, and exit codes.
+- [Configuration](docs/configuration.md): where `.scute.yml` lives, how
+  thresholds apply, and excluding files.
 - [Git hooks](docs/integrations/git-hooks.md) and [CI](docs/integrations/ci.md):
   ready-made setups.
 - Each check's page, linked from [What It Checks](#what-it-checks).
