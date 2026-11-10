@@ -100,7 +100,7 @@ impl Definition {
 /// inside them. Without focus paths (`None`), every clone group in
 /// `source_dir` is reported. Focus files in an unsupported language are
 /// skipped, and when no supported focus file remains, nothing is checked.
-/// Focus paths that don't exist or can't be read get their own errored
+/// Focus paths that don't exist or can't be reached get their own errored
 /// evaluation, next to the results for the rest.
 ///
 /// ```no_run

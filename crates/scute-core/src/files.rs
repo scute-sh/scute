@@ -133,7 +133,7 @@ pub struct ResolvedPaths {
 /// Files given directly must exist, and are kept only if their extension is
 /// supported. Files matching `exclusions` are left out either way. A file
 /// reached by several paths (a directory and a file inside it) is listed
-/// once. A path that doesn't exist or can't be read is reported in
+/// once. A path that doesn't exist or can't be reached is reported in
 /// [`ResolvedPaths::invalid`] without stopping the others.
 #[must_use]
 pub fn resolve_paths(

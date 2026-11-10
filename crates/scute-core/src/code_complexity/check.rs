@@ -49,7 +49,7 @@ impl Definition {
 ///
 /// Returns one [`Evaluation`] per function found, and none when there's no
 /// function to score (no supported files, or files without functions). A
-/// path that doesn't exist or can't be read gets its own errored evaluation,
+/// path that doesn't exist or can't be reached gets its own errored evaluation,
 /// and the other paths are still scored.
 ///
 /// ```no_run
