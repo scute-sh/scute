@@ -84,12 +84,6 @@ Check a directory:
 scute check code-complexity src/
 ```
 
-Check the files changed in the last commit:
-
-```sh
-git diff -z --diff-filter=d --name-only HEAD~1 | xargs -0r scute check code-complexity
-```
-
 [Choosing files](../input.md) covers how the paths you hand over are handled.
 
 ### MCP tool

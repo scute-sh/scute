@@ -35,12 +35,6 @@ Focus on specific files:
 scute check code-similarity src/utils/format.rs
 ```
 
-Focus on the files changed in the last commit:
-
-```sh
-git diff -z --diff-filter=d --name-only HEAD~1 | xargs -0r scute check code-similarity
-```
-
 ### Source directory and focus files
 
 Every supported file under the source directory gets compared. Focus files only narrow the report to clones involving them: a focus file's clone in an unchanged file still shows up.
