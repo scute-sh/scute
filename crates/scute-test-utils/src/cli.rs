@@ -4,7 +4,9 @@ use std::process::{Command, Output, Stdio};
 
 use tempfile::TempDir;
 
-use crate::{Backend, CheckInput, CheckResult, ExitStatus, ListChecksResult, target_bin};
+use crate::{
+    Backend, CheckDescription, CheckInput, CheckResult, ExitStatus, ListChecksResult, target_bin,
+};
 
 pub(crate) struct CliBackend {
     pub(crate) via_stdin: bool,
@@ -147,6 +149,22 @@ impl Backend for CliBackend {
             panic!("expected JSON array from `scute check list`: {e}\nstdout: {stdout}")
         });
         ListChecksResult { _dir: dir, checks }
+    }
+
+    fn describe_check(&self, dir: TempDir, name: &str) -> CheckDescription {
+        let output = Invocation {
+            args: vec!["check".into(), name.into(), "--help".into()],
+            stdin: None,
+        }
+        .run(dir.path());
+        let text = String::from_utf8_lossy(&output.stdout).into_owned();
+        assert!(
+            output.status.success(),
+            "`scute check {name} --help` exited with {}\nstdout: {text}\nstderr: {}",
+            output.status,
+            String::from_utf8_lossy(&output.stderr)
+        );
+        CheckDescription { _dir: dir, text }
     }
 }
 

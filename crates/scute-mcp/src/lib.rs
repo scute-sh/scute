@@ -17,6 +17,7 @@ use rmcp::{
 };
 use schema::CheckReportSchema;
 use scute_config::ScuteConfig;
+use scute_core::language::LanguageRegistry;
 use scute_core::report::CheckReport;
 use scute_core::{
     ExecutionError, code_complexity, code_similarity, commit_message, dependency_freshness,
@@ -72,12 +73,11 @@ struct ScuteMcp;
 
 #[tool_router]
 impl ScuteMcp {
-    /// Validate a commit message before committing.
-    ///
-    /// Checks subject format (type, optional scope, description), body separation,
-    /// footer syntax, and breaking change markers against the Conventional Commits spec.
     #[tool(
         name = "check_commit_message",
+        description = "Validate a commit message before committing.\n\
+            Checks subject format (type, optional scope, description), body separation, \
+            footer syntax, and breaking change markers against the Conventional Commits spec.",
         output_schema = schema_for_output::<CheckReportSchema>(),
         annotations(
             read_only_hint = true,
@@ -96,13 +96,15 @@ impl ScuteMcp {
         )
     }
 
-    /// Measure code complexity of functions in your project.
-    ///
-    /// Scores each function based on how hard it is to understand: nesting,
-    /// control flow, logical operators, recursion. Flags functions that
-    /// exceed the configured threshold.
     #[tool(
         name = "check_code_complexity",
+        description = naming_languages(
+            "Measure code complexity of functions in your project.\n\
+             Scores each function based on how hard it is to understand: nesting, \
+             control flow, logical operators, recursion. Flags functions that \
+             exceed the configured threshold.",
+            &code_complexity::languages()
+        ),
         output_schema = schema_for_output::<CheckReportSchema>(),
         annotations(
             read_only_hint = true,
@@ -125,12 +127,14 @@ impl ScuteMcp {
         )
     }
 
-    /// Find code duplication in your project.
-    ///
-    /// Scans source files for duplicated token sequences. Optionally focus on
-    /// specific files to only report clones involving them.
     #[tool(
         name = "check_code_similarity",
+        description = naming_languages(
+            "Find code duplication in your project.\n\
+             Scans source files for duplicated token sequences. Optionally focus on \
+             specific files to only report clones involving them.",
+            &code_similarity::languages()
+        ),
         output_schema = schema_for_output::<CheckReportSchema>(),
         annotations(
             read_only_hint = true,
@@ -154,12 +158,11 @@ impl ScuteMcp {
         )
     }
 
-    /// Find outdated dependencies in your project.
-    ///
-    /// Reports which packages are behind their latest version, how far behind
-    /// (patch, minor, major), and what to update to.
     #[tool(
         name = "check_dependency_freshness",
+        description = "Find outdated dependencies in your project.\n\
+            Reports which packages are behind their latest version, how far behind \
+            (patch, minor, major), and what to update to.",
         output_schema = schema_for_output::<CheckReportSchema>(),
         annotations(
             read_only_hint = true,
@@ -187,6 +190,13 @@ impl ServerHandler for ScuteMcp {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_instructions(INSTRUCTIONS)
     }
+}
+
+fn naming_languages<R: ?Sized>(description: &str, languages: &LanguageRegistry<R>) -> String {
+    format!(
+        "{description}\nSupported languages: {}.",
+        languages.names().join(", ")
+    )
 }
 
 fn path_or_root(input: Option<String>, project_root: &Path) -> PathBuf {

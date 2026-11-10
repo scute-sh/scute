@@ -33,4 +33,4 @@ mod score;
 #[cfg(test)]
 mod tests;
 
-pub use check::{CHECK_NAME, Definition, check};
+pub use check::{CHECK_NAME, Definition, check, languages};
