@@ -95,6 +95,8 @@ Each rule that fires produces an entry in the `evidence` array with the rule nam
 
 ## Examples
 
+Reports follow the shape described in [Reading results](../output.md).
+
 ### Fail: malformed subject
 
 ```sh

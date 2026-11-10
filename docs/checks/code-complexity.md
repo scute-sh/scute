@@ -90,22 +90,7 @@ Check the files changed in the last commit:
 git diff -z --diff-filter=d --name-only HEAD~1 | xargs -0r scute check code-complexity
 ```
 
-### Which files get checked
-
-- **Files in a supported language get checked.** Anything else you pass (`Cargo.toml`, `README.md`, images) is skipped, so you can hand over every file in a change without filtering it first.
-- **A path that doesn't exist gets an error finding** naming it, next to the results for the other paths. The check exits with `2`. Leave deleted files out with `--diff-filter=d`.
-- **Files matching an `exclude` pattern are skipped,** even when you name them.
-- **Nothing left to check passes** with `0 evaluated` in the summary.
-
-### No paths checks the whole project
-
-With no arguments and nothing on stdin, the check covers the whole working directory. That includes an empty pipe: when `git diff` lists no files (say, a commit that only deletes files), piping it straight into the check scans everything. To check only a change's files, go through `xargs -0r` as in the example above:
-
-- `-r` skips the check when there are no files. Plain `xargs` runs it once with no paths.
-- `git diff -z` with `xargs -0` keeps names with spaces, quotes, or accents intact.
-- On a very long list, `xargs` splits the files across several runs, each printing its own report.
-
-Over MCP, leaving out `paths` checks the whole project, and `paths: []` checks nothing.
+Files in other languages are skipped, a missing path gets an error finding, and no paths at all means the whole project. [Choosing files](../input.md) has the details.
 
 ### MCP tool
 
@@ -167,6 +152,8 @@ Each line that contributes to a function's score produces an evidence entry. The
 The nesting chain reads left-to-right (outside to inside) and stops at inline nesting boundaries: `'if' nested 2 levels: 'closure > if' (+3)` in Rust, `'if' nested 2 levels: 'arrow > if' (+3)` in JavaScript/TypeScript.
 
 ## Examples
+
+Reports follow the shape described in [Reading results](../output.md).
 
 ### Warn: moderately complex function
 
@@ -238,5 +225,4 @@ All functions score within thresholds. Nothing to fix.
 - **Supported languages:** Rust, JavaScript (`.js`, `.jsx`, `.mjs`, `.cjs`), and TypeScript (`.ts`, `.tsx`).
 - **Per-function, not per-file.** Each function is evaluated and reported independently. The `target` includes the function name and line number.
 - **Structural, not semantic.** Measures control flow structure. Two functions that are equally hard to understand but use different constructs may score differently.
-- **Scoped analysis.** Only the files and directories you pass are analyzed. Pass nothing to scan the whole project.
 - **Graceful with syntax errors.** Tree-sitter recovers from parse errors. Malformed code won't crash the check.

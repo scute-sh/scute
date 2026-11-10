@@ -86,6 +86,8 @@ With the default (`level: major`), only major version gaps are evaluated against
 
 ## Examples
 
+Reports follow the shape described in [Reading results](../output.md).
+
 ### Fail: major drift with default config
 
 With defaults (`level: major`, `fail: 0`), any major version gap fails:

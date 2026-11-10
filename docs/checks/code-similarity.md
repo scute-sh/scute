@@ -41,22 +41,11 @@ Focus on the files changed in the last commit:
 git diff -z --diff-filter=d --name-only HEAD~1 | xargs -0r scute check code-similarity
 ```
 
-### Which files get compared
+### Source directory and focus files
 
-- **Every supported file under the source directory gets compared,** except the ones matching an `exclude` pattern.
-- **Focus files narrow the report** to clones involving them. Focus files in a language the check doesn't support are skipped, so you can hand over every file in a change without filtering it first.
-- **A focus file that doesn't exist gets an error finding** naming it, next to the results for the other files. The check exits with `2`. Leave deleted files out with `--diff-filter=d`.
-- **Nothing left to compare passes** with `0 evaluated` in the summary.
+Every supported file under the source directory gets compared, except the ones matching an `exclude` pattern. Focus files only narrow the report to clones involving them: a focus file's clone in an unchanged file still shows up.
 
-### No focus files reports every clone
-
-With no arguments and nothing on stdin, the check reports every clone in the source directory. That includes an empty pipe: when `git diff` lists no files (say, a commit that only deletes files), piping it straight into the check reports clones anywhere in the project. To check only a change's files, go through `xargs -0r` as in the example above:
-
-- `-r` skips the check when there are no files. Plain `xargs` runs it once with no files.
-- `git diff -z` with `xargs -0` keeps names with spaces, quotes, or accents intact.
-- On a very long list, `xargs` splits the files across several runs, each printing its own report.
-
-Over MCP, leaving out `files` reports every clone, and `files: []` reports nothing.
+No focus files reports every clone in the source directory. Over MCP, `files: []` reports nothing. Focus files in other languages are skipped and a missing one gets an error finding, like any file you hand over: [Choosing files](../input.md) has the details.
 
 ### MCP tool
 
@@ -114,6 +103,8 @@ With defaults: 70 tokens passes, 71 warns, 100 warns, 101 fails.
 Test code tends to have more acceptable duplication (similar setups, assertion patterns). `test-thresholds` sets a more lenient bar for clone groups that live entirely in test code. This includes `tests/` directories, `*.test.*`/`*.spec.*` files, `#[cfg(test)]` modules, and `#[test]` functions. If any occurrence in a clone group is production code, the regular thresholds apply.
 
 ## Examples
+
+Reports follow the shape described in [Reading results](../output.md).
 
 ### Fail: significant duplication
 
@@ -175,5 +166,4 @@ See the [handbook/checks/code-similarity/](../../handbook/checks/code-similarity
 
 - **Supported languages:** Rust, JavaScript, TypeScript.
 - **Structural, not semantic.** Compares token sequences. Whitespace and formatting don't matter. Renamed variables in otherwise-identical blocks still match. But two functions that do the same thing with different implementations won't be flagged.
-- **Focus vs. scan.** The `files` parameter focuses the *results* (only report clones involving those files), but the full project is always scanned for matches. You're filtering the report, not the search.
 - **Token granularity.** Very small clones (common patterns, boilerplate) are expected and usually not worth flagging. The `min-tokens` threshold controls what's worth reporting.
