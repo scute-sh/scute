@@ -32,8 +32,7 @@ Over MCP, pass a list (`paths` for `check_code_complexity`, `files` for
   (`Cargo.toml`, `README.md`, images) is skipped, so you can hand over every
   file in a change without filtering it first.
 - **A path that doesn't exist gets an error finding** naming it, next to the
-  results for the other paths. The check exits with `2`. With git, leave
-  deleted files out with `--diff-filter=d`.
+  results for the other paths. The check exits with `2`.
 - **Files matching an [`exclude`](configuration.md#excluding-files) pattern
   are skipped,** even when you name them directly.
 - **Nothing left to check passes,** with `0 evaluated` in the summary.
@@ -42,9 +41,7 @@ Over MCP, pass a list (`paths` for `check_code_complexity`, `files` for
 
 With no files, a check covers the whole project:
 
-- On the CLI: no arguments and nothing on stdin. That includes an empty pipe,
-  so when `git diff` lists no files (say, a commit that only deletes files),
-  piping it straight into a check scans everything.
+- On the CLI: no arguments and nothing on stdin, an empty pipe included.
 - Over MCP: leave the list out. An empty list (`[]`) checks nothing.
 
 ## Checking a change's files

@@ -27,12 +27,17 @@ jobs:
 - `fetch-depth: 0` fetches the base branch, so `git diff` can compare against
   it. Without it, the checkout only has the PR's last commit.
 - `origin/<base>...HEAD` lists what the PR changed since it branched off.
-- The rest works like in a [git hook](git-hooks.md): every changed file goes
-  in, deleted ones stay out, and `xargs -0r` skips a check when the PR changes
-  no files. [Choosing files](../input.md) has the details.
+- Every changed file goes in, whatever its language: the checks skip the
+  files they don't support. `--diff-filter=d` leaves deleted files out, since
+  a check reports a missing file as an error.
+- `xargs -r` skips a check when the PR changes no files. With no files, a
+  check covers the whole project.
+- `-z` and `-0` keep names with spaces, quotes, or accents intact.
 - Checking the PR title fits teams that squash-merge, where the title becomes
   the commit message. It goes through `env` rather than straight into the
   script, so a crafted title can't run commands in your CI.
+
+[Choosing files](../input.md) has more on how the checks handle the files.
 
 A step fails when its check fails or errors, and passes on warnings. See
 [Reading results](../output.md) for the exit codes.
