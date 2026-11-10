@@ -35,6 +35,18 @@ mod discovery {
             .list_checks()
             .expect_contains("code-complexity");
     }
+
+    const A_SUPPORTED_LANGUAGE: &str = "TypeScript";
+
+    #[test_case(Cli, "code-complexity")]
+    #[test_case(Mcp, "code-complexity")]
+    #[test_case(Cli, "code-similarity")]
+    #[test_case(Mcp, "code-similarity")]
+    fn names_supported_languages_in_code_check_description(interface: Interface, check: &str) {
+        Scute::new(interface)
+            .describe_check(check)
+            .expect_mentions(A_SUPPORTED_LANGUAGE);
+    }
 }
 
 mod commit_message {

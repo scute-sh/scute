@@ -282,6 +282,7 @@ fn parse_trees(
         .collect()
 }
 
+/// The languages this check compares, each with its tokenizing rules.
 #[must_use]
 pub fn languages() -> LanguageRegistry<dyn SimilarityRules> {
     LanguageRegistry::<dyn SimilarityRules>::default()

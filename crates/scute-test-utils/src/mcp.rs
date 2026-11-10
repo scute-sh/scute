@@ -9,7 +9,9 @@ use rmcp::{
 use tempfile::TempDir;
 use tokio::process::Command;
 
-use crate::{Backend, CheckInput, CheckResult, ExitStatus, ListChecksResult, target_bin};
+use crate::{
+    Backend, CheckDescription, CheckInput, CheckResult, ExitStatus, ListChecksResult, target_bin,
+};
 
 pub(crate) struct McpBackend;
 
@@ -69,6 +71,19 @@ impl Backend for McpBackend {
             })
             .collect();
         ListChecksResult { _dir: dir, checks }
+    }
+
+    fn describe_check(&self, dir: TempDir, name: &str) -> CheckDescription {
+        let tool_name = format!("check_{}", name.replace('-', "_"));
+        let text = McpTestClient::connect()
+            .list_tools()
+            .into_iter()
+            .find(|t| t.name == tool_name)
+            .unwrap_or_else(|| panic!("expected tool '{tool_name}'"))
+            .description
+            .unwrap_or_else(|| panic!("expected '{tool_name}' to have a description"))
+            .into_owned();
+        CheckDescription { _dir: dir, text }
     }
 }
 

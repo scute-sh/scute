@@ -1,6 +1,6 @@
 //! Language definitions for tree-sitter based checks.
 //!
-//! A [`Language`] pairs a tree-sitter grammar with its file extensions.
+//! A [`Language`] is a named tree-sitter grammar with its file extensions.
 //! [`LanguageRegistry`] maps file paths to the right language + check rules.
 //! Check-specific traits ([`ComplexityRules`], [`SimilarityRules`]) are
 //! implemented on the shared rule types [`Rust`] and [`JsFamily`].
@@ -10,8 +10,12 @@
 
 use std::path::Path;
 
-/// A tree-sitter grammar paired with its recognized file extensions.
+/// A language as people name it, with the grammar and file extensions to
+/// parse it.
 pub struct Language {
+    /// What people call the language. Variants share it: TypeScript and TSX
+    /// are both "TypeScript".
+    pub name: &'static str,
     pub grammar: tree_sitter::Language,
     pub extensions: &'static [&'static str],
 }
@@ -61,6 +65,18 @@ impl<R: ?Sized> LanguageRegistry<R> {
             .find(|(language, _)| language.extensions.contains(&ext))
     }
 
+    /// Each supported language's name, once, in registration order.
+    #[must_use]
+    pub fn names(&self) -> Vec<&'static str> {
+        let mut names = Vec::new();
+        for (language, _) in self.languages() {
+            if !names.contains(&language.name) {
+                names.push(language.name);
+            }
+        }
+        names
+    }
+
     #[must_use]
     pub fn supported_extensions(&self) -> Vec<&'static str> {
         self.languages()
@@ -83,6 +99,7 @@ pub struct JsFamily;
 #[must_use]
 pub fn rust_family() -> Vec<Language> {
     vec![Language {
+        name: "Rust",
         grammar: tree_sitter_rust::LANGUAGE.into(),
         extensions: &["rs"],
     }]
@@ -93,14 +110,17 @@ pub fn rust_family() -> Vec<Language> {
 pub fn js_family() -> Vec<Language> {
     vec![
         Language {
+            name: "JavaScript",
             grammar: tree_sitter_javascript::LANGUAGE.into(),
             extensions: &["js", "jsx", "mjs", "cjs"],
         },
         Language {
+            name: "TypeScript",
             grammar: tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
             extensions: &["ts"],
         },
         Language {
+            name: "TypeScript",
             grammar: tree_sitter_typescript::LANGUAGE_TSX.into(),
             extensions: &["tsx"],
         },
@@ -114,20 +134,16 @@ mod tests {
 
     fn test_registry() -> LanguageRegistry<&'static str> {
         LanguageRegistry::default()
-            .with(
-                Box::new("rust"),
-                vec![Language {
-                    grammar: tree_sitter_rust::LANGUAGE.into(),
-                    extensions: &["rs"],
-                }],
-            )
-            .with(
-                Box::new("js"),
-                vec![Language {
-                    grammar: tree_sitter_javascript::LANGUAGE.into(),
-                    extensions: &["js", "jsx"],
-                }],
-            )
+            .with(Box::new("rust"), vec![language("Rust", &["rs"])])
+            .with(Box::new("js"), vec![language("JavaScript", &["js", "jsx"])])
+    }
+
+    fn language(name: &'static str, extensions: &'static [&'static str]) -> Language {
+        Language {
+            name,
+            grammar: tree_sitter_javascript::LANGUAGE.into(),
+            extensions,
+        }
     }
 
     #[test]
@@ -167,5 +183,21 @@ mod tests {
         let reg = test_registry();
         let exts = reg.supported_extensions();
         assert_eq!(exts, vec!["rs", "js", "jsx"]);
+    }
+
+    #[test]
+    fn names_each_language_once_in_registration_order() {
+        let reg = LanguageRegistry::default().with(
+            Box::new("js"),
+            vec![
+                language("TypeScript", &["ts"]),
+                language("JavaScript", &["js"]),
+                language("TypeScript", &["tsx"]),
+            ],
+        );
+
+        let names = reg.names();
+
+        assert_eq!(names, vec!["TypeScript", "JavaScript"]);
     }
 }

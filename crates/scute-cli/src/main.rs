@@ -7,6 +7,7 @@ mod output;
 
 use output::CheckReportJson;
 use scute_config::ScuteConfig;
+use scute_core::language::LanguageRegistry;
 use scute_core::report::CheckReport;
 use scute_core::{
     ExecutionError, code_complexity, code_similarity, commit_message, dependency_freshness,
@@ -36,14 +37,14 @@ enum Commands {
 
 #[derive(Debug, Subcommand)]
 enum Checks {
-    /// List available checks
+    #[command(about = "List available checks")]
     List,
-    /// Validate a commit message
+    #[command(about = "Validate a commit message")]
     CommitMessage {
         /// Commit message to check
         message: Option<String>,
     },
-    /// Find code duplication
+    #[command(about = naming_languages("Find code duplication", &code_similarity::languages()))]
     CodeSimilarity {
         /// Directory to scan for source files (defaults to working directory)
         #[arg(long)]
@@ -51,16 +52,23 @@ enum Checks {
         /// Files to focus on (only report clones involving these). Reads from stdin if piped.
         files: Vec<PathBuf>,
     },
-    /// Measure code complexity of functions
+    #[command(about = naming_languages(
+        "Measure code complexity of functions",
+        &code_complexity::languages()
+    ))]
     CodeComplexity {
         /// Files or directories to check. Reads from stdin if piped. Defaults to working directory.
         paths: Vec<PathBuf>,
     },
-    /// Find outdated dependencies
+    #[command(about = "Find outdated dependencies")]
     DependencyFreshness {
         /// Path to the project directory (defaults to working directory)
         path: Option<String>,
     },
+}
+
+fn naming_languages<R: ?Sized>(summary: &str, languages: &LanguageRegistry<R>) -> String {
+    format!("{summary} ({})", languages.names().join(", "))
 }
 
 fn main() {

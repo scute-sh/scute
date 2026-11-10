@@ -121,6 +121,7 @@ pub(crate) enum CheckInput {
 trait Backend {
     fn run_check(&self, dir: TempDir, working_dir: &Path, input: &CheckInput) -> CheckResult;
     fn list_checks(&self, dir: TempDir) -> ListChecksResult;
+    fn describe_check(&self, dir: TempDir, name: &str) -> CheckDescription;
 }
 
 pub struct Scute {
@@ -242,6 +243,13 @@ impl Scute {
         self.backend.list_checks(dir)
     }
 
+    /// What a caller learns about a check before running it: its `--help`
+    /// on the CLI, its tool description over MCP.
+    pub fn describe_check(self, name: &str) -> CheckDescription {
+        let dir = self.project.build();
+        self.backend.describe_check(dir, name)
+    }
+
     fn run_check(self, input: &CheckInput) -> CheckResult {
         let dir = self.project.build();
         let working_dir = resolve_working_dir(&dir, self.cwd.as_deref());
@@ -350,6 +358,23 @@ impl ListChecksResult {
             self.checks.iter().any(|c| c == name),
             "expected check '{name}' in {:?}",
             self.checks
+        );
+        self
+    }
+}
+
+/// How a check describes itself. Use its methods to assert on what it tells the caller.
+pub struct CheckDescription {
+    pub(crate) _dir: TempDir,
+    pub(crate) text: String,
+}
+
+impl CheckDescription {
+    pub fn expect_mentions(&self, expected: &str) -> &Self {
+        assert!(
+            self.text.contains(expected),
+            "expected '{expected}' in:\n{}",
+            self.text
         );
         self
     }

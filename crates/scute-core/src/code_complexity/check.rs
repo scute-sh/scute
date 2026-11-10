@@ -117,7 +117,9 @@ fn invalid_path(invalid: files::InvalidPath) -> Evaluation {
     Evaluation::errored(invalid.path, error)
 }
 
-pub(crate) fn languages() -> LanguageRegistry<dyn ComplexityRules> {
+/// The languages this check scores, each with its scoring rules.
+#[must_use]
+pub fn languages() -> LanguageRegistry<dyn ComplexityRules> {
     LanguageRegistry::<dyn ComplexityRules>::default()
         .with(Box::new(Rust), language::rust_family())
         .with(Box::new(JsFamily), language::js_family())
