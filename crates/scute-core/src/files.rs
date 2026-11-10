@@ -284,7 +284,7 @@ mod tests {
         }
 
         #[test]
-        fn resolves_a_file_reached_twice_once() {
+        fn lists_a_file_once_when_two_paths_reach_it() {
             let dir = TestDir::new().file("main.rs");
 
             let result = resolve_paths(
