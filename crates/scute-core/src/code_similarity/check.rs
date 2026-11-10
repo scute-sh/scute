@@ -86,7 +86,7 @@ impl Definition {
 
 /// Check a directory for code duplication.
 ///
-/// Discovers supported source files (Rust, JavaScript, TypeScript), runs
+/// Discovers the source files [`languages`] supports, runs
 /// clone detection, and returns one [`Evaluation`] per clone group found.
 /// When no clones are detected, returns a single passing evaluation. When
 /// `source_dir` holds no supported files, there's nothing to compare and
