@@ -90,7 +90,7 @@ Check the files changed in the last commit:
 git diff -z --diff-filter=d --name-only HEAD~1 | xargs -0r scute check code-complexity
 ```
 
-Files in other languages are skipped, a missing path gets an error finding, and no paths at all means the whole project. [Choosing files](../input.md) has the details.
+[Choosing files](../input.md) covers how the paths you hand over are handled.
 
 ### MCP tool
 

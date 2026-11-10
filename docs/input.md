@@ -32,9 +32,9 @@ Over MCP, pass a list (`paths` for `check_code_complexity`, `files` for
   (`Cargo.toml`, `README.md`, images) is skipped, so you can hand over every
   file in a change without filtering it first.
 - **A path that doesn't exist gets an error finding** naming it, next to the
-  results for the other paths. The check exits with `2`.
+  results for the other paths.
 - **Files matching an [`exclude`](configuration.md#excluding-files) pattern
-  are skipped,** even when you name them directly.
+  are skipped.**
 - **Nothing left to check passes,** with `0 evaluated` in the summary.
 
 ## Handing over nothing
@@ -52,8 +52,7 @@ To check only the files a change touched, go through `xargs`:
 git diff -z --diff-filter=d --name-only origin/main...HEAD | xargs -0r scute check code-complexity
 ```
 
-- `-r` skips the check when there are no files. Plain `xargs` runs it once
-  with none, which checks the whole project.
+- `-r` skips the check when there are no files.
 - `git diff -z` with `xargs -0` keeps names with spaces, quotes, or accents
   intact. Without `-z`, git quotes a name like `café.rs` and the check can't
   find it.

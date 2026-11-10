@@ -59,8 +59,7 @@ checks:
 
 - Patterns follow `.gitignore` semantics and match from the project root,
   whatever paths you hand over.
-- A file matching a pattern is skipped even when you name it directly, so a
-  hook passing staged files won't flag your generated code.
+- A file matching a pattern is skipped even when you name it directly.
 
 Useful for generated code, vendored dependencies, or other directories you
 don't control.
