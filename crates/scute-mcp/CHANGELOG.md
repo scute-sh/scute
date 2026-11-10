@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.18](https://github.com/scute-sh/scute/compare/scute-mcp-v0.0.17...scute-mcp-v0.0.18) - 2026-11-10
+
+### Added
+
+- name each code check's languages in its help and tool description ([#166](https://github.com/scute-sh/scute/pull/166))
+
 ## [0.0.17](https://github.com/scute-sh/scute/compare/scute-mcp-v0.0.16...scute-mcp-v0.0.17) - 2026-11-09
 
 ### Fixed
