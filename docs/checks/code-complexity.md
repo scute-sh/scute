@@ -62,9 +62,9 @@ Constructs in the same cognitive role follow the same scoring rules. A `switch` 
 scute check code-complexity [PATHS]...
 ```
 
-| Argument    | Description                                                                                  |
-| ----------- | -------------------------------------------------------------------------------------------- |
-| `[PATHS]...` | Files or directories to check. Directories are walked for supported files. Reads from stdin if piped. Defaults to the working directory. |
+| Argument     | Description                                                                                                                                       |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `[PATHS]...` | Files or directories to check. Directories are walked for supported files. Also read from stdin, one per line. Defaults to the working directory. |
 
 Scan the full project:
 
@@ -84,11 +84,7 @@ Check a directory:
 scute check code-complexity src/
 ```
 
-Pipe changed files from git:
-
-```sh
-git diff --name-only HEAD~1 | scute check code-complexity
-```
+[Choosing files](../input.md) covers how the paths you hand over are handled.
 
 ### MCP tool
 
@@ -101,7 +97,7 @@ Tool name: `check_code_complexity`
 
 ## Configuration
 
-In your `.scute.yml`:
+In your [`.scute.yml`](../configuration.md):
 
 ```yaml
 checks:
@@ -115,7 +111,7 @@ checks:
 
 ### Thresholds
 
-The `observed` value is the cognitive complexity score of a single function. One finding per function.
+The `observed` value is the cognitive complexity score of a single function. One finding per function. [Thresholds](../configuration.md#thresholds) explains how `warn` and `fail` apply.
 
 | Threshold | Default | Description                                    |
 | --------- | ------- | ---------------------------------------------- |
@@ -132,7 +128,7 @@ With defaults: score 5 passes, 6 warns, 10 warns, 11 fails.
 | --------- | --------------- | ------- | ---------------------------------------------- |
 | `exclude` | array\<string\> | `[]`    | Glob patterns for files to skip during scanning |
 
-`exclude` patterns follow `.gitignore` semantics and match paths relative to the project root, whatever paths you pass to the check. A file matching a pattern is skipped even when you name it directly, so a pre-commit hook passing staged files won't flag your generated code. Useful for generated code, vendored dependencies, or other directories you don't control.
+[Excluding files](../configuration.md#excluding-files) explains how patterns match.
 
 ### Evidence rules
 
@@ -150,6 +146,8 @@ Each line that contributes to a function's score produces an evidence entry. The
 The nesting chain reads left-to-right (outside to inside) and stops at inline nesting boundaries: `'if' nested 2 levels: 'closure > if' (+3)` in Rust, `'if' nested 2 levels: 'arrow > if' (+3)` in JavaScript/TypeScript.
 
 ## Examples
+
+Reports follow the shape described in [Reading results](../output.md).
 
 ### Warn: moderately complex function
 
@@ -221,5 +219,4 @@ All functions score within thresholds. Nothing to fix.
 - **Supported languages:** Rust, JavaScript (`.js`, `.jsx`, `.mjs`, `.cjs`), and TypeScript (`.ts`, `.tsx`).
 - **Per-function, not per-file.** Each function is evaluated and reported independently. The `target` includes the function name and line number.
 - **Structural, not semantic.** Measures control flow structure. Two functions that are equally hard to understand but use different constructs may score differently.
-- **Scoped analysis.** Only the files and directories you pass are analyzed. Pass nothing to scan the whole project.
 - **Graceful with syntax errors.** Tree-sitter recovers from parse errors. Malformed code won't crash the check.

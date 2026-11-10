@@ -41,7 +41,7 @@ scute check code-complexity src/
 ```json
 {
   "check": "code-complexity",
-  "summary": { "evaluated": 14, "failed": 1 },
+  "summary": { "evaluated": 14, "passed": 13, "warned": 0, "failed": 1, "errored": 0 },
   "findings": [
     {
       "target": "src/engine.rs:87:resolve_config",
@@ -53,8 +53,9 @@ scute check code-complexity src/
       "evidence": [
         {
           "rule": "nesting",
-          "location": "src/engine.rs:92",
-          "found": "'if' nested 2 levels: 'for > match > if' (+3)"
+          "found": "'if' nested 2 levels: 'for > match > if' (+3)",
+          "expected": "extract inner block into a function",
+          "location": "src/engine.rs:92"
         }
       ]
     }
@@ -64,7 +65,8 @@ scute check code-complexity src/
 
 One function failed. Scored 12 against a threshold of 10, because of deep
 nesting at a specific line. Not a vague "this file is complex." Exact
-location, exact rule, exact score. Fix it, rerun, pass.
+location, exact rule, exact score. Fix it, rerun, pass. Every check reports
+in this shape: see [Reading results](docs/output.md).
 
 Yes, you could stitch this together yourself: a complexity linter here, a
 dependency checker there, a service level objective rule somewhere else.
@@ -126,6 +128,9 @@ checks:
       fail: 6
 ```
 
+Set both `warn` and `fail` when you override thresholds: the ones you leave out
+are off. More in [Configuration](docs/configuration.md).
+
 ## Guide Your Agents
 
 Scute ships with both a CLI and an MCP server, so it works with any coding
@@ -186,35 +191,49 @@ scute check commit-message "feat: add caching layer"
 Wire Scute into git hooks so every commit gets checked automatically.
 
 ```sh
-# .git/hooks/pre-commit
 #!/bin/sh
+# .git/hooks/pre-commit
 set -e
-git diff --cached --diff-filter=d --name-only | scute check code-complexity
-git diff --cached --diff-filter=d --name-only | scute check code-similarity
+git diff --cached -z --diff-filter=d --name-only | xargs -0r scute check code-complexity
+git diff --cached -z --diff-filter=d --name-only | xargs -0r scute check code-similarity
 ```
 
+Hand over every staged file: the checks skip the ones in languages they don't
+support. `xargs -r` skips the checks when there's nothing to hand over (a
+commit that only deletes files, say), since with no files they cover the whole
+project. `-z` and `-0` keep names with spaces, quotes, or accents intact.
+
 ```sh
-# .git/hooks/commit-msg
 #!/bin/sh
+# .git/hooks/commit-msg
 set -e
 scute check commit-message "$(cat "$1")"
 ```
 
-Works the same whether you're committing or your coding agent is.
+Works the same whether you're committing or your coding agent is. Sharing
+hooks with your team and more in [Git hooks](docs/integrations/git-hooks.md).
 
 ## Guide Your Pull Requests
 
 The last gate before merge. You decide which checks run at which stage. The
 contract stays the same: one definition for the entire codebase.
 
-Exit codes are designed for automation: `0` pass, `1` fail, `2` error.
+Exit codes are designed for automation: `0` pass, `1` fail, `2` error
+([details](docs/output.md#exit-codes)).
 
 ```yaml
 # GitHub Actions — runs on pull requests
-- run: git diff --diff-filter=d --name-only origin/main...HEAD | scute check code-complexity
-- run: git diff --diff-filter=d --name-only origin/main...HEAD | scute check code-similarity
-- run: scute check commit-message "${{ github.event.pull_request.title }}"
+- uses: actions/checkout@v6
+  with:
+    fetch-depth: 0 # so the diff can see the base branch
+- run: git diff -z --diff-filter=d --name-only origin/main...HEAD | xargs -0r scute check code-complexity
+- run: git diff -z --diff-filter=d --name-only origin/main...HEAD | xargs -0r scute check code-similarity
+- run: scute check commit-message "$PR_TITLE"
+  env:
+    PR_TITLE: ${{ github.event.pull_request.title }} # never inline it in the script
 ```
+
+A full workflow and more in [CI](docs/integrations/ci.md).
 
 ## Guide Your Codebase
 
@@ -232,6 +251,17 @@ steps:
 
 Dependencies drift whether you're shipping or not. Catch it before it
 compounds.
+
+## Learn More
+
+- [Choosing files](docs/input.md): what the code checks do with the files you
+  hand over, and with none.
+- [Reading results](docs/output.md): the report, statuses, and exit codes.
+- [Configuration](docs/configuration.md): where `.scute.yml` lives, how
+  thresholds apply, and excluding files.
+- [Git hooks](docs/integrations/git-hooks.md) and [CI](docs/integrations/ci.md):
+  ready-made setups.
+- Each check's page, linked from [What It Checks](#what-it-checks).
 
 ## What Drives Scute
 

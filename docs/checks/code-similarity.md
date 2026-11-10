@@ -18,10 +18,10 @@ Catching it before it reaches a PR saves review cycles and keeps the codebase ho
 scute check code-similarity [OPTIONS] [FILES]...
 ```
 
-| Argument/Option      | Description                                                                       |
-| -------------------- | --------------------------------------------------------------------------------- |
-| `[FILES]...`         | Focus files. Only report clones involving these files. Reads from stdin if piped.  |
-| `--source-dir <DIR>` | Directory to scan for source files. Defaults to the working directory.             |
+| Argument/Option      | Description                                                                                    |
+| -------------------- | ---------------------------------------------------------------------------------------------- |
+| `[FILES]...`         | Focus files. Only report clones involving these files. Also read from stdin, one per line.     |
+| `--source-dir <DIR>` | Directory to scan for source files. Defaults to the working directory.                         |
 
 Scan the full project:
 
@@ -35,11 +35,11 @@ Focus on specific files:
 scute check code-similarity src/utils/format.rs
 ```
 
-Pipe changed files from git:
+### Source directory and focus files
 
-```sh
-git diff --name-only HEAD~1 | scute check code-similarity
-```
+Every supported file under the source directory gets compared. Focus files only narrow the report to clones involving them: a focus file's clone in an unchanged file still shows up.
+
+No focus files reports every clone in the source directory. [Choosing files](../input.md) covers how the files you hand over are handled.
 
 ### MCP tool
 
@@ -53,7 +53,7 @@ Tool name: `check_code_similarity`
 
 ## Configuration
 
-In your `.scute.yml`:
+In your [`.scute.yml`](../configuration.md):
 
 ```yaml
 checks:
@@ -72,7 +72,7 @@ checks:
 
 ### Thresholds
 
-The `observed` value is the number of duplicated tokens in a clone group. The check reports one finding per clone group.
+The `observed` value is the number of duplicated tokens in a clone group. The check reports one finding per clone group. [Thresholds](../configuration.md#thresholds) explains how `warn` and `fail` apply.
 
 | Threshold | Default | Description                                    |
 | --------- | ------- | ---------------------------------------------- |
@@ -90,13 +90,15 @@ With defaults: 70 tokens passes, 71 warns, 100 warns, 101 fails.
 | `test-thresholds`    | thresholds | warn: 100, fail: 130 | Separate thresholds for clone groups where every occurrence lives in test code |
 | `exclude`            | array\<string\> | `[]`            | Glob patterns for files to leave out of the comparison          |
 
-`exclude` patterns follow `.gitignore` semantics and match paths relative to the project root, even when `--source-dir` points somewhere narrower. Excluded files are never compared, so they can't show up in a clone. Useful for generated code, vendored dependencies, or other directories you don't control.
+Excluded files are never compared, so they can't show up in a clone, even when `--source-dir` points somewhere narrower. [Excluding files](../configuration.md#excluding-files) explains how patterns match.
 
 `min-tokens` controls sensitivity. Lower values catch smaller clones but produce more noise. 50 works well for most projects.
 
 Test code tends to have more acceptable duplication (similar setups, assertion patterns). `test-thresholds` sets a more lenient bar for clone groups that live entirely in test code. This includes `tests/` directories, `*.test.*`/`*.spec.*` files, `#[cfg(test)]` modules, and `#[test]` functions. If any occurrence in a clone group is production code, the regular thresholds apply.
 
 ## Examples
+
+Reports follow the shape described in [Reading results](../output.md).
 
 ### Fail: significant duplication
 
@@ -158,5 +160,4 @@ See the [handbook/checks/code-similarity/](../../handbook/checks/code-similarity
 
 - **Supported languages:** Rust, JavaScript, TypeScript.
 - **Structural, not semantic.** Compares token sequences. Whitespace and formatting don't matter. Renamed variables in otherwise-identical blocks still match. But two functions that do the same thing with different implementations won't be flagged.
-- **Focus vs. scan.** The `files` parameter focuses the *results* (only report clones involving those files), but the full project is always scanned for matches. You're filtering the report, not the search.
 - **Token granularity.** Very small clones (common patterns, boilerplate) are expected and usually not worth flagging. The `min-tokens` threshold controls what's worth reporting.

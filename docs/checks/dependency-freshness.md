@@ -36,7 +36,7 @@ Tool name: `check_dependency_freshness`
 
 ## Configuration
 
-In your `.scute.yml`:
+In your [`.scute.yml`](../configuration.md):
 
 ```yaml
 checks:
@@ -69,7 +69,7 @@ For example, with `level: minor, warn: 3, fail: 6`:
 
 ### Thresholds
 
-The `observed` value is the version gap for each dependency. Each dependency is evaluated independently.
+The `observed` value is the version gap for each dependency. Each dependency is evaluated independently. [Thresholds](../configuration.md#thresholds) explains how `warn` and `fail` apply.
 
 | Threshold | Default | Description                                       |
 | --------- | ------- | ------------------------------------------------- |
@@ -85,6 +85,8 @@ The `observed` value is the version gap for each dependency. Each dependency is 
 With the default (`level: major`), only major version gaps are evaluated against your thresholds, minor and patch drift is invisible, and there's no "above level" to trigger zero tolerance. Setting `level: minor` brings minor gaps under your thresholds and makes major gaps always fail. Setting `level: patch` tracks everything and makes both major and minor gaps always fail.
 
 ## Examples
+
+Reports follow the shape described in [Reading results](../output.md).
 
 ### Fail: major drift with default config
 
