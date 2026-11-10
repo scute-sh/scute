@@ -125,7 +125,7 @@ value.
 - **Layer boundary violations.** Imports that cross architectural layers
   directly. This goes beyond a single check and applies broadly across module
   boundaries.
-- **UI concerns leaking into domain.** Serialization formats, framework types,
+- **UI concerns leaking into domain.** (×2) Serialization formats, framework types,
   or presentation logic creeping into core domain code. A domain module
   returning `serde_json::Value` instead of its own types is a classic example.
   The domain should be infrastructure-agnostic; serialization belongs at the
