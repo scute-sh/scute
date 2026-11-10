@@ -221,6 +221,10 @@ value.
   to whoever was in the discussion: internal personas, coined terms, decisions
   referenced but never stated. A stranger landing on it can't tell what's
   wrong or what done looks like.
+- **Docs organized around shared text, not the reader's path.** (×1) Pages
+  get linked or deduplicated because they say similar things, so a reader of
+  one use case gets sent through another they never needed. Each use-case page
+  should stand on its own; general pages link down to the specific ones.
 - **CLI docs drift from implementation.** The documented CLI commands don't
   match what the tool actually does. The source of truth and the docs diverge.
 - **User-facing copy written without verifying behavior.** (×1) Help text,
