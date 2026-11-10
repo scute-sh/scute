@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 use std::{fmt, io};
 
-use crate::ExecutionError;
+use crate::{Evaluation, ExecutionError};
 use ignore::WalkBuilder;
 use ignore::overrides::{Override, OverrideBuilder};
 
@@ -103,6 +103,13 @@ impl From<&InvalidPath> for ExecutionError {
             message: invalid.to_string(),
             recovery: "check that the path exists and is readable".into(),
         }
+    }
+}
+
+impl From<InvalidPath> for Evaluation {
+    fn from(invalid: InvalidPath) -> Self {
+        let error = ExecutionError::from(&invalid);
+        Evaluation::errored(invalid.path, error)
     }
 }
 
