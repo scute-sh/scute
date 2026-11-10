@@ -5,6 +5,9 @@ the checks that read source files:
 [`code-complexity`](checks/code-complexity.md) and
 [`code-similarity`](checks/code-similarity.md).
 
+To check only what a commit or a pull request changes, see
+[Git hooks](integrations/git-hooks.md) and [CI](integrations/ci.md).
+
 ## Handing over files
 
 On the CLI, pass files or directories as arguments:
@@ -43,21 +46,3 @@ With no files, a check covers the whole project:
 
 - On the CLI: no arguments and nothing on stdin, an empty pipe included.
 - Over MCP: leave the list out. An empty list (`[]`) checks nothing.
-
-## Checking a change's files
-
-To check only the files a change touched, go through `xargs`:
-
-```sh
-git diff -z --diff-filter=d --name-only origin/main...HEAD | xargs -0r scute check code-complexity
-```
-
-- `-r` skips the check when there are no files.
-- `git diff -z` with `xargs -0` keeps names with spaces, quotes, or accents
-  intact. Without `-z`, git quotes a name like `café.rs` and the check can't
-  find it.
-- On a very long list, `xargs` splits the files across several runs, each
-  printing its own report.
-
-Ready-made setups live in [Git hooks](integrations/git-hooks.md) and
-[CI](integrations/ci.md).
