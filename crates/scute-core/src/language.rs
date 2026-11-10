@@ -35,6 +35,12 @@ struct LanguageFamily<R: ?Sized> {
     rules: Box<R>,
 }
 
+impl<R: ?Sized> Default for LanguageRegistry<R> {
+    fn default() -> Self {
+        Self { families: vec![] }
+    }
+}
+
 impl<R: ?Sized> LanguageRegistry<R> {
     #[must_use]
     pub fn new(entries: Vec<LanguageRegistryEntry<R>>) -> Self {
@@ -47,6 +53,13 @@ impl<R: ?Sized> LanguageRegistry<R> {
                 })
                 .collect(),
         }
+    }
+
+    /// Supports `languages`, applying `rules` to each of them.
+    #[must_use]
+    pub fn with(mut self, rules: Box<R>, languages: Vec<Language>) -> Self {
+        self.families.push(LanguageFamily { languages, rules });
+        self
     }
 
     fn languages(&self) -> impl Iterator<Item = (&Language, &R)> {
@@ -82,6 +95,18 @@ pub struct Rust;
 /// (JS vs TS vs TSX), but the AST node kinds used by checks are shared
 /// across all three, so one type handles all variants.
 pub struct JsFamily;
+
+/// The languages [`Rust`] rules apply to.
+#[must_use]
+pub fn rust_family() -> Vec<Language> {
+    vec![rust()]
+}
+
+/// The languages [`JsFamily`] rules apply to.
+#[must_use]
+pub fn js_family() -> Vec<Language> {
+    vec![javascript(), typescript(), typescript_tsx()]
+}
 
 #[must_use]
 pub fn rust() -> Language {
