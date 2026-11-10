@@ -8,7 +8,7 @@ use super::parse_source;
 use super::rules::SimilarityRules;
 use super::tree::SourceTree;
 use crate::files;
-use crate::files::{Exclusions, InvalidPath, SourceFile};
+use crate::files::{Exclusions, SourceFile};
 use crate::language::{self, JsFamily, LanguageRegistry, Rust};
 use crate::{Evaluation, ExecutionError, Thresholds};
 
@@ -137,7 +137,7 @@ pub fn check(
         }
         None => (None, vec![]),
     };
-    let errors = invalid.into_iter().map(invalid_focus_path);
+    let errors = invalid.into_iter().map(Evaluation::from);
 
     let clones = if focus_files.as_ref().is_some_and(Vec::is_empty) {
         vec![]
@@ -195,11 +195,6 @@ fn resolve_focus(
         &languages.supported_extensions(),
         &Exclusions::none(),
     )
-}
-
-fn invalid_focus_path(invalid: InvalidPath) -> Evaluation {
-    let error = ExecutionError::from(&invalid);
-    Evaluation::errored(invalid.path, error)
 }
 
 fn build_contexts<'a>(
