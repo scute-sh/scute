@@ -81,45 +81,29 @@ pub struct JsFamily;
 /// The languages [`Rust`] rules apply to.
 #[must_use]
 pub fn rust_family() -> Vec<Language> {
-    vec![rust()]
+    vec![Language {
+        grammar: tree_sitter_rust::LANGUAGE.into(),
+        extensions: &["rs"],
+    }]
 }
 
 /// The languages [`JsFamily`] rules apply to.
 #[must_use]
 pub fn js_family() -> Vec<Language> {
-    vec![javascript(), typescript(), typescript_tsx()]
-}
-
-#[must_use]
-pub fn rust() -> Language {
-    Language {
-        grammar: tree_sitter_rust::LANGUAGE.into(),
-        extensions: &["rs"],
-    }
-}
-
-#[must_use]
-pub fn javascript() -> Language {
-    Language {
-        grammar: tree_sitter_javascript::LANGUAGE.into(),
-        extensions: &["js", "jsx", "mjs", "cjs"],
-    }
-}
-
-#[must_use]
-pub fn typescript() -> Language {
-    Language {
-        grammar: tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
-        extensions: &["ts"],
-    }
-}
-
-#[must_use]
-pub fn typescript_tsx() -> Language {
-    Language {
-        grammar: tree_sitter_typescript::LANGUAGE_TSX.into(),
-        extensions: &["tsx"],
-    }
+    vec![
+        Language {
+            grammar: tree_sitter_javascript::LANGUAGE.into(),
+            extensions: &["js", "jsx", "mjs", "cjs"],
+        },
+        Language {
+            grammar: tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into(),
+            extensions: &["ts"],
+        },
+        Language {
+            grammar: tree_sitter_typescript::LANGUAGE_TSX.into(),
+            extensions: &["tsx"],
+        },
+    ]
 }
 
 #[cfg(test)]
