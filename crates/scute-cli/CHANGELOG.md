@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.19](https://github.com/scute-sh/scute/compare/scute-v0.0.18...scute-v0.0.19) - 2026-11-10
+
+### Added
+
+- name each code check's languages in its help and tool description ([#166](https://github.com/scute-sh/scute/pull/166))
+
+### Fixed
+
+- check a file once when several given paths reach it ([#167](https://github.com/scute-sh/scute/pull/167))
+
+### Other
+
+- let each check register the language families it supports ([#164](https://github.com/scute-sh/scute/pull/164))
+
 ## [0.0.18](https://github.com/scute-sh/scute/compare/scute-v0.0.17...scute-v0.0.18) - 2026-11-09
 
 ### Fixed
