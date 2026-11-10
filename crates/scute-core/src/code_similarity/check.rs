@@ -284,25 +284,9 @@ fn parse_trees(
 
 #[must_use]
 pub fn languages() -> LanguageRegistry<dyn SimilarityRules> {
-    use crate::language::{LanguageRegistry, LanguageRegistryEntry};
-    LanguageRegistry::new(vec![
-        LanguageRegistryEntry {
-            language: language::rust(),
-            rules: Box::new(Rust),
-        },
-        LanguageRegistryEntry {
-            language: language::javascript(),
-            rules: Box::new(JsFamily),
-        },
-        LanguageRegistryEntry {
-            language: language::typescript(),
-            rules: Box::new(JsFamily),
-        },
-        LanguageRegistryEntry {
-            language: language::typescript_tsx(),
-            rules: Box::new(JsFamily),
-        },
-    ])
+    LanguageRegistry::<dyn SimilarityRules>::default()
+        .with(Box::new(Rust), language::rust_family())
+        .with(Box::new(JsFamily), language::js_family())
 }
 
 #[cfg(test)]
