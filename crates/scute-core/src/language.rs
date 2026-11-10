@@ -24,11 +24,6 @@ pub struct LanguageRegistry<R: ?Sized> {
     families: Vec<LanguageFamily<R>>,
 }
 
-pub struct LanguageRegistryEntry<R: ?Sized> {
-    pub language: Language,
-    pub rules: Box<R>,
-}
-
 /// Languages that share one set of check rules.
 struct LanguageFamily<R: ?Sized> {
     languages: Vec<Language>,
@@ -42,19 +37,6 @@ impl<R: ?Sized> Default for LanguageRegistry<R> {
 }
 
 impl<R: ?Sized> LanguageRegistry<R> {
-    #[must_use]
-    pub fn new(entries: Vec<LanguageRegistryEntry<R>>) -> Self {
-        Self {
-            families: entries
-                .into_iter()
-                .map(|e| LanguageFamily {
-                    languages: vec![e.language],
-                    rules: e.rules,
-                })
-                .collect(),
-        }
-    }
-
     /// Supports `languages`, applying `rules` to each of them.
     #[must_use]
     pub fn with(mut self, rules: Box<R>, languages: Vec<Language>) -> Self {
@@ -146,22 +128,21 @@ mod tests {
     use std::path::Path;
 
     fn test_registry() -> LanguageRegistry<&'static str> {
-        LanguageRegistry::new(vec![
-            LanguageRegistryEntry {
-                language: Language {
+        LanguageRegistry::default()
+            .with(
+                Box::new("rust"),
+                vec![Language {
                     grammar: tree_sitter_rust::LANGUAGE.into(),
                     extensions: &["rs"],
-                },
-                rules: Box::new("rust"),
-            },
-            LanguageRegistryEntry {
-                language: Language {
+                }],
+            )
+            .with(
+                Box::new("js"),
+                vec![Language {
                     grammar: tree_sitter_javascript::LANGUAGE.into(),
                     extensions: &["js", "jsx"],
-                },
-                rules: Box::new("js"),
-            },
-        ])
+                }],
+            )
     }
 
     #[test]
@@ -192,7 +173,7 @@ mod tests {
 
     #[test]
     fn empty_registry_returns_none() {
-        let reg: LanguageRegistry<&str> = LanguageRegistry::new(vec![]);
+        let reg: LanguageRegistry<&str> = LanguageRegistry::default();
         assert!(reg.for_path(Path::new("main.rs")).is_none());
     }
 
