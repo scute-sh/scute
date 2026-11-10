@@ -16,10 +16,11 @@ pub struct Language {
     pub extensions: &'static [&'static str],
 }
 
-/// Extension-based registry mapping file extensions to language rules.
+/// The language families a check supports, each with that check's rules.
 ///
-/// Both `code_similarity` and `code_complexity` use this to resolve
-/// a file path to the right language + check-specific rules.
+/// Resolves a file path, by extension, to its language and the check's
+/// rules for it. Each check builds its own, registering only the families
+/// it supports.
 pub struct LanguageRegistry<R: ?Sized> {
     families: Vec<LanguageFamily<R>>,
 }
