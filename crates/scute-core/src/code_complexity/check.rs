@@ -386,14 +386,14 @@ mod tests {
 
     #[test_case("a.ts" ; "typescript")]
     #[test_case("a.js" ; "javascript")]
-    fn catch_evidence_formatting(filename: &str) {
+    fn evidence_names_catch_as_exception_handler(filename: &str) {
         let evidence = evidence_of_file(filename, "function f() { try {} catch (e) {} }");
         let entry = evidence
             .iter()
             .find(|e| e.rule.as_deref() == Some("flow break"))
             .unwrap();
 
-        assert!(entry.found.contains("'catch' exception handler"));
+        assert_eq!(entry.found, "'catch' exception handler (+1)");
     }
 
     #[test]
