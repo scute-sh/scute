@@ -246,9 +246,11 @@ mod tests {
 
         let evals = check_dir(&dir.root());
 
-        assert_eq!(evals.len(), 2);
-        assert!(evals[0].target.contains('a'));
-        assert!(evals[1].target.contains('b'));
+        let names: Vec<_> = evals
+            .iter()
+            .filter_map(|e| e.target.rsplit(':').next())
+            .collect();
+        assert_eq!(names, ["a", "b"]);
     }
 
     // for: +1, if: +1+1, two else ifs: +1 each = 5, the default warn threshold
