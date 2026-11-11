@@ -103,6 +103,7 @@ pub struct Contributor {
     pub increment: u64,
 }
 
+#[derive(Debug)]
 pub struct FunctionScore {
     pub name: String,
     pub line: usize,
@@ -402,6 +403,7 @@ mod tests {
     use super::*;
     use crate::code_complexity::check::languages;
     use crate::files::SourceFile;
+    use googletest::prelude::*;
     use test_case::test_case;
 
     // Source fixtures: named by scenario, not by language.
@@ -567,10 +569,13 @@ mod tests {
 
         let results = score_functions(&file(source), &languages());
 
-        let valid = results
-            .iter()
-            .find(|r| r.name == "valid")
-            .expect("the well-formed function next to the broken one is scored");
-        assert_eq!(valid.score, 1);
+        assert_that!(
+            results,
+            contains(matches_pattern!(FunctionScore {
+                name: eq("valid"),
+                score: eq(&1),
+                ..
+            }))
+        );
     }
 }
