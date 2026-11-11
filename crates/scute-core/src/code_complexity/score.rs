@@ -140,7 +140,7 @@ fn collect_functions(
             let score = ScoringContext {
                 rules,
                 fn_name: &unit.name,
-                impl_type: unit.receiver_type.as_deref(),
+                receiver_type: unit.receiver_type.as_deref(),
                 src,
                 contributors: &mut contributors,
             }
@@ -202,7 +202,7 @@ fn classify_contextual(
 struct ScoringContext<'a> {
     rules: &'a dyn ComplexityRules,
     fn_name: &'a str,
-    impl_type: Option<&'a str>,
+    receiver_type: Option<&'a str>,
     src: &'a [u8],
     contributors: &'a mut Vec<Contributor>,
 }
@@ -216,7 +216,8 @@ impl ScoringContext<'_> {
     }
 
     fn score_node(&mut self, node: tree_sitter::Node, nesting: u64) -> u64 {
-        let Some(role) = classify(self.rules, node, self.fn_name, self.impl_type, self.src) else {
+        let Some(role) = classify(self.rules, node, self.fn_name, self.receiver_type, self.src)
+        else {
             return self.complexity(node, nesting);
         };
         match role {
