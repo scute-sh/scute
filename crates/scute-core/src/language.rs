@@ -2,8 +2,8 @@
 //!
 //! A [`Language`] is a named tree-sitter grammar with its file extensions.
 //! [`LanguageRegistry`] maps file paths to the right language + check rules.
-//! Check-specific traits ([`ComplexityRules`], [`SimilarityRules`]) are
-//! implemented on the shared rule types [`Rust`] and [`JsFamily`].
+//! Each check implements its own trait ([`ComplexityRules`], [`SimilarityRules`])
+//! on the rule types of the language families it supports.
 //!
 //! [`ComplexityRules`]: crate::code_complexity
 //! [`SimilarityRules`]: crate::code_similarity::rules::SimilarityRules
@@ -95,6 +95,9 @@ pub struct Rust;
 /// across all three, so one type handles all variants.
 pub struct JsFamily;
 
+/// Rule type for Java source code.
+pub struct Java;
+
 /// The languages [`Rust`] rules apply to.
 #[must_use]
 pub fn rust_family() -> Vec<Language> {
@@ -125,6 +128,16 @@ pub fn js_family() -> Vec<Language> {
             extensions: &["tsx"],
         },
     ]
+}
+
+/// The languages [`Java`] rules apply to.
+#[must_use]
+pub fn java_family() -> Vec<Language> {
+    vec![Language {
+        name: "Java",
+        grammar: tree_sitter_java::LANGUAGE.into(),
+        extensions: &["java"],
+    }]
 }
 
 #[cfg(test)]

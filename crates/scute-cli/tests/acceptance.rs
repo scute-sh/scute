@@ -645,6 +645,42 @@ function process(items: number[]): number {
     }
 
     #[test_case(Cli)]
+    #[test_case(CliStdin)]
+    #[test_case(Mcp)]
+    fn flags_complex_java_method_in_maven_layout(interface: Interface) {
+        Scute::new(interface)
+            .scute_config(
+                r"
+checks:
+  code-complexity:
+    thresholds:
+      warn: 2
+",
+            )
+            .source_file(
+                "src/main/java/shop/OrderService.java",
+                r"public class OrderService {
+    public int countValid(List<Order> orders) {
+        int count = 0;
+        for (Order order : orders) {
+            if (order.isValid()) {
+                count++;
+            }
+        }
+        return count;
+    }
+}
+",
+            )
+            .code_complexity()
+            .run()
+            .expect_warn()
+            .expect_target_contains("src/main/java/shop/OrderService.java:2:countValid")
+            .expect_observed(3)
+            .expect_evidence_count(2);
+    }
+
+    #[test_case(Cli)]
     #[test_case(Mcp)]
     fn nonexistent_path_reports_an_error_naming_it(interface: Interface) {
         Scute::new(interface)

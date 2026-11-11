@@ -28,12 +28,14 @@ fn assert_function_score(results: &[super::score::FunctionScore], name: &str, ex
 
 #[test_case("a.rs", "fn f(a: i32, b: i32) -> i32 { a + b }" ; "rust")]
 #[test_case("a.ts", "function f(a: number, b: number) { return a + b }" ; "typescript")]
+#[test_case("A.java", "class A { int f(int a, int b) { return a + b; } }" ; "java")]
 fn flat_function_scores_zero(path: &str, source: &str) {
     expect_score(source, path, 0);
 }
 
 #[test_case("a.rs", "fn f(x: i32) { if x > 0 { return; } }" ; "rust")]
 #[test_case("a.ts", "function f(x: number) { if (x > 0) { return; } }" ; "typescript")]
+#[test_case("A.java", "class A { void f(int x) { if (x > 0) { return; } } }" ; "java")]
 fn scores_if(path: &str, source: &str) {
     expect_score(source, path, 1);
 }
@@ -67,6 +69,7 @@ fn scores_nested_ternary_with_nesting_penalty() {
 #[test_case("a.ts", "function f(items: number[]) { for (const x of items) {} }" ; "typescript_for_of")]
 #[test_case("a.ts", "function f(x: number) { while (x > 0) { x--; } }" ; "typescript_while")]
 #[test_case("a.ts", "function f(x: number) { do { x--; } while (x > 0); }" ; "typescript_do_while")]
+#[test_case("A.java", "class A { void f(List<Integer> items) { for (int item : items) {} } }" ; "java_for_each")]
 fn scores_loop(path: &str, source: &str) {
     expect_score(source, path, 1);
 }
@@ -320,6 +323,9 @@ impl S {
 #[test_case("a.ts", "class Calc {
     check(x: number) { if (x > 0) { return true; } return false; }
 }", 1 ; "typescript_class_method")]
+#[test_case("A.java", "class Calc {
+    boolean check(int x) { if (x > 0) { return true; } return false; }
+}", 1 ; "java_class_method")]
 fn scores_method(path: &str, source: &str, expected: u64) {
     expect_score(source, path, expected);
 }
