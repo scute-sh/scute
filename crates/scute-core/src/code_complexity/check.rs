@@ -230,6 +230,7 @@ fn format_evidence(c: &score::Contributor, path: &Path) -> Evidence {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use googletest::prelude::*;
     use scute_test_utils::TestDir;
     use test_case::test_case;
 
@@ -246,9 +247,13 @@ mod tests {
 
         let evals = check_dir(&dir.root());
 
-        assert_eq!(evals.len(), 2);
-        assert!(evals[0].target.contains('a'));
-        assert!(evals[1].target.contains('b'));
+        assert_that!(
+            evals,
+            elements_are![
+                field!(Evaluation.target, ends_with(":1:a")),
+                field!(Evaluation.target, ends_with(":1:b")),
+            ]
+        );
     }
 
     // for: +1, if: +1+1, two else ifs: +1 each = 5, the default warn threshold
@@ -384,14 +389,16 @@ mod tests {
 
     #[test_case("a.ts" ; "typescript")]
     #[test_case("a.js" ; "javascript")]
-    fn catch_evidence_formatting(filename: &str) {
+    fn evidence_names_catch_as_exception_handler(filename: &str) {
         let evidence = evidence_of_file(filename, "function f() { try {} catch (e) {} }");
-        let entry = evidence
-            .iter()
-            .find(|e| e.rule.as_deref() == Some("flow break"))
-            .unwrap();
-
-        assert!(entry.found.contains("'catch' exception handler"));
+        assert_that!(
+            evidence,
+            elements_are![matches_pattern!(Evidence {
+                rule: some(eq("flow break")),
+                found: eq("'catch' exception handler (+1)"),
+                ..
+            })]
+        );
     }
 
     #[test]

@@ -103,6 +103,7 @@ pub struct Contributor {
     pub increment: u64,
 }
 
+#[derive(Debug)]
 pub struct FunctionScore {
     pub name: String,
     pub line: usize,
@@ -402,6 +403,7 @@ mod tests {
     use super::*;
     use crate::code_complexity::check::languages;
     use crate::files::SourceFile;
+    use googletest::prelude::*;
     use test_case::test_case;
 
     // Source fixtures: named by scenario, not by language.
@@ -562,11 +564,18 @@ mod tests {
     }
 
     #[test]
-    fn broken_syntax_returns_partial_results() {
-        let results = score_functions(&file("fn f(x: i32 -> { x + }"), &languages());
-        assert!(
-            results.is_empty() || results.iter().all(|r| r.score < u64::MAX),
-            "broken syntax should produce empty or valid results"
+    fn scores_well_formed_function_next_to_broken_one() {
+        let source = "fn valid() { if true {} }\nfn broken(x: i32 -> { x + }";
+
+        let results = score_functions(&file(source), &languages());
+
+        assert_that!(
+            results,
+            contains(matches_pattern!(FunctionScore {
+                name: eq("valid"),
+                score: eq(&1),
+                ..
+            }))
         );
     }
 }
