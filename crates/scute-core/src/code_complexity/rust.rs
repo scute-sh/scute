@@ -134,11 +134,12 @@ fn callee_name<'a>(target: tree_sitter::Node, src: &'a [u8]) -> Option<&'a str> 
     }
 }
 
-fn scope_is_self(target: tree_sitter::Node, impl_type: Option<&str>, src: &[u8]) -> bool {
+fn scope_is_self(target: tree_sitter::Node, receiver_type: Option<&str>, src: &[u8]) -> bool {
     if target.kind() != "scoped_identifier" {
         return true;
     }
-    field_text(target, "path", src).is_some_and(|scope| scope == "Self" || impl_type == Some(scope))
+    field_text(target, "path", src)
+        .is_some_and(|scope| scope == "Self" || receiver_type == Some(scope))
 }
 
 fn field_text<'a>(node: tree_sitter::Node, field: &str, src: &'a [u8]) -> Option<&'a str> {
