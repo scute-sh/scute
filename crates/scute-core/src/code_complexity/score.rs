@@ -562,11 +562,15 @@ mod tests {
     }
 
     #[test]
-    fn broken_syntax_returns_partial_results() {
-        let results = score_functions(&file("fn f(x: i32 -> { x + }"), &languages());
-        assert!(
-            results.is_empty() || results.iter().all(|r| r.score < u64::MAX),
-            "broken syntax should produce empty or valid results"
-        );
+    fn scores_well_formed_function_next_to_broken_one() {
+        let source = "fn valid() { if true {} }\nfn broken(x: i32 -> { x + }";
+
+        let results = score_functions(&file(source), &languages());
+
+        let valid = results
+            .iter()
+            .find(|r| r.name == "valid")
+            .expect("the well-formed function next to the broken one is scored");
+        assert_eq!(valid.score, 1);
     }
 }
