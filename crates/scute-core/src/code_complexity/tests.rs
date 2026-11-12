@@ -379,6 +379,154 @@ fn scores_generator_declaration_independently() {
     assert_function_score(&results, "gen", 1);
 }
 
+fn expect_single_function(source: &str, path: &str, name: &str, line: usize, score: u64) {
+    assert_that!(
+        score_functions(
+            &SourceFile {
+                path: path.into(),
+                content: source.into(),
+            },
+            &languages()
+        ),
+        elements_are![matches_pattern!(FunctionScore {
+            name: eq(name),
+            line: eq(&line),
+            score: eq(&score),
+            ..
+        })]
+    );
+}
+
+#[test_case("a.js", "const f = (x) => { if (x) {} };", "f" ; "javascript_arrow")]
+#[test_case("a.js", "let g = function (x) { if (x) {} };", "g" ; "javascript_function_expression")]
+#[test_case("a.js", "var h = function* (x) { if (x) {} };", "h" ; "javascript_generator")]
+#[test_case("a.ts", "const f = (x: boolean) => { if (x) {} };", "f" ; "typescript_arrow")]
+#[test_case("a.ts", "let g = function (x: boolean) { if (x) {} };", "g" ; "typescript_function_expression")]
+#[test_case("a.tsx", "const f = (x: boolean) => { if (x) {} };", "f" ; "tsx_arrow")]
+#[test_case("a.tsx", "let g = function (x: boolean) { if (x) {} };", "g" ; "tsx_function_expression")]
+fn scores_function_assigned_to_variable_under_the_variable_name(
+    path: &str,
+    source: &str,
+    name: &str,
+) {
+    expect_single_function(source, path, name, 1, 1);
+}
+
+#[test_case("a.js", "const api = { save: function (x) { if (x) {} } };" ; "javascript_function_expression")]
+#[test_case("a.js", "const api = { save: (x) => { if (x) {} } };" ; "javascript_arrow")]
+#[test_case("a.ts", "const api = { save: function (x: boolean) { if (x) {} } };" ; "typescript_function_expression")]
+#[test_case("a.ts", "const api = { save: (x: boolean) => { if (x) {} } };" ; "typescript_arrow")]
+#[test_case("a.tsx", "register({ save: (x: boolean) => { if (x) {} } });" ; "tsx_arrow_in_call_argument")]
+fn scores_object_literal_property_function_under_the_property_name(path: &str, source: &str) {
+    expect_single_function(source, path, "save", 1, 1);
+}
+
+#[test_case("a.js", "class A { handle = (x) => { if (x) {} }; }" ; "javascript")]
+#[test_case("a.ts", "class A { private handle = (x: boolean) => { if (x) {} }; }" ; "typescript")]
+#[test_case("a.tsx", "class A { handle = (x: boolean) => { if (x) {} }; }" ; "tsx")]
+fn scores_class_field_arrow_function_under_the_field_name(path: &str, source: &str) {
+    expect_single_function(source, path, "handle", 1, 1);
+}
+
+// ternary: +1 | &&, ||: +2 | ternary +1, nested ternary +2
+#[test_case("a.ts", "const f = (x: boolean) => x ? 1 : 0;", 1 ; "ternary")]
+#[test_case("a.ts", "const f = (x: boolean) => x && y || z;", 2 ; "mixed_logical_operators")]
+#[test_case("a.ts", "const f = (x: boolean) => x ? (y ? 1 : 2) : 0;", 3 ; "nested_ternary")]
+#[test_case("a.js", "const f = (x) => x ? 1 : 0;", 1 ; "javascript_ternary")]
+fn scores_the_expression_body_of_an_arrow_function_assigned_to_a_variable(
+    path: &str,
+    source: &str,
+    expected: u64,
+) {
+    expect_single_function(source, path, "f", 1, expected);
+}
+
+#[test_case("a.ts", "const api = { save: (x: boolean) => x ? 1 : 0 };", "save" ; "object_literal_property")]
+#[test_case("a.ts", "class A { handle = (x: boolean) => x ? 1 : 0; }", "handle" ; "class_field")]
+fn scores_the_expression_body_of_an_arrow_function_bound_to_a_name(
+    path: &str,
+    source: &str,
+    name: &str,
+) {
+    expect_single_function(source, path, name, 1, 1);
+}
+
+// arrow/function: nesting +1, if: +1+1
+#[test_case("a.js", "function outer(x) { const f = (y) => { if (y) {} }; }" ; "javascript_variable")]
+#[test_case("a.ts", "function outer(x: boolean) { const api = { save: function (y: boolean) { if (y) {} } }; }" ; "typescript_object_property")]
+#[test_case("a.tsx", "function outer(x: boolean) { class A { handle = (y: boolean) => { if (y) {} }; } }" ; "tsx_class_field")]
+#[test_case("a.js", "const outer = (x) => { const f = (y) => { if (y) {} }; };" ; "javascript_variable_in_assigned_arrow")]
+fn adds_assigned_function_inside_a_function_to_that_function_one_level_deeper(
+    path: &str,
+    source: &str,
+) {
+    expect_single_function(source, path, "outer", 1, 2);
+}
+
+#[test_case("a.js", "const f =\n\n  (x) => { if (x) {} };" ; "javascript_variable")]
+#[test_case("a.ts", "const api = {\n  other: 1,\n  save: function (x: boolean) { if (x) {} },\n};" ; "typescript_object_property")]
+#[test_case("a.tsx", "class A {\n  first = 1;\n  handle = (x: boolean) => { if (x) {} };\n}" ; "tsx_class_field")]
+fn locates_assigned_function_on_the_line_where_the_function_starts(path: &str, source: &str) {
+    let results = score(source, path);
+
+    assert_that!(results, elements_are![field!(FunctionScore.line, eq(&3))]);
+}
+
+// Campbell's Cognitive Complexity spec, p.20: YUI model.js save, total 20.
+#[test_case("a.js" ; "javascript")]
+#[test_case("a.ts" ; "typescript")]
+#[test_case("a.tsx" ; "tsx")]
+fn matches_spec_worked_example_with_an_object_literal_method(path: &str) {
+    expect_single_function(
+        r"const Model = {
+            save: function (options, callback) {
+                var self = this;
+                if (typeof options === 'function') {
+                    callback = options;
+                    options = {};
+                }
+                options || (options = {});
+                self._validate(self.toJSON(), function (err) {
+                    if (err) {
+                        callback && callback.call(null, err);
+                        return;
+                    }
+                    self.sync(self.isNew() ? 'create' : 'update', options, function (err, response) {
+                        var facade = {
+                                options : options,
+                                response: response
+                            },
+                            parsed;
+                        if (err) {
+                            facade.error = err;
+                            facade.src = 'save';
+                            self.fire(EVT_ERROR, facade);
+                        } else {
+                            if (!self._saveEvent) {
+                                self._saveEvent = self.publish(EVT_SAVE, {
+                                    preventable: false
+                                });
+                            }
+                            if (response) {
+                                parsed = facade.parsed = self._parse(response);
+                                self.setAttrs(parsed, options);
+                            }
+                            self.changed = {};
+                            self.fire(EVT_SAVE, facade);
+                        }
+                        callback && callback.apply(null, arguments);
+                    });
+                });
+                return self;
+            }
+        };",
+        path,
+        "save",
+        2,
+        20,
+    );
+}
+
 #[test_case("a.rs",
     "fn outer() { fn inner() { if true {} } if true {} }",
     "outer", 3, "inner", 1

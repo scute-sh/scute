@@ -12,19 +12,18 @@ impl ComplexityRules for JsFamily {
         node: tree_sitter::Node<'a>,
         src: &'a [u8],
     ) -> Option<ScoringUnit<'a>> {
-        match node.kind() {
-            "function_declaration" | "generator_function_declaration" | "method_definition" => {}
-            _ => return None,
-        }
-        let name = node
-            .child_by_field_name("name")
-            .and_then(|n| n.utf8_text(src).ok())
-            .unwrap_or("")
-            .to_string();
+        let (name, function) = if DECLARED_FUNCTIONS.contains(&node.kind()) {
+            (node.child_by_field_name("name"), node)
+        } else {
+            assigned_function(node)?
+        };
         Some(ScoringUnit {
-            name,
-            line: node.start_position().row + 1,
-            node: node.child_by_field_name("body").unwrap_or(node),
+            name: name
+                .and_then(|n| n.utf8_text(src).ok())
+                .unwrap_or("")
+                .to_string(),
+            line: function.start_position().row + 1,
+            body: function.child_by_field_name("body")?,
             receiver_type: None,
         })
     }
@@ -145,6 +144,45 @@ impl ComplexityRules for JsFamily {
     fn is_logical_operator_token(&self, node: tree_sitter::Node) -> bool {
         node.kind() == "&&" || node.kind() == "||"
     }
+}
+
+const DECLARED_FUNCTIONS: &[&str] = &[
+    "function_declaration",
+    "generator_function_declaration",
+    "method_definition",
+];
+const FUNCTION_EXPRESSIONS: &[&str] = &[
+    "arrow_function",
+    "function_expression",
+    "generator_function",
+];
+
+/// A function expression bound to a name outside any other function: a
+/// variable, an object-literal property or a class field. Returns the name
+/// node and the function.
+fn assigned_function(
+    node: tree_sitter::Node,
+) -> Option<(Option<tree_sitter::Node>, tree_sitter::Node)> {
+    let name_field = match node.kind() {
+        "variable_declarator" | "public_field_definition" => "name",
+        "pair" => "key",
+        "field_definition" => "property",
+        _ => return None,
+    };
+    let function = node
+        .child_by_field_name("value")
+        .filter(|value| FUNCTION_EXPRESSIONS.contains(&value.kind()))?;
+    if is_inside_function(node) {
+        return None;
+    }
+    Some((node.child_by_field_name(name_field), function))
+}
+
+fn is_inside_function(node: tree_sitter::Node) -> bool {
+    std::iter::successors(node.parent(), tree_sitter::Node::parent).any(|ancestor| {
+        DECLARED_FUNCTIONS.contains(&ancestor.kind())
+            || FUNCTION_EXPRESSIONS.contains(&ancestor.kind())
+    })
 }
 
 fn callee_name<'a>(target: tree_sitter::Node, src: &'a [u8]) -> Option<&'a str> {

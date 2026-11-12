@@ -104,7 +104,7 @@ fn collect_functions(
                 contributors: &mut contributors,
                 enclosing: vec![],
             }
-            .complexity(unit.node, 0);
+            .score_node(unit.body, 0);
             results.push(FunctionScore {
                 name: unit.name,
                 line: unit.line,
