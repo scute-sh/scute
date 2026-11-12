@@ -52,6 +52,7 @@ Constructs in the same cognitive role follow the same scoring rules. A `switch` 
 - **Else-if chains are flat.** `if / else if / else if / else` does not compound nesting. Each branch costs +1 at any depth, since the nesting cost was already paid on the `if`. Code inside a branch body is one level deeper, same as inside an `if` body, and its nesting chain names the branch it sits in (`'else > if'`).
 - **An `if`'s condition isn't nested in it.** A ternary or closure in the condition sits at the `if`'s own level. Only the bodies go one level deeper.
 - **Inline nesting inherits depth.** Closures (Rust) and arrow functions / function expressions (JS/TS) bump nesting depth by 1 for their contained code. They're not a fresh scope.
+- **Named function expressions stand on their own.** (JS/TS) Outside any other function, an arrow function or function expression assigned to a variable (`const f = () => {}`), an object-literal property (`save: function () {}`) or a class field (`handle = () => {}`) is scored as its own function, named after the variable, property or field. Inside a function, it's inline nesting like any other arrow function. Anonymous callbacks that aren't assigned to anything aren't scored.
 - **Logical operators count sequence changes.** `a && b && c` is one sequence (+1). `a && b || c && d` has two changes (+3).
 - **Ternaries score like `if`.** (JS/TS) A ternary counts as a conditional and nests like any other flow construct.
 
