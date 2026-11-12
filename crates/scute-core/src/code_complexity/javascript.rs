@@ -112,20 +112,29 @@ impl ComplexityRules for JsFamily {
     fn nesting_kind(&self, node: tree_sitter::Node) -> Option<NestingKind> {
         match node.kind() {
             "arrow_function" => Some(NestingKind::Inline(FlowConstruct {
-                role: Construct::InlineNesting,
+                role: Construct::NestedFunction,
                 label: "arrow",
             })),
             "function_expression" => Some(NestingKind::Inline(FlowConstruct {
-                role: Construct::InlineNesting,
+                role: Construct::NestedFunction,
                 label: "function",
             })),
             "generator_function" => Some(NestingKind::Inline(FlowConstruct {
-                role: Construct::InlineNesting,
+                role: Construct::NestedFunction,
                 label: "generator",
             })),
-            "function_declaration" | "generator_function_declaration" | "method_definition" => {
-                Some(NestingKind::Separate)
-            }
+            "function_declaration" => Some(NestingKind::Separate(FlowConstruct {
+                role: Construct::NestedFunction,
+                label: "function",
+            })),
+            "generator_function_declaration" => Some(NestingKind::Separate(FlowConstruct {
+                role: Construct::NestedFunction,
+                label: "generator",
+            })),
+            "method_definition" => Some(NestingKind::Separate(FlowConstruct {
+                role: Construct::NestedFunction,
+                label: "method",
+            })),
             _ => None,
         }
     }
