@@ -2,74 +2,17 @@ use crate::files::SourceFile;
 use crate::language::LanguageRegistry;
 use crate::parser::{AstParser, TreeSitterParser};
 
-use super::rules::{ComplexityRules, ElseBody, NestingKind, NodeRole};
+use super::rules::{ComplexityRules, ElseBody, FlowConstruct, JumpKeyword, LogicalOp, NestingKind};
 
 const ELSE_IF: &str = "else if";
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum Construct {
-    Conditional,
-    Loop,
-    ExceptionHandler,
-    InlineNesting,
+enum NodeRole {
+    FlowConstruct(FlowConstruct),
+    NestingBoundary,
+    LogicalExpression,
+    LabeledJump(JumpKeyword, String),
+    RecursiveCall,
 }
-
-impl Construct {
-    pub fn flow_break_category(self) -> &'static str {
-        match self {
-            Self::Conditional => "conditional",
-            Self::Loop => "loop",
-            Self::ExceptionHandler => "exception handler",
-            Self::InlineNesting => "closure",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct FlowConstruct {
-    pub role: Construct,
-    pub label: &'static str,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum JumpKeyword {
-    Break,
-    Continue,
-}
-
-impl JumpKeyword {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::Break => "break",
-            Self::Continue => "continue",
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum LogicalOp {
-    And(&'static str),
-    Or(&'static str),
-}
-
-impl LogicalOp {
-    pub fn label(self) -> &'static str {
-        match self {
-            Self::And(s) | Self::Or(s) => s,
-        }
-    }
-}
-
-impl PartialEq for LogicalOp {
-    fn eq(&self, other: &Self) -> bool {
-        matches!(
-            (self, other),
-            (Self::And(_), Self::And(_)) | (Self::Or(_), Self::Or(_))
-        )
-    }
-}
-
-impl Eq for LogicalOp {}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum ContributorKind {
@@ -418,6 +361,7 @@ fn collect_logical_operators(
 mod tests {
     use super::*;
     use crate::code_complexity::check::languages;
+    use crate::code_complexity::rules::Construct;
     use crate::files::SourceFile;
     use googletest::prelude::*;
     use test_case::test_case;

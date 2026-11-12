@@ -1,7 +1,9 @@
 use crate::language::JsFamily;
 
-use super::rules::{ComplexityRules, ElseBody, ElseBranch, NestingKind, ScoringUnit};
-use super::score::{Construct, FlowConstruct, JumpKeyword, LogicalOp};
+use super::rules::{
+    ComplexityRules, Construct, ElseBody, ElseBranch, FlowConstruct, JumpKeyword, LogicalOp,
+    NestingKind, ScoringUnit,
+};
 
 impl ComplexityRules for JsFamily {
     fn scoring_unit<'a>(

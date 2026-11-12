@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use super::rules::ComplexityRules;
+use super::rules::{self, ComplexityRules};
 use super::score;
 use crate::files;
 use crate::files::{Exclusions, SourceFile};
@@ -141,7 +141,7 @@ fn score_file(
         .collect()
 }
 
-fn format_nesting_chain(chain: &[score::FlowConstruct]) -> String {
+fn format_nesting_chain(chain: &[rules::FlowConstruct]) -> String {
     chain
         .iter()
         .map(|c| c.label)
@@ -153,7 +153,7 @@ fn pluralize_levels(n: u64) -> &'static str {
     if n == 1 { "level" } else { "levels" }
 }
 
-fn format_operators(operators: &[score::LogicalOp]) -> String {
+fn format_operators(operators: &[rules::LogicalOp]) -> String {
     let mut unique: Vec<&str> = operators.iter().map(|o| o.label()).collect();
     unique.sort_unstable();
     unique.dedup();
