@@ -10,3 +10,19 @@ pub fn else_clause(clause: tree_sitter::Node) -> Option<ElseBranch> {
     let body = clause.named_children(&mut cursor).find(|c| !c.is_extra())?;
     Some(ElseBranch { keyword, body })
 }
+
+/// Looks through `parenthesized_expression` nodes down to the expression they
+/// group (tree-sitter-rust, tree-sitter-javascript, tree-sitter-typescript,
+/// tree-sitter-java).
+pub fn skip_parentheses(mut node: tree_sitter::Node) -> tree_sitter::Node {
+    while node.kind() == "parenthesized_expression" {
+        let Some(inner) = node
+            .named_children(&mut node.walk())
+            .find(|c| !c.is_extra())
+        else {
+            break;
+        };
+        node = inner;
+    }
+    node
+}

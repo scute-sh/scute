@@ -1,5 +1,6 @@
 use crate::language::Java;
 
+use super::grammar::skip_parentheses;
 use super::rules::{
     ComplexityRules, Construct, ElseBranch, FlowConstruct, IfConstruct, JumpKeyword, LogicalOp,
     NestingKind, ScoringUnit,
@@ -58,6 +59,10 @@ impl ComplexityRules for Java {
 
     fn is_logical_operator_token(&self, _node: tree_sitter::Node) -> bool {
         false
+    }
+
+    fn skip_parentheses<'a>(&self, node: tree_sitter::Node<'a>) -> tree_sitter::Node<'a> {
+        skip_parentheses(node)
     }
 
     fn jump_label(&self, _node: tree_sitter::Node, _src: &[u8]) -> Option<(JumpKeyword, String)> {

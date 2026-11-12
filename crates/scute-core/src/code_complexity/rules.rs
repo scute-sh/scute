@@ -134,6 +134,11 @@ pub trait ComplexityRules {
     /// Used to filter operands when walking logical expression trees.
     fn is_logical_operator_token(&self, node: tree_sitter::Node) -> bool;
 
+    /// The expression this node groups, looking through any redundant
+    /// parentheses, or the node itself when it isn't parenthesized.
+    /// Parentheses don't break a sequence of like logical operators.
+    fn skip_parentheses<'a>(&self, node: tree_sitter::Node<'a>) -> tree_sitter::Node<'a>;
+
     /// If this node is a labeled jump (`break 'label`, `continue 'label`),
     /// return the keyword and label text. Scores +1 as a hybrid increment.
     fn jump_label(&self, node: tree_sitter::Node, src: &[u8]) -> Option<(JumpKeyword, String)>;

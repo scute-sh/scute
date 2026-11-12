@@ -1,6 +1,6 @@
 use crate::language::JsFamily;
 
-use super::grammar::else_clause;
+use super::grammar::{else_clause, skip_parentheses};
 use super::rules::{
     ComplexityRules, Construct, FlowConstruct, IfConstruct, JumpKeyword, LogicalOp, NestingKind,
     ScoringUnit,
@@ -144,6 +144,10 @@ impl ComplexityRules for JsFamily {
 
     fn is_logical_operator_token(&self, node: tree_sitter::Node) -> bool {
         node.kind() == "&&" || node.kind() == "||"
+    }
+
+    fn skip_parentheses<'a>(&self, node: tree_sitter::Node<'a>) -> tree_sitter::Node<'a> {
+        skip_parentheses(node)
     }
 }
 
