@@ -427,12 +427,6 @@ mod tests {
     const FLAT_FUNCTION: &str = "fn f() { 1 + 2 }";
     const SINGLE_CONDITIONAL: &str = "fn f() { if true {} }";
     const CONDITIONAL_WITH_ELSE: &str = "fn f(x: bool) { if x {} else {} }";
-    const CONDITIONAL_WITH_ELSE_ON_ITS_OWN_LINE: &str = "fn f(x: bool) {
-        if x {
-        }
-        else {
-        }
-    }";
     const LOOP_WITH_NESTED_CONDITIONAL: &str = "fn f() { for x in [1] { if true {} } }";
     const LOOP_WITH_INLINE_NESTING_AND_CONDITIONAL: &str =
         "fn f() { for x in [1] { [1].iter().filter(|y| { if **y > 0 {} }); } }";
@@ -514,20 +508,6 @@ mod tests {
             .unwrap();
 
         assert_eq!(else_c.increment, 1);
-    }
-
-    #[test]
-    fn else_increment_points_at_the_else_keyword_line() {
-        let cs = contributors(CONDITIONAL_WITH_ELSE_ON_ITS_OWN_LINE);
-
-        assert_that!(
-            cs,
-            contains(matches_pattern!(Contributor {
-                kind: matches_pattern!(ContributorKind::Else { .. }),
-                line: eq(&4),
-                ..
-            }))
-        );
     }
 
     #[test]

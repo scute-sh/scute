@@ -384,6 +384,11 @@ mod tests {
         "nesting", "'if' nested 1 level: 'for-each > if' (+2)", Some("extract inner block into a function")
         ; "java_nesting_chain_names_the_for_each"
     )]
+    #[test_case(
+        "A.java", "class A { void f(boolean a, boolean b, boolean c) { if (a) {} else if (b) {} else if (c) { if (a) {} } } }",
+        "nesting", "'if' nested 1 level: 'else if > if' (+2)", Some("extract inner block into a function")
+        ; "java_nesting_chain_counts_else_if_as_one_level"
+    )]
     fn evidence_formatting(
         filename: &str,
         source: &str,

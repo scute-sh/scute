@@ -1,7 +1,8 @@
 use crate::code_complexity::check::languages;
 use crate::files::SourceFile;
 
-use super::score::score_functions;
+use super::score::{Contributor, ContributorKind, FunctionScore, score_functions};
+use googletest::prelude::*;
 use test_case::test_case;
 
 fn score(source: &str, path: &str) -> Vec<super::score::FunctionScore> {
@@ -81,6 +82,7 @@ fn scores_catch() {
 
 #[test_case("a.rs", "fn f(x: bool) { if x {} else {} }" ; "rust")]
 #[test_case("a.ts", "function f(x: number) { if (x > 0) { return 1; } else { return -1; } }" ; "typescript")]
+#[test_case("A.java", "class A { int f(int x) { if (x > 0) { return 1; } else { return -1; } } }" ; "java")]
 fn scores_else(path: &str, source: &str) {
     expect_score(source, path, 2);
 }
@@ -96,6 +98,11 @@ fn scores_else(path: &str, source: &str) {
     else if (x < 0) { return -1; }
     else { return 0; }
 }" ; "typescript")]
+#[test_case("A.java", "class A { int f(int x) {
+    if (x > 0) { return 1; }
+    else if (x < 0) { return -1; }
+    else { return 0; }
+} }" ; "java")]
 fn scores_else_if_chain_flat(path: &str, source: &str) {
     expect_score(source, path, 3);
 }
@@ -108,13 +115,54 @@ fn scores_else_if_chain_flat(path: &str, source: &str) {
 #[test_case("a.rs", "fn f(a: bool, b: Option<i32>, c: &[i32]) { for _ in c { if a {} else if let Some(x) = b {} } }", 4 ; "rust_if_let")]
 #[test_case("a.rs", "fn f(a: bool, c: &[i32]) { for _ in c { if a {} else if a {} else if a {} else if a {} } }", 6 ; "rust_chain")]
 #[test_case("a.ts", "function f(a: boolean, c: number[]) { for (const x of c) { if (a) {} else if (a) {} else if (a) {} else if (a) {} } }", 6 ; "typescript_chain")]
+#[test_case("A.java", "class A { void f(boolean a, boolean b, List<Integer> c) { for (int x : c) { if (a) {} else if (b) {} } } }", 4 ; "java")]
+#[test_case("A.java", "class A { void f(boolean a, List<Integer> c) { for (int x : c) { if (a) {} else if (a) {} else if (a) {} else if (a) {} } } }", 6 ; "java_chain")]
 fn scores_nested_else_if_flat_per_branch(path: &str, source: &str, expected: u64) {
     expect_score(source, path, expected);
+}
+
+#[test_case("a.rs", "fn f(x: bool) {
+    if x {
+        return;
+    }
+    else {
+    }
+}" ; "rust")]
+#[test_case("a.ts", "function f(x: boolean) {
+    if (x) {
+        return;
+    }
+    else {
+    }
+}" ; "typescript")]
+#[test_case("A.java", "class A { void f(boolean x) {
+    if (x)
+    {
+    }
+    else
+    {
+    }
+} }" ; "java_allman")]
+fn locates_else_increment_on_the_else_keyword_line(path: &str, source: &str) {
+    let results = score(source, path);
+
+    assert_that!(
+        results,
+        elements_are![field!(
+            FunctionScore.contributors,
+            contains(matches_pattern!(Contributor {
+                kind: matches_pattern!(ContributorKind::Else { .. }),
+                line: eq(&5),
+                ..
+            }))
+        )]
+    );
 }
 
 // if: +1, else: +1, nested if: +1+1
 #[test_case("a.rs", "fn f(a: bool, b: bool) { if a {} else { if b {} } }" ; "rust")]
 #[test_case("a.ts", "function f(a: boolean, b: boolean) { if (a) {} else { if (b) {} } }" ; "typescript")]
+#[test_case("A.java", "class A { void f(boolean a, boolean b) { if (a) {} else { if (b) {} } } }" ; "java")]
 fn scores_if_as_only_statement_of_else_block_with_nesting_penalty(path: &str, source: &str) {
     expect_score(source, path, 4);
 }
