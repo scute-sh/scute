@@ -96,7 +96,9 @@ pub struct ElseBranch<'a> {
 pub struct ScoringUnit<'a> {
     pub name: String,
     pub line: usize,
-    pub node: tree_sitter::Node<'a>,
+    /// What gets scored: the function's body, a block or a single expression.
+    /// The scorer classifies this node itself, then everything inside it.
+    pub body: tree_sitter::Node<'a>,
     pub receiver_type: Option<String>,
 }
 

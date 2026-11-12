@@ -24,7 +24,7 @@ impl ComplexityRules for Rust {
         Some(ScoringUnit {
             name,
             line: node.start_position().row + 1,
-            node,
+            body: node.child_by_field_name("body")?,
             receiver_type,
         })
     }

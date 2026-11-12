@@ -23,7 +23,7 @@ impl ComplexityRules for JsFamily {
                 .unwrap_or("")
                 .to_string(),
             line: function.start_position().row + 1,
-            node: function.child_by_field_name("body").unwrap_or(function),
+            body: function.child_by_field_name("body")?,
             receiver_type: None,
         })
     }

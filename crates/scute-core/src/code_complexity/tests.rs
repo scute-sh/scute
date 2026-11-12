@@ -428,6 +428,29 @@ fn scores_class_field_arrow_function_under_the_field_name(path: &str, source: &s
     expect_single_function(source, path, "handle", 1, 1);
 }
 
+// ternary: +1 | &&, ||: +2 | ternary +1, nested ternary +2
+#[test_case("a.ts", "const f = (x: boolean) => x ? 1 : 0;", 1 ; "ternary")]
+#[test_case("a.ts", "const f = (x: boolean) => x && y || z;", 2 ; "mixed_logical_operators")]
+#[test_case("a.ts", "const f = (x: boolean) => x ? (y ? 1 : 2) : 0;", 3 ; "nested_ternary")]
+#[test_case("a.js", "const f = (x) => x ? 1 : 0;", 1 ; "javascript_ternary")]
+fn scores_the_expression_body_of_an_arrow_function_assigned_to_a_variable(
+    path: &str,
+    source: &str,
+    expected: u64,
+) {
+    expect_single_function(source, path, "f", 1, expected);
+}
+
+#[test_case("a.ts", "const api = { save: (x: boolean) => x ? 1 : 0 };", "save" ; "object_literal_property")]
+#[test_case("a.ts", "class A { handle = (x: boolean) => x ? 1 : 0; }", "handle" ; "class_field")]
+fn scores_the_expression_body_of_an_arrow_function_bound_to_a_name(
+    path: &str,
+    source: &str,
+    name: &str,
+) {
+    expect_single_function(source, path, name, 1, 1);
+}
+
 // arrow/function: nesting +1, if: +1+1
 #[test_case("a.js", "function outer(x) { const f = (y) => { if (y) {} }; }" ; "javascript_variable")]
 #[test_case("a.ts", "function outer(x: boolean) { const api = { save: function (y: boolean) { if (y) {} } }; }" ; "typescript_object_property")]
