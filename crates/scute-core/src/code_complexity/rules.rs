@@ -93,6 +93,17 @@ pub struct ElseBranch<'a> {
     pub body: tree_sitter::Node<'a>,
 }
 
+/// Two operands joined by `&&` or `||`. Parentheses grouping another logical
+/// expression are already looked through, since they don't break a sequence
+/// of like operators: in `(a && b) && c`, the left operand is `a && b`. Any
+/// other operand stays as written, parentheses included.
+#[derive(Clone, Copy)]
+pub struct LogicalExpression<'a> {
+    pub operator: LogicalOp,
+    pub left: tree_sitter::Node<'a>,
+    pub right: tree_sitter::Node<'a>,
+}
+
 pub struct ScoringUnit<'a> {
     pub name: String,
     pub line: usize,
@@ -126,13 +137,9 @@ pub trait ComplexityRules {
     /// named function), return how it affects scoring.
     fn nesting_kind(&self, node: tree_sitter::Node) -> Option<NestingKind>;
 
-    /// If this node is a logical expression, return which operator it uses.
-    /// Used to count operator sequences.
-    fn logical_operator(&self, node: tree_sitter::Node) -> Option<LogicalOp>;
-
-    /// Whether this node is a logical operator token (`&&`, `||`).
-    /// Used to filter operands when walking logical expression trees.
-    fn is_logical_operator_token(&self, node: tree_sitter::Node) -> bool;
+    /// If this node is a logical expression, return its operator and operands.
+    /// Used to read operator sequences left to right.
+    fn logical_expression<'a>(&self, node: tree_sitter::Node<'a>) -> Option<LogicalExpression<'a>>;
 
     /// If this node is a labeled jump (`break 'label`, `continue 'label`),
     /// return the keyword and label text. Scores +1 as a hybrid increment.

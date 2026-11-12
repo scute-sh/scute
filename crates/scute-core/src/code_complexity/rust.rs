@@ -1,9 +1,9 @@
 use crate::language::Rust;
 
-use super::grammar::else_clause;
+use super::grammar::{else_clause, logical_binary_expression};
 use super::rules::{
-    ComplexityRules, Construct, FlowConstruct, IfConstruct, JumpKeyword, LogicalOp, NestingKind,
-    ScoringUnit,
+    ComplexityRules, Construct, FlowConstruct, IfConstruct, JumpKeyword, LogicalExpression,
+    NestingKind, ScoringUnit,
 };
 
 impl ComplexityRules for Rust {
@@ -75,20 +75,8 @@ impl ComplexityRules for Rust {
         }
     }
 
-    fn logical_operator(&self, node: tree_sitter::Node) -> Option<LogicalOp> {
-        if node.kind() != "binary_expression" {
-            return None;
-        }
-        node.children(&mut node.walk())
-            .find(|c| c.kind() == "&&" || c.kind() == "||")
-            .map(|c| match c.kind() {
-                "&&" => LogicalOp::And("&&"),
-                _ => LogicalOp::Or("||"),
-            })
-    }
-
-    fn is_logical_operator_token(&self, node: tree_sitter::Node) -> bool {
-        node.kind() == "&&" || node.kind() == "||"
+    fn logical_expression<'a>(&self, node: tree_sitter::Node<'a>) -> Option<LogicalExpression<'a>> {
+        logical_binary_expression(node)
     }
 
     fn jump_label(&self, node: tree_sitter::Node, src: &[u8]) -> Option<(JumpKeyword, String)> {

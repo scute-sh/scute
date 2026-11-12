@@ -251,6 +251,67 @@ fn scores_logical_operators(path: &str, source: &str, expected: u64) {
     expect_score(source, path, expected);
 }
 
+// Campbell's Cognitive Complexity spec, p.8: if: +1, then `&&`, `||`, `&&` sequences read left to right: +3
+#[test_case("a.rs", "fn f(a: bool, b: bool, c: bool, d: bool, e: bool, f: bool) {
+    if a
+        && b && c
+        || d || e
+        && f {}
+}" ; "rust")]
+#[test_case("a.js", "function f(a, b, c, d, e, f) {
+    if (a
+        && b && c
+        || d || e
+        && f) {}
+}" ; "javascript")]
+#[test_case("a.ts", "function f(a: boolean, b: boolean, c: boolean, d: boolean, e: boolean, f: boolean) {
+    if (a
+        && b && c
+        || d || e
+        && f) {}
+}" ; "typescript")]
+fn matches_spec_example_counting_boolean_sequences_in_source_order(path: &str, source: &str) {
+    expect_score(source, path, 4);
+}
+
+#[test_case("a.rs", "fn f(a: bool, b: bool, c: bool, d: bool) -> bool { a && b && c && d }", 1 ; "rust_and_chain")]
+#[test_case("a.rs", "fn f(a: bool, b: bool, c: bool, d: bool) -> bool { a || b || c || d }", 1 ; "rust_or_chain")]
+#[test_case("a.rs", "fn f(a: bool, b: bool, c: bool, d: bool) -> bool { a || b && c || d }", 3 ; "rust_or_and_or")]
+#[test_case("a.rs", "fn f(a: bool, b: bool, c: bool) -> bool { (a && b) && c }", 1 ; "rust_redundant_parentheses")]
+#[test_case("a.rs", "fn f(a: bool, b: bool, c: bool) -> bool { a && !(b && c) }", 2 ; "rust_negated_group")]
+#[test_case("a.js", "function f(a, b, c, d) { return a && b && c && d; }", 1 ; "javascript_and_chain")]
+#[test_case("a.js", "function f(a, b, c, d) { return a || b || c || d; }", 1 ; "javascript_or_chain")]
+#[test_case("a.js", "function f(a, b, c, d) { return a || b && c || d; }", 3 ; "javascript_or_and_or")]
+#[test_case("a.js", "function f(a, b, c) { return (a && b) && c; }", 1 ; "javascript_redundant_parentheses")]
+#[test_case("a.js", "function f(a, b, c) { return a && !(b && c); }", 2 ; "javascript_negated_group")]
+#[test_case("a.ts", "function f(a: boolean, b: boolean, c: boolean, d: boolean) { return a && b && c && d; }", 1 ; "typescript_and_chain")]
+#[test_case("a.ts", "function f(a: boolean, b: boolean, c: boolean, d: boolean) { return a || b || c || d; }", 1 ; "typescript_or_chain")]
+#[test_case("a.ts", "function f(a: boolean, b: boolean, c: boolean, d: boolean) { return a || b && c || d; }", 3 ; "typescript_or_and_or")]
+#[test_case("a.ts", "function f(a: boolean, b: boolean, c: boolean) { return (a && b) && c; }", 1 ; "typescript_redundant_parentheses")]
+#[test_case("a.ts", "function f(a: boolean, b: boolean, c: boolean) { return a && !(b && c); }", 2 ; "typescript_negated_group")]
+fn scores_boolean_operator_sequences_in_source_order(path: &str, source: &str, expected: u64) {
+    expect_score(source, path, expected);
+}
+
+#[test_case("a.js", "function f(a, b, c) { return a && (b ? c : a); }", 2 ; "javascript_ternary_right")]
+#[test_case("a.js", "function f(a, b, c) { return (a ? b : c) && a; }", 2 ; "javascript_ternary_left")]
+#[test_case("a.ts", "function f(a: boolean, b: boolean, c: boolean) { return (a ? b : c) || a; }", 2 ; "typescript_ternary_left")]
+#[test_case("a.rs", "fn f(a: bool, b: bool, c: bool) -> bool { a && (if b { c } else { a }) }", 3 ; "rust_if_right")]
+#[test_case("a.rs", "fn f(a: bool, b: bool, c: bool) -> bool { (if b { c } else { a }) && a }", 3 ; "rust_if_left")]
+#[test_case("a.rs", "fn f(a: bool, b: bool, c: bool) -> bool { a && (match b { true => c, _ => a }) }", 2 ; "rust_match_right")]
+#[test_case("a.rs", "fn f(a: bool, b: bool, c: bool) -> bool { a && (f(b, c, a)) }", 2 ; "rust_recursion_right")]
+fn scores_parenthesized_structure_used_as_boolean_operand(path: &str, source: &str, expected: u64) {
+    expect_score(source, path, expected);
+}
+
+// Pins current behavior: an unparenthesized structure used as an operand isn't scored.
+// Issue #173 will score it like its parenthesized twin.
+#[test_case("fn f(a: bool, b: bool, c: bool) -> bool { a && if b { c } else { a } }" ; "if_expression")]
+#[test_case("fn f(a: bool, b: bool, c: bool) -> bool { a && f(b, c, a) }" ; "recursive_call")]
+fn skips_bare_structure_used_as_boolean_operand(source: &str) {
+    expect_score(source, "a.rs", 1);
+}
+
 #[test]
 fn ignores_nullish_coalescing() {
     expect_score("function f(a: any, b: any) { return a ?? b; }", "a.ts", 0);

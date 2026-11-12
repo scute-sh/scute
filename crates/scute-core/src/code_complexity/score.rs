@@ -3,8 +3,8 @@ use crate::language::LanguageRegistry;
 use crate::parser::{AstParser, TreeSitterParser};
 
 use super::rules::{
-    ComplexityRules, Construct, ElseBranch, FlowConstruct, IfConstruct, JumpKeyword, LogicalOp,
-    NestingKind,
+    ComplexityRules, Construct, ElseBranch, FlowConstruct, IfConstruct, JumpKeyword,
+    LogicalExpression, LogicalOp, NestingKind,
 };
 
 const IF: FlowConstruct = FlowConstruct {
@@ -24,7 +24,7 @@ enum NodeRole<'t> {
     If(IfConstruct<'t>),
     FlowConstruct(FlowConstruct),
     NestingBoundary(NestingKind),
-    LogicalExpression,
+    LogicalExpression(LogicalExpression<'t>),
     LabeledJump(JumpKeyword, String),
     RecursiveCall,
 }
@@ -140,8 +140,8 @@ fn classify_structural<'t>(
     if let Some(kind) = rules.nesting_kind(node) {
         return Some(NodeRole::NestingBoundary(kind));
     }
-    if rules.logical_operator(node).is_some() {
-        return Some(NodeRole::LogicalExpression);
+    if let Some(expression) = rules.logical_expression(node) {
+        return Some(NodeRole::LogicalExpression(expression));
     }
     None
 }
@@ -190,7 +190,9 @@ impl ScoringContext<'_> {
             NodeRole::If(construct) => self.score_if(node, construct, nesting),
             NodeRole::FlowConstruct(construct) => self.score_flow_break(node, nesting, construct),
             NodeRole::NestingBoundary(kind) => self.score_nesting_boundary(node, nesting, kind),
-            NodeRole::LogicalExpression => self.score_logical_sequence(node, nesting),
+            NodeRole::LogicalExpression(expression) => {
+                self.score_logical_sequence(node, expression, nesting)
+            }
             NodeRole::LabeledJump(keyword, label) => self.score_jump(node, nesting, keyword, label),
             NodeRole::RecursiveCall => self.score_recursion(node, nesting),
         }
@@ -318,35 +320,50 @@ impl ScoringContext<'_> {
         1 + self.complexity(node, nesting)
     }
 
-    fn score_logical_sequence(&mut self, node: tree_sitter::Node, nesting: u64) -> u64 {
-        let mut operators = vec![];
-        collect_logical_operators(node, self.rules, &mut operators);
+    fn score_logical_sequence(
+        &mut self,
+        node: tree_sitter::Node,
+        expression: LogicalExpression,
+        nesting: u64,
+    ) -> u64 {
+        let mut flat = FlatLogicalExpression::default();
+        flat.flatten(self.rules, expression);
 
-        let score = count_operator_sequences(&operators);
+        let score = count_operator_sequences(&flat.operators);
         if score > 0 {
+            let operators = flat.operators;
             self.push(ContributorKind::Logical { operators }, node, score);
         }
 
-        score + self.visit_logical_leaves(node, nesting)
+        score
+            + flat
+                .operands
+                .into_iter()
+                .map(|operand| self.complexity(operand, nesting))
+                .sum::<u64>()
+    }
+}
+
+/// A logical expression read left to right as one run of operators and the
+/// operands between them, looking through parentheses.
+#[derive(Default)]
+struct FlatLogicalExpression<'t> {
+    operators: Vec<LogicalOp>,
+    operands: Vec<tree_sitter::Node<'t>>,
+}
+
+impl<'t> FlatLogicalExpression<'t> {
+    fn flatten(&mut self, rules: &dyn ComplexityRules, expression: LogicalExpression<'t>) {
+        self.read_operand(rules, expression.left);
+        self.operators.push(expression.operator);
+        self.read_operand(rules, expression.right);
     }
 
-    fn visit_logical_leaves(&mut self, node: tree_sitter::Node, nesting: u64) -> u64 {
-        let mut cursor = node.walk();
-        let children: Vec<_> = node
-            .children(&mut cursor)
-            .filter(|child| !self.rules.is_logical_operator_token(*child))
-            .collect();
-
-        children
-            .into_iter()
-            .map(|child| {
-                if self.rules.logical_operator(child).is_some() {
-                    self.visit_logical_leaves(child, nesting)
-                } else {
-                    self.complexity(child, nesting)
-                }
-            })
-            .sum()
+    fn read_operand(&mut self, rules: &dyn ComplexityRules, operand: tree_sitter::Node<'t>) {
+        match rules.logical_expression(operand) {
+            Some(expression) => self.flatten(rules, expression),
+            None => self.operands.push(operand),
+        }
     }
 }
 
@@ -356,24 +373,6 @@ fn count_operator_sequences(operators: &[LogicalOp]) -> u64 {
         .filter(|pair| pair[0] != pair[1])
         .count() as u64
         + u64::from(!operators.is_empty())
-}
-
-fn collect_logical_operators(
-    node: tree_sitter::Node,
-    rules: &dyn ComplexityRules,
-    operators: &mut Vec<LogicalOp>,
-) {
-    let Some(op) = rules.logical_operator(node) else {
-        return;
-    };
-
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if rules.logical_operator(child).is_some() {
-            collect_logical_operators(child, rules, operators);
-        }
-    }
-    operators.push(op);
 }
 
 #[cfg(test)]
