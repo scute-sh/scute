@@ -1,7 +1,7 @@
 use crate::language::Java;
 
 use super::rules::{
-    ComplexityRules, Construct, ElseBody, ElseBranch, FlowConstruct, JumpKeyword, LogicalOp,
+    ComplexityRules, Construct, ElseBranch, FlowConstruct, IfConstruct, JumpKeyword, LogicalOp,
     NestingKind, ScoringUnit,
 };
 
@@ -27,35 +27,25 @@ impl ComplexityRules for Java {
         })
     }
 
+    fn if_construct<'a>(&self, node: tree_sitter::Node<'a>) -> Option<IfConstruct<'a>> {
+        if node.kind() != "if_statement" {
+            return None;
+        }
+        Some(IfConstruct {
+            condition: node.child_by_field_name("condition")?,
+            consequence: node.child_by_field_name("consequence")?,
+            alternative: else_branch(node),
+        })
+    }
+
     fn flow_construct(&self, node: tree_sitter::Node) -> Option<FlowConstruct> {
         match node.kind() {
-            "if_statement" => Some(FlowConstruct {
-                role: Construct::Conditional,
-                label: "if",
-            }),
             "enhanced_for_statement" => Some(FlowConstruct {
                 role: Construct::Loop,
                 label: "for-each",
             }),
             _ => None,
         }
-    }
-
-    fn else_branch<'a>(&self, conditional: tree_sitter::Node<'a>) -> Option<ElseBranch<'a>> {
-        if conditional.kind() != "if_statement" {
-            return None;
-        }
-        let body = conditional.child_by_field_name("alternative")?;
-        let keyword = conditional
-            .children(&mut conditional.walk())
-            .find(|c| c.kind() == "else")?;
-        Some(ElseBranch {
-            keyword,
-            body: match body.kind() {
-                "if_statement" => ElseBody::If(body),
-                _ => ElseBody::Plain(body),
-            },
-        })
     }
 
     fn nesting_kind(&self, _node: tree_sitter::Node) -> Option<NestingKind> {
@@ -83,4 +73,14 @@ impl ComplexityRules for Java {
     ) -> bool {
         false
     }
+}
+
+/// An `if_statement` holds its `else` keyword directly, with the statement
+/// after it as its `alternative`.
+fn else_branch(if_statement: tree_sitter::Node) -> Option<ElseBranch> {
+    let body = if_statement.child_by_field_name("alternative")?;
+    let keyword = if_statement
+        .children(&mut if_statement.walk())
+        .find(|c| c.kind() == "else")?;
+    Some(ElseBranch { keyword, body })
 }

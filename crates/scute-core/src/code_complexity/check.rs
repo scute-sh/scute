@@ -355,6 +355,16 @@ mod tests {
         ; "nesting_chain_skips_sibling_branches_of_else_if_chain"
     )]
     #[test_case(
+        "a.rs", "fn f(a: bool, b: bool) { if a {} else { if b {} } }",
+        "nesting", "'if' nested 1 level: 'else > if' (+2)", Some("extract inner block into a function")
+        ; "nesting_chain_names_the_else_branch"
+    )]
+    #[test_case(
+        "a.rs", "fn f(a: bool, b: bool, c: bool) { if a {} else if b {} else { if c {} } }",
+        "nesting", "'if' nested 1 level: 'else > if' (+2)", Some("extract inner block into a function")
+        ; "nesting_chain_names_the_else_closing_an_else_if_chain"
+    )]
+    #[test_case(
         "a.rs", "fn f(a: bool, b: bool) -> bool { a && b }",
         "boolean logic", "'&&' operators (+1)", Some("extract into a named boolean")
         ; "logical_single_operator"
@@ -387,7 +397,7 @@ mod tests {
     #[test_case(
         "A.java", "class A { void f(boolean a, boolean b, boolean c) { if (a) {} else if (b) {} else if (c) { if (a) {} } } }",
         "nesting", "'if' nested 1 level: 'else if > if' (+2)", Some("extract inner block into a function")
-        ; "java_nesting_chain_counts_else_if_as_one_level"
+        ; "java_nesting_chain_skips_sibling_branches_of_else_if_chain"
     )]
     fn evidence_formatting(
         filename: &str,

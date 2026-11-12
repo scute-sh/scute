@@ -63,6 +63,7 @@ impl PartialEq for LogicalOp {
 
 impl Eq for LogicalOp {}
 
+#[derive(Clone, Copy)]
 pub enum NestingKind {
     /// Increases nesting, part of enclosing function (closures, arrow functions).
     /// The construct appears in nesting chains.
@@ -71,20 +72,25 @@ pub enum NestingKind {
     Separate,
 }
 
-/// The `else` of a conditional. Scores +1 as a hybrid increment, and its body
-/// sits at the same nesting level as the conditional's own body.
+/// An `if`, split into the parts that score at different nesting levels: the
+/// condition sits at the `if`'s own level, the consequence one level deeper.
+#[derive(Clone, Copy)]
+pub struct IfConstruct<'a> {
+    pub condition: tree_sitter::Node<'a>,
+    pub consequence: tree_sitter::Node<'a>,
+    pub alternative: Option<ElseBranch<'a>>,
+}
+
+/// The `else` of an `if`, a hybrid increment of +1. Its body sits one level
+/// deeper, like the consequence. When the body is itself an `if`, the pair
+/// reads as one `else if`: the chained `if` takes no increment of its own and
+/// its condition stays at the outer `if`'s level.
+#[derive(Clone, Copy)]
 pub struct ElseBranch<'a> {
     /// The `else` keyword, which locates the increment.
     pub keyword: tree_sitter::Node<'a>,
-    pub body: ElseBody<'a>,
-}
-
-pub enum ElseBody<'a> {
-    /// `else { ... }`
-    Plain(tree_sitter::Node<'a>),
-    /// `else if ...`: the chained conditional takes no flow construct
-    /// increment of its own.
-    If(tree_sitter::Node<'a>),
+    /// What follows the keyword: a block, a single statement, or an `if`.
+    pub body: tree_sitter::Node<'a>,
 }
 
 pub struct ScoringUnit<'a> {
@@ -107,13 +113,14 @@ pub trait ComplexityRules {
         src: &'a [u8],
     ) -> Option<ScoringUnit<'a>>;
 
-    /// If this node is a flow control construct (`if`, `for`, `match`, etc.),
-    /// return its cognitive role and language-specific label.
-    /// These get a structural increment of `1 + nesting`.
-    fn flow_construct(&self, node: tree_sitter::Node) -> Option<FlowConstruct>;
+    /// If this node is an `if`, return its parts.
+    fn if_construct<'a>(&self, node: tree_sitter::Node<'a>) -> Option<IfConstruct<'a>>;
 
-    /// If this conditional has an `else`, return it.
-    fn else_branch<'a>(&self, conditional: tree_sitter::Node<'a>) -> Option<ElseBranch<'a>>;
+    /// If this node is any other flow control construct (`for`, `match`,
+    /// ternary, etc.), return its cognitive role and language-specific label.
+    /// These get a structural increment of `1 + nesting`, and everything
+    /// inside them sits one level deeper.
+    fn flow_construct(&self, node: tree_sitter::Node) -> Option<FlowConstruct>;
 
     /// If this node is a nesting boundary (closure, arrow function, nested
     /// named function), return how it affects scoring.

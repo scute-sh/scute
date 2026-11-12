@@ -1,8 +1,9 @@
 use crate::language::JsFamily;
 
+use super::grammar::else_clause;
 use super::rules::{
-    ComplexityRules, Construct, ElseBody, ElseBranch, FlowConstruct, JumpKeyword, LogicalOp,
-    NestingKind, ScoringUnit,
+    ComplexityRules, Construct, FlowConstruct, IfConstruct, JumpKeyword, LogicalOp, NestingKind,
+    ScoringUnit,
 };
 
 impl ComplexityRules for JsFamily {
@@ -57,12 +58,21 @@ impl ComplexityRules for JsFamily {
         Some((keyword, label.to_string()))
     }
 
+    fn if_construct<'a>(&self, node: tree_sitter::Node<'a>) -> Option<IfConstruct<'a>> {
+        if node.kind() != "if_statement" {
+            return None;
+        }
+        Some(IfConstruct {
+            condition: node.child_by_field_name("condition")?,
+            consequence: node.child_by_field_name("consequence")?,
+            alternative: node
+                .child_by_field_name("alternative")
+                .and_then(else_clause),
+        })
+    }
+
     fn flow_construct(&self, node: tree_sitter::Node) -> Option<FlowConstruct> {
         match node.kind() {
-            "if_statement" => Some(FlowConstruct {
-                role: Construct::Conditional,
-                label: "if",
-            }),
             "for_statement" => Some(FlowConstruct {
                 role: Construct::Loop,
                 label: "for",
@@ -118,24 +128,6 @@ impl ComplexityRules for JsFamily {
             }
             _ => None,
         }
-    }
-
-    fn else_branch<'a>(&self, conditional: tree_sitter::Node<'a>) -> Option<ElseBranch<'a>> {
-        if conditional.kind() != "if_statement" {
-            return None;
-        }
-        let clause = conditional.child_by_field_name("alternative")?;
-        let mut cursor = clause.walk();
-        let mut children = clause.children(&mut cursor).filter(|c| !c.is_extra());
-        let keyword = children.next()?;
-        let body = children.next()?;
-        Some(ElseBranch {
-            keyword,
-            body: match body.kind() {
-                "if_statement" => ElseBody::If(body),
-                _ => ElseBody::Plain(body),
-            },
-        })
     }
 
     fn logical_operator(&self, node: tree_sitter::Node) -> Option<LogicalOp> {

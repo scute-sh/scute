@@ -2,13 +2,28 @@ use crate::files::SourceFile;
 use crate::language::LanguageRegistry;
 use crate::parser::{AstParser, TreeSitterParser};
 
-use super::rules::{ComplexityRules, ElseBody, FlowConstruct, JumpKeyword, LogicalOp, NestingKind};
+use super::rules::{
+    ComplexityRules, Construct, ElseBranch, FlowConstruct, IfConstruct, JumpKeyword, LogicalOp,
+    NestingKind,
+};
 
-const ELSE_IF: &str = "else if";
+const IF: FlowConstruct = FlowConstruct {
+    role: Construct::Conditional,
+    label: "if",
+};
+const ELSE_IF: FlowConstruct = FlowConstruct {
+    role: Construct::Conditional,
+    label: "else if",
+};
+const ELSE: FlowConstruct = FlowConstruct {
+    role: Construct::Conditional,
+    label: "else",
+};
 
-enum NodeRole {
+enum NodeRole<'t> {
+    If(IfConstruct<'t>),
     FlowConstruct(FlowConstruct),
-    NestingBoundary,
+    NestingBoundary(NestingKind),
     LogicalExpression,
     LabeledJump(JumpKeyword, String),
     RecursiveCall,
@@ -87,6 +102,7 @@ fn collect_functions(
                 receiver_type: unit.receiver_type.as_deref(),
                 src,
                 contributors: &mut contributors,
+                enclosing: vec![],
             }
             .complexity(unit.node, 0);
             results.push(FunctionScore {
@@ -100,23 +116,29 @@ fn collect_functions(
     }
 }
 
-fn classify(
+fn classify<'t>(
     rules: &dyn ComplexityRules,
-    node: tree_sitter::Node,
+    node: tree_sitter::Node<'t>,
     fn_name: &str,
     receiver_type: Option<&str>,
     src: &[u8],
-) -> Option<NodeRole> {
+) -> Option<NodeRole<'t>> {
     classify_structural(rules, node)
         .or_else(|| classify_contextual(rules, node, fn_name, receiver_type, src))
 }
 
-fn classify_structural(rules: &dyn ComplexityRules, node: tree_sitter::Node) -> Option<NodeRole> {
+fn classify_structural<'t>(
+    rules: &dyn ComplexityRules,
+    node: tree_sitter::Node<'t>,
+) -> Option<NodeRole<'t>> {
+    if let Some(construct) = rules.if_construct(node) {
+        return Some(NodeRole::If(construct));
+    }
     if let Some(construct) = rules.flow_construct(node) {
         return Some(NodeRole::FlowConstruct(construct));
     }
-    if rules.nesting_kind(node).is_some() {
-        return Some(NodeRole::NestingBoundary);
+    if let Some(kind) = rules.nesting_kind(node) {
+        return Some(NodeRole::NestingBoundary(kind));
     }
     if rules.logical_operator(node).is_some() {
         return Some(NodeRole::LogicalExpression);
@@ -124,13 +146,13 @@ fn classify_structural(rules: &dyn ComplexityRules, node: tree_sitter::Node) -> 
     None
 }
 
-fn classify_contextual(
+fn classify_contextual<'t>(
     rules: &dyn ComplexityRules,
     node: tree_sitter::Node,
     fn_name: &str,
     receiver_type: Option<&str>,
     src: &[u8],
-) -> Option<NodeRole> {
+) -> Option<NodeRole<'t>> {
     if let Some((keyword, label)) = rules.jump_label(node, src) {
         return Some(NodeRole::LabeledJump(keyword, label));
     }
@@ -146,6 +168,9 @@ struct ScoringContext<'a> {
     receiver_type: Option<&'a str>,
     src: &'a [u8],
     contributors: &'a mut Vec<Contributor>,
+    /// The structures around the node being scored, outermost first, back to
+    /// the nearest function boundary. Nesting evidence names them.
+    enclosing: Vec<FlowConstruct>,
 }
 
 impl ScoringContext<'_> {
@@ -162,8 +187,9 @@ impl ScoringContext<'_> {
             return self.complexity(node, nesting);
         };
         match role {
+            NodeRole::If(construct) => self.score_if(node, construct, nesting),
             NodeRole::FlowConstruct(construct) => self.score_flow_break(node, nesting, construct),
-            NodeRole::NestingBoundary => self.complexity(node, nesting + 1),
+            NodeRole::NestingBoundary(kind) => self.score_nesting_boundary(node, nesting, kind),
             NodeRole::LogicalExpression => self.score_logical_sequence(node, nesting),
             NodeRole::LabeledJump(keyword, label) => self.score_jump(node, nesting, keyword, label),
             NodeRole::RecursiveCall => self.score_recursion(node, nesting),
@@ -178,7 +204,8 @@ impl ScoringContext<'_> {
         });
     }
 
-    fn score_flow_break(
+    /// Records the `1 + nesting` increment of a structure and returns it.
+    fn push_structural(
         &mut self,
         node: tree_sitter::Node,
         nesting: u64,
@@ -186,43 +213,87 @@ impl ScoringContext<'_> {
     ) -> u64 {
         let increment = 1 + nesting;
         let kind = if nesting > 0 {
-            let mut chain = nesting_chain(node, self.rules);
-            chain.push(construct);
             ContributorKind::Nesting {
                 construct,
                 depth: nesting,
-                chain,
+                chain: [self.enclosing.as_slice(), &[construct]].concat(),
             }
         } else {
             ContributorKind::FlowBreak { construct }
         };
         self.push(kind, node, increment);
-        increment + self.score_branches(node, nesting + 1)
+        increment
     }
 
-    /// Scores a flow construct's own body, then its `else` (if any) at the same
-    /// nesting level, following `else if` chains.
-    fn score_branches(&mut self, node: tree_sitter::Node, nesting: u64) -> u64 {
-        let Some(branch) = self.rules.else_branch(node) else {
-            return self.complexity(node, nesting);
+    /// Scores with `construct` added to the enclosing structures.
+    fn inside(&mut self, construct: FlowConstruct, score: impl FnOnce(&mut Self) -> u64) -> u64 {
+        self.enclosing.push(construct);
+        let total = score(self);
+        self.enclosing.pop();
+        total
+    }
+
+    fn score_flow_break(
+        &mut self,
+        node: tree_sitter::Node,
+        nesting: u64,
+        construct: FlowConstruct,
+    ) -> u64 {
+        let increment = self.push_structural(node, nesting, construct);
+        increment + self.inside(construct, |ctx| ctx.complexity(node, nesting + 1))
+    }
+
+    fn score_if(&mut self, node: tree_sitter::Node, construct: IfConstruct, nesting: u64) -> u64 {
+        let increment = self.push_structural(node, nesting, IF);
+        increment + self.score_if_parts(construct, nesting, IF)
+    }
+
+    /// Scores an `if`'s condition at the `if`'s own level, then its consequence
+    /// and `else` one level deeper. `branch` names the consequence in evidence.
+    fn score_if_parts(
+        &mut self,
+        construct: IfConstruct,
+        nesting: u64,
+        branch: FlowConstruct,
+    ) -> u64 {
+        let condition = self.score_node(construct.condition, nesting);
+        let consequence = self.inside(branch, |ctx| {
+            ctx.score_node(construct.consequence, nesting + 1)
+        });
+        let alternative = construct
+            .alternative
+            .map_or(0, |alternative| self.score_else(alternative, nesting));
+        condition + consequence + alternative
+    }
+
+    fn score_else(&mut self, branch: ElseBranch, nesting: u64) -> u64 {
+        if let Some(chained) = self.rules.if_construct(branch.body) {
+            self.push_hybrid(ELSE_IF, branch.keyword);
+            return 1 + self.score_if_parts(chained, nesting, ELSE_IF);
+        }
+        self.push_hybrid(ELSE, branch.keyword);
+        1 + self.inside(ELSE, |ctx| ctx.score_node(branch.body, nesting + 1))
+    }
+
+    fn push_hybrid(&mut self, construct: FlowConstruct, keyword: tree_sitter::Node) {
+        let label = construct.label;
+        self.push(ContributorKind::Else { label }, keyword, 1);
+    }
+
+    fn score_nesting_boundary(
+        &mut self,
+        node: tree_sitter::Node,
+        nesting: u64,
+        kind: NestingKind,
+    ) -> u64 {
+        let chain_start = match kind {
+            NestingKind::Inline(construct) => vec![construct],
+            NestingKind::Separate => vec![],
         };
-        let else_start = branch.keyword.start_byte();
-        let mut cursor = node.walk();
-        let own: u64 = node
-            .children(&mut cursor)
-            .take_while(|child| child.end_byte() <= else_start)
-            .map(|child| self.score_node(child, nesting))
-            .sum();
-        let label = match branch.body {
-            ElseBody::Plain(_) => "else",
-            ElseBody::If(_) => ELSE_IF,
-        };
-        self.push(ContributorKind::Else { label }, branch.keyword, 1);
-        own + 1
-            + match branch.body {
-                ElseBody::Plain(body) => self.score_node(body, nesting),
-                ElseBody::If(chained) => self.score_branches(chained, nesting),
-            }
+        let outer = std::mem::replace(&mut self.enclosing, chain_start);
+        let total = self.complexity(node, nesting + 1);
+        self.enclosing = outer;
+        total
     }
 
     fn score_jump(
@@ -277,58 +348,6 @@ impl ScoringContext<'_> {
             })
             .sum()
     }
-}
-
-fn nesting_chain(node: tree_sitter::Node, rules: &dyn ComplexityRules) -> Vec<FlowConstruct> {
-    let ancestors = std::iter::successors(enclosing(node, rules), |n| enclosing(*n, rules));
-    let mut chain = Vec::new();
-    for ancestor in ancestors {
-        if let Some(construct) = chain_construct(ancestor, rules) {
-            chain.push(construct);
-            continue;
-        }
-        match rules.nesting_kind(ancestor) {
-            Some(NestingKind::Inline(construct)) => {
-                chain.push(construct);
-                break;
-            }
-            Some(NestingKind::Separate) => break,
-            None => {}
-        }
-    }
-    chain.reverse();
-    chain
-}
-
-fn enclosing<'a>(
-    node: tree_sitter::Node<'a>,
-    rules: &dyn ComplexityRules,
-) -> Option<tree_sitter::Node<'a>> {
-    match chaining_conditional(node, rules) {
-        Some(owner) => enclosing(owner, rules),
-        None => node.parent(),
-    }
-}
-
-fn chain_construct(node: tree_sitter::Node, rules: &dyn ComplexityRules) -> Option<FlowConstruct> {
-    let construct = rules.flow_construct(node)?;
-    let label = if chaining_conditional(node, rules).is_some() {
-        ELSE_IF
-    } else {
-        construct.label
-    };
-    Some(FlowConstruct { label, ..construct })
-}
-
-/// If this node is the `if` of an `else if`, return the conditional it chains from.
-fn chaining_conditional<'a>(
-    node: tree_sitter::Node<'a>,
-    rules: &dyn ComplexityRules,
-) -> Option<tree_sitter::Node<'a>> {
-    let owner = std::iter::successors(node.parent(), tree_sitter::Node::parent)
-        .find(|ancestor| rules.flow_construct(*ancestor).is_some())?;
-    let branch = rules.else_branch(owner)?;
-    matches!(branch.body, ElseBody::If(chained) if chained == node).then_some(owner)
 }
 
 fn count_operator_sequences(operators: &[LogicalOp]) -> u64 {
