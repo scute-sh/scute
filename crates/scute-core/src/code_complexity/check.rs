@@ -6,7 +6,7 @@ use super::rules::{self, ComplexityRules};
 use super::score;
 use crate::files;
 use crate::files::{Exclusions, SourceFile};
-use crate::language::{self, Java, JsFamily, LanguageRegistry, Rust};
+use crate::language::{self, JsFamily, LanguageRegistry, Rust};
 use crate::{Evaluation, Evidence, ExecutionError, Expected, Thresholds};
 
 pub const CHECK_NAME: &str = "code-complexity";
@@ -115,10 +115,12 @@ fn resolve_files(
 /// The languages this check scores, each with its scoring rules.
 #[must_use]
 pub fn languages() -> LanguageRegistry<dyn ComplexityRules> {
-    LanguageRegistry::<dyn ComplexityRules>::default()
+    let registry = LanguageRegistry::<dyn ComplexityRules>::default()
         .with(Box::new(Rust), language::rust_family())
-        .with(Box::new(JsFamily), language::js_family())
-        .with(Box::new(Java), language::java_family())
+        .with(Box::new(JsFamily), language::js_family());
+    #[cfg(test)]
+    let registry = registry.with(Box::new(crate::language::Java), language::java_family());
+    registry
 }
 
 fn score_file(

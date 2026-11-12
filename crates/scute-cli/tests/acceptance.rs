@@ -647,6 +647,7 @@ function process(items: number[]): number {
     #[test_case(Cli)]
     #[test_case(CliStdin)]
     #[test_case(Mcp)]
+    #[ignore = "Java scoring ships once code-complexity scores every Java construct"]
     fn flags_complex_java_method_in_maven_layout(interface: Interface) {
         Scute::new(interface)
             .scute_config(
