@@ -67,10 +67,13 @@ impl ComplexityRules for Rust {
     fn nesting_kind(&self, node: tree_sitter::Node) -> Option<NestingKind> {
         match node.kind() {
             "closure_expression" => Some(NestingKind::Inline(FlowConstruct {
-                role: Construct::InlineNesting,
+                role: Construct::NestedFunction,
                 label: "closure",
             })),
-            "function_item" => Some(NestingKind::Separate),
+            "function_item" => Some(NestingKind::Separate(FlowConstruct {
+                role: Construct::NestedFunction,
+                label: "fn",
+            })),
             _ => None,
         }
     }
