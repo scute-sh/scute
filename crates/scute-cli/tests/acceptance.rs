@@ -448,6 +448,20 @@ fn process(items: &[i32]) -> i32 {
 }
 ";
 
+    // for-each: +1, if: +2 → score 3, 2 contributors
+    const ORDER_SERVICE_JAVA: &str = r"public class OrderService {
+    public int countValid(List<Order> orders) {
+        int count = 0;
+        for (Order order : orders) {
+            if (order.isValid()) {
+                count++;
+            }
+        }
+        return count;
+    }
+}
+";
+
     fn complex_function_check(interface: Interface) -> scute_test_utils::CheckResult {
         Scute::new(interface)
             .scute_config(
@@ -642,6 +656,41 @@ function process(items: number[]): number {
             .run()
             .expect_warn()
             .expect_target_contains("process");
+    }
+
+    #[test_case(Cli)]
+    #[test_case(CliStdin)]
+    #[test_case(Mcp)]
+    #[ignore = "Java scoring ships once code-complexity scores every Java construct"]
+    fn flags_complex_java_method_in_maven_layout(interface: Interface) {
+        Scute::new(interface)
+            .scute_config(
+                r"
+checks:
+  code-complexity:
+    thresholds:
+      warn: 2
+",
+            )
+            .source_file("src/main/java/shop/OrderService.java", ORDER_SERVICE_JAVA)
+            .code_complexity()
+            .run()
+            .expect_warn()
+            .expect_target_contains("src/main/java/shop/OrderService.java:2:countValid")
+            .expect_observed(3)
+            .expect_evidence_count(2);
+    }
+
+    #[test_case(Cli)]
+    #[test_case(CliStdin)]
+    #[test_case(Mcp)]
+    fn skips_java_sources_until_java_scoring_ships(interface: Interface) {
+        Scute::new(interface)
+            .source_file("pom.xml", "<project/>")
+            .source_file("src/main/java/shop/OrderService.java", ORDER_SERVICE_JAVA)
+            .code_complexity()
+            .run()
+            .expect_nothing_checked();
     }
 
     #[test_case(Cli)]

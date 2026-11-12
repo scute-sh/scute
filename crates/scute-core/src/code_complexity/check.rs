@@ -2,7 +2,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Deserialize;
 
-use super::rules::ComplexityRules;
+use super::rules::{self, ComplexityRules};
 use super::score;
 use crate::files;
 use crate::files::{Exclusions, SourceFile};
@@ -115,9 +115,12 @@ fn resolve_files(
 /// The languages this check scores, each with its scoring rules.
 #[must_use]
 pub fn languages() -> LanguageRegistry<dyn ComplexityRules> {
-    LanguageRegistry::<dyn ComplexityRules>::default()
+    let registry = LanguageRegistry::<dyn ComplexityRules>::default()
         .with(Box::new(Rust), language::rust_family())
-        .with(Box::new(JsFamily), language::js_family())
+        .with(Box::new(JsFamily), language::js_family());
+    #[cfg(test)]
+    let registry = registry.with(Box::new(crate::language::Java), language::java_family());
+    registry
 }
 
 fn score_file(
@@ -140,7 +143,7 @@ fn score_file(
         .collect()
 }
 
-fn format_nesting_chain(chain: &[score::FlowConstruct]) -> String {
+fn format_nesting_chain(chain: &[rules::FlowConstruct]) -> String {
     chain
         .iter()
         .map(|c| c.label)
@@ -152,7 +155,7 @@ fn pluralize_levels(n: u64) -> &'static str {
     if n == 1 { "level" } else { "levels" }
 }
 
-fn format_operators(operators: &[score::LogicalOp]) -> String {
+fn format_operators(operators: &[rules::LogicalOp]) -> String {
     let mut unique: Vec<&str> = operators.iter().map(|o| o.label()).collect();
     unique.sort_unstable();
     unique.dedup();
@@ -319,62 +322,93 @@ mod tests {
     }
 
     #[test_case(
-        "fn f() { if true {} }",
+        "a.rs", "fn f() { if true {} }",
         "flow break", "'if' conditional (+1)", None
         ; "flow_break_has_no_suggestion"
     )]
     #[test_case(
-        "fn f() { for x in [1] { if true {} } }",
+        "a.rs", "fn f() { for x in [1] { if true {} } }",
         "nesting", "'if' nested 1 level: 'for > if' (+2)", Some("extract inner block into a function")
         ; "nesting_shows_chain_and_suggests_extraction"
     )]
     #[test_case(
-        "fn f(x: bool) { if x {} else {} }",
+        "a.rs", "fn f(x: bool) { if x {} else {} }",
         "else", "'else' branch (+1)", Some("use a guard clause or early return")
         ; "else_suggests_guard_clause"
     )]
     #[test_case(
-        "fn f(a: bool, b: bool) { if a {} else if b {} }",
+        "a.rs", "fn f(a: bool, b: bool) { if a {} else if b {} }",
         "else", "'else if' branch (+1)", Some("use a guard clause or early return")
         ; "else_if_names_the_branch"
     )]
     #[test_case(
-        "fn f(a: bool, b: bool, c: &[i32]) { for _ in c { if a {} else if b {} } }",
+        "a.rs", "fn f(a: bool, b: bool, c: &[i32]) { for _ in c { if a {} else if b {} } }",
         "else", "'else if' branch (+1)", Some("use a guard clause or early return")
         ; "nested_else_if_reports_no_nesting"
     )]
     #[test_case(
-        "fn f(a: bool, b: bool, c: bool) { if a {} else if b { if c {} } }",
+        "a.rs", "fn f(a: bool, b: bool, c: bool) { if a {} else if b { if c {} } }",
         "nesting", "'if' nested 1 level: 'else if > if' (+2)", Some("extract inner block into a function")
         ; "nesting_chain_counts_else_if_as_one_level"
     )]
     #[test_case(
-        "fn f(a: bool, b: bool, c: bool) { if a {} else if b {} else if c { if a {} } }",
+        "a.rs", "fn f(a: bool, b: bool, c: bool) { if a {} else if b {} else if c { if a {} } }",
         "nesting", "'if' nested 1 level: 'else if > if' (+2)", Some("extract inner block into a function")
         ; "nesting_chain_skips_sibling_branches_of_else_if_chain"
     )]
     #[test_case(
-        "fn f(a: bool, b: bool) -> bool { a && b }",
+        "a.rs", "fn f(a: bool, b: bool) { if a {} else { if b {} } }",
+        "nesting", "'if' nested 1 level: 'else > if' (+2)", Some("extract inner block into a function")
+        ; "nesting_chain_names_the_else_branch"
+    )]
+    #[test_case(
+        "a.rs", "fn f(a: bool, b: bool, c: bool) { if a {} else if b {} else { if c {} } }",
+        "nesting", "'if' nested 1 level: 'else > if' (+2)", Some("extract inner block into a function")
+        ; "nesting_chain_names_the_else_closing_an_else_if_chain"
+    )]
+    #[test_case(
+        "a.rs", "fn f(a: bool, b: bool) -> bool { a && b }",
         "boolean logic", "'&&' operators (+1)", Some("extract into a named boolean")
         ; "logical_single_operator"
     )]
     #[test_case(
-        "fn f(a: bool, b: bool, c: bool) -> bool { a && b || c }",
+        "a.rs", "fn f(a: bool, b: bool, c: bool) -> bool { a && b || c }",
         "boolean logic", "mixed '&&' and '||' operators (+2)", Some("extract into a named boolean")
         ; "logical_mixed_operators"
     )]
     #[test_case(
-        "fn go(n: u64) -> u64 { go(n - 1) }",
+        "a.rs", "fn go(n: u64) -> u64 { go(n - 1) }",
         "recursion", "recursive call to 'go' (+1)", Some("consider iterative approach")
         ; "recursion_shows_function_name"
     )]
     #[test_case(
-        "fn f() { 'outer: loop { break 'outer; } }",
+        "a.rs", "fn f() { 'outer: loop { break 'outer; } }",
         "jump", "'break' to label 'outer (+1)", Some("restructure to avoid labeled jump")
         ; "jump_shows_label"
     )]
-    fn evidence_formatting(source: &str, rule: &str, expected_found: &str, expected: Option<&str>) {
-        let evidence = evidence_of(source);
+    #[test_case(
+        "A.java", "class A { void f(List<Integer> c) { for (int x : c) {} } }",
+        "flow break", "'for-each' loop (+1)", None
+        ; "java_for_each_names_the_loop"
+    )]
+    #[test_case(
+        "A.java", "class A { void f(List<Integer> c) { for (int x : c) { if (x > 0) {} } } }",
+        "nesting", "'if' nested 1 level: 'for-each > if' (+2)", Some("extract inner block into a function")
+        ; "java_nesting_chain_names_the_for_each"
+    )]
+    #[test_case(
+        "A.java", "class A { void f(boolean a, boolean b, boolean c) { if (a) {} else if (b) {} else if (c) { if (a) {} } } }",
+        "nesting", "'if' nested 1 level: 'else if > if' (+2)", Some("extract inner block into a function")
+        ; "java_nesting_chain_skips_sibling_branches_of_else_if_chain"
+    )]
+    fn evidence_formatting(
+        filename: &str,
+        source: &str,
+        rule: &str,
+        expected_found: &str,
+        expected: Option<&str>,
+    ) {
+        let evidence = evidence_of_file(filename, source);
         let entry = evidence
             .iter()
             .find(|e| e.rule.as_deref() == Some(rule))

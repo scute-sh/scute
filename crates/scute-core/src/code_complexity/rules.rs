@@ -1,20 +1,96 @@
-use super::score::{FlowConstruct, JumpKeyword, LogicalOp};
-
-pub enum NodeRole {
-    FlowConstruct(FlowConstruct),
-    ElseClause,
-    NestingBoundary,
-    LogicalExpression,
-    LabeledJump(JumpKeyword, String),
-    RecursiveCall,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Construct {
+    Conditional,
+    Loop,
+    ExceptionHandler,
+    InlineNesting,
 }
 
+impl Construct {
+    pub fn flow_break_category(self) -> &'static str {
+        match self {
+            Self::Conditional => "conditional",
+            Self::Loop => "loop",
+            Self::ExceptionHandler => "exception handler",
+            Self::InlineNesting => "closure",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FlowConstruct {
+    pub role: Construct,
+    pub label: &'static str,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum JumpKeyword {
+    Break,
+    Continue,
+}
+
+impl JumpKeyword {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Break => "break",
+            Self::Continue => "continue",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub enum LogicalOp {
+    And(&'static str),
+    Or(&'static str),
+}
+
+impl LogicalOp {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::And(s) | Self::Or(s) => s,
+        }
+    }
+}
+
+impl PartialEq for LogicalOp {
+    fn eq(&self, other: &Self) -> bool {
+        matches!(
+            (self, other),
+            (Self::And(_), Self::And(_)) | (Self::Or(_), Self::Or(_))
+        )
+    }
+}
+
+impl Eq for LogicalOp {}
+
+#[derive(Clone, Copy)]
 pub enum NestingKind {
     /// Increases nesting, part of enclosing function (closures, arrow functions).
     /// The construct appears in nesting chains.
     Inline(FlowConstruct),
     /// Increases nesting in outer function, scored independently at depth 0.
     Separate,
+}
+
+/// An `if`, split into the parts that score at different nesting levels: the
+/// condition sits at the `if`'s own level, the consequence one level deeper.
+#[derive(Clone, Copy)]
+pub struct IfConstruct<'a> {
+    pub condition: tree_sitter::Node<'a>,
+    pub consequence: tree_sitter::Node<'a>,
+    pub alternative: Option<ElseBranch<'a>>,
+}
+
+/// The `else` of an `if`, a hybrid increment of +1. Its body sits one level
+/// deeper, like the consequence. When the body is itself an `if`, the pair
+/// reads as one `else if`: the chained `if` takes no increment of its own and
+/// its condition stays at the outer `if`'s level.
+#[derive(Clone, Copy)]
+pub struct ElseBranch<'a> {
+    /// The `else` keyword, which locates the increment.
+    pub keyword: tree_sitter::Node<'a>,
+    /// What follows the keyword: a block, a single statement, or an `if`.
+    pub body: tree_sitter::Node<'a>,
 }
 
 pub struct ScoringUnit<'a> {
@@ -37,17 +113,14 @@ pub trait ComplexityRules {
         src: &'a [u8],
     ) -> Option<ScoringUnit<'a>>;
 
-    /// If this node is a flow control construct (`if`, `for`, `match`, etc.),
-    /// return its cognitive role and language-specific label.
-    /// These get a structural increment of `1 + nesting`.
+    /// If this node is an `if`, return its parts.
+    fn if_construct<'a>(&self, node: tree_sitter::Node<'a>) -> Option<IfConstruct<'a>>;
+
+    /// If this node is any other flow control construct (`for`, `match`,
+    /// ternary, etc.), return its cognitive role and language-specific label.
+    /// These get a structural increment of `1 + nesting`, and everything
+    /// inside them sits one level deeper.
     fn flow_construct(&self, node: tree_sitter::Node) -> Option<FlowConstruct>;
-
-    /// Whether this node is an else clause (scores +1 as a hybrid increment).
-    fn is_else_clause(&self, node: tree_sitter::Node) -> bool;
-
-    /// If this else clause is an else-if, return its `if` node. The clause then
-    /// counts as one flat branch: the `if` takes no flow construct increment.
-    fn else_if_branch<'a>(&self, node: tree_sitter::Node<'a>) -> Option<tree_sitter::Node<'a>>;
 
     /// If this node is a nesting boundary (closure, arrow function, nested
     /// named function), return how it affects scoring.

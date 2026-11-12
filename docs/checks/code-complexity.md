@@ -49,7 +49,8 @@ Constructs in the same cognitive role follow the same scoring rules. A `switch` 
 ### Key behaviors
 
 - **Nesting multiplies.** An `if` inside a `for` inside a `match`/`switch` costs 1 + nesting depth, not just 1. This is the main driver of high scores.
-- **Else-if chains are flat.** `if / else if / else if / else` does not compound nesting. Each branch costs +1 at any depth, since the nesting cost was already paid on the `if`. Code inside a branch body is one level deeper, same as inside an `if` body.
+- **Else-if chains are flat.** `if / else if / else if / else` does not compound nesting. Each branch costs +1 at any depth, since the nesting cost was already paid on the `if`. Code inside a branch body is one level deeper, same as inside an `if` body, and its nesting chain names the branch it sits in (`'else > if'`).
+- **An `if`'s condition isn't nested in it.** A ternary or closure in the condition sits at the `if`'s own level. Only the bodies go one level deeper.
 - **Inline nesting inherits depth.** Closures (Rust) and arrow functions / function expressions (JS/TS) bump nesting depth by 1 for their contained code. They're not a fresh scope.
 - **Logical operators count sequence changes.** `a && b && c` is one sequence (+1). `a && b || c && d` has two changes (+3).
 - **Ternaries score like `if`.** (JS/TS) A ternary counts as a conditional and nests like any other flow construct.

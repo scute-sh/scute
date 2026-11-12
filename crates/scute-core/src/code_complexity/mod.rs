@@ -26,6 +26,8 @@
 //! [`Evidence`](crate::Evidence) entries explaining what drives the score.
 
 mod check;
+mod grammar;
+mod java;
 mod javascript;
 mod rules;
 mod rust;

@@ -1,7 +1,10 @@
 use crate::language::Rust;
 
-use super::rules::{ComplexityRules, NestingKind, ScoringUnit};
-use super::score::{Construct, FlowConstruct, JumpKeyword, LogicalOp};
+use super::grammar::else_clause;
+use super::rules::{
+    ComplexityRules, Construct, FlowConstruct, IfConstruct, JumpKeyword, LogicalOp, NestingKind,
+    ScoringUnit,
+};
 
 impl ComplexityRules for Rust {
     fn scoring_unit<'a>(
@@ -26,12 +29,21 @@ impl ComplexityRules for Rust {
         })
     }
 
+    fn if_construct<'a>(&self, node: tree_sitter::Node<'a>) -> Option<IfConstruct<'a>> {
+        if node.kind() != "if_expression" {
+            return None;
+        }
+        Some(IfConstruct {
+            condition: node.child_by_field_name("condition")?,
+            consequence: node.child_by_field_name("consequence")?,
+            alternative: node
+                .child_by_field_name("alternative")
+                .and_then(else_clause),
+        })
+    }
+
     fn flow_construct(&self, node: tree_sitter::Node) -> Option<FlowConstruct> {
         match node.kind() {
-            "if_expression" => Some(FlowConstruct {
-                role: Construct::Conditional,
-                label: "if",
-            }),
             "for_expression" => Some(FlowConstruct {
                 role: Construct::Loop,
                 label: "for",
@@ -50,15 +62,6 @@ impl ComplexityRules for Rust {
             }),
             _ => None,
         }
-    }
-
-    fn is_else_clause(&self, node: tree_sitter::Node) -> bool {
-        node.kind() == "else_clause"
-    }
-
-    fn else_if_branch<'a>(&self, node: tree_sitter::Node<'a>) -> Option<tree_sitter::Node<'a>> {
-        node.children(&mut node.walk())
-            .find(|c| c.kind() == "if_expression")
     }
 
     fn nesting_kind(&self, node: tree_sitter::Node) -> Option<NestingKind> {
