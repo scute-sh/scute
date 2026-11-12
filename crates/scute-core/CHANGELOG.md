@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.17](https://github.com/scute-sh/scute/compare/scute-core-v0.0.16...scute-core-v0.0.17) - 2026-11-12
+
+### Fixed
+
+- keep an if's condition at the if's own nesting level ([#171](https://github.com/scute-sh/scute/pull/171))
+
+### Other
+
+- make three complexity tests fail when their behavior breaks ([#170](https://github.com/scute-sh/scute/pull/170))
+- give complexity scoring's receiver type one name ([#168](https://github.com/scute-sh/scute/pull/168))
+
 ## [0.0.16](https://github.com/scute-sh/scute/compare/scute-core-v0.0.15...scute-core-v0.0.16) - 2026-11-10
 
 ### Added
