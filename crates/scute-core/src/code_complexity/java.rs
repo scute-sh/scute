@@ -1,6 +1,6 @@
 use crate::language::Java;
 
-use super::rules::{ComplexityRules, NestingKind, ScoringUnit};
+use super::rules::{ComplexityRules, ElseBranch, NestingKind, ScoringUnit};
 use super::score::{Construct, FlowConstruct, JumpKeyword, LogicalOp};
 
 impl ComplexityRules for Java {
@@ -39,11 +39,7 @@ impl ComplexityRules for Java {
         }
     }
 
-    fn is_else_clause(&self, _node: tree_sitter::Node) -> bool {
-        false
-    }
-
-    fn else_if_branch<'a>(&self, _node: tree_sitter::Node<'a>) -> Option<tree_sitter::Node<'a>> {
+    fn else_branch<'a>(&self, _conditional: tree_sitter::Node<'a>) -> Option<ElseBranch<'a>> {
         None
     }
 

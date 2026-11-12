@@ -1,6 +1,6 @@
 use crate::language::Rust;
 
-use super::rules::{ComplexityRules, NestingKind, ScoringUnit};
+use super::rules::{ComplexityRules, ElseBody, ElseBranch, NestingKind, ScoringUnit};
 use super::score::{Construct, FlowConstruct, JumpKeyword, LogicalOp};
 
 impl ComplexityRules for Rust {
@@ -52,13 +52,22 @@ impl ComplexityRules for Rust {
         }
     }
 
-    fn is_else_clause(&self, node: tree_sitter::Node) -> bool {
-        node.kind() == "else_clause"
-    }
-
-    fn else_if_branch<'a>(&self, node: tree_sitter::Node<'a>) -> Option<tree_sitter::Node<'a>> {
-        node.children(&mut node.walk())
-            .find(|c| c.kind() == "if_expression")
+    fn else_branch<'a>(&self, conditional: tree_sitter::Node<'a>) -> Option<ElseBranch<'a>> {
+        if conditional.kind() != "if_expression" {
+            return None;
+        }
+        let clause = conditional.child_by_field_name("alternative")?;
+        let mut cursor = clause.walk();
+        let mut children = clause.children(&mut cursor).filter(|c| !c.is_extra());
+        let keyword = children.next()?;
+        let body = children.next()?;
+        Some(ElseBranch {
+            keyword,
+            body: match body.kind() {
+                "if_expression" => ElseBody::If(body),
+                _ => ElseBody::Plain(body),
+            },
+        })
     }
 
     fn nesting_kind(&self, node: tree_sitter::Node) -> Option<NestingKind> {

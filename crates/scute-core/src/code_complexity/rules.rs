@@ -2,7 +2,6 @@ use super::score::{FlowConstruct, JumpKeyword, LogicalOp};
 
 pub enum NodeRole {
     FlowConstruct(FlowConstruct),
-    ElseClause,
     NestingBoundary,
     LogicalExpression,
     LabeledJump(JumpKeyword, String),
@@ -15,6 +14,22 @@ pub enum NestingKind {
     Inline(FlowConstruct),
     /// Increases nesting in outer function, scored independently at depth 0.
     Separate,
+}
+
+/// The `else` of a conditional. Scores +1 as a hybrid increment, and its body
+/// sits at the same nesting level as the conditional's own body.
+pub struct ElseBranch<'a> {
+    /// The `else` keyword, which locates the increment.
+    pub keyword: tree_sitter::Node<'a>,
+    pub body: ElseBody<'a>,
+}
+
+pub enum ElseBody<'a> {
+    /// `else { ... }`
+    Plain(tree_sitter::Node<'a>),
+    /// `else if ...`: the chained conditional takes no flow construct
+    /// increment of its own.
+    If(tree_sitter::Node<'a>),
 }
 
 pub struct ScoringUnit<'a> {
@@ -42,12 +57,8 @@ pub trait ComplexityRules {
     /// These get a structural increment of `1 + nesting`.
     fn flow_construct(&self, node: tree_sitter::Node) -> Option<FlowConstruct>;
 
-    /// Whether this node is an else clause (scores +1 as a hybrid increment).
-    fn is_else_clause(&self, node: tree_sitter::Node) -> bool;
-
-    /// If this else clause is an else-if, return its `if` node. The clause then
-    /// counts as one flat branch: the `if` takes no flow construct increment.
-    fn else_if_branch<'a>(&self, node: tree_sitter::Node<'a>) -> Option<tree_sitter::Node<'a>>;
+    /// If this conditional has an `else`, return it.
+    fn else_branch<'a>(&self, conditional: tree_sitter::Node<'a>) -> Option<ElseBranch<'a>>;
 
     /// If this node is a nesting boundary (closure, arrow function, nested
     /// named function), return how it affects scoring.
