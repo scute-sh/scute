@@ -3,8 +3,8 @@ use crate::language::LanguageRegistry;
 use crate::parser::{AstParser, TreeSitterParser};
 
 use super::rules::{
-    ComplexityRules, Construct, ElseBranch, FlowConstruct, IfConstruct, JumpKeyword, LogicalOp,
-    NestingKind,
+    ComplexityRules, Construct, ElseBranch, FlowConstruct, IfConstruct, JumpKeyword,
+    LogicalExpression, LogicalOp, NestingKind,
 };
 
 const IF: FlowConstruct = FlowConstruct {
@@ -24,7 +24,7 @@ enum NodeRole<'t> {
     If(IfConstruct<'t>),
     FlowConstruct(FlowConstruct),
     NestingBoundary(NestingKind),
-    LogicalExpression,
+    LogicalExpression(LogicalExpression<'t>),
     LabeledJump(JumpKeyword, String),
     RecursiveCall,
 }
@@ -140,8 +140,8 @@ fn classify_structural<'t>(
     if let Some(kind) = rules.nesting_kind(node) {
         return Some(NodeRole::NestingBoundary(kind));
     }
-    if rules.logical_operator(node).is_some() {
-        return Some(NodeRole::LogicalExpression);
+    if let Some(expression) = rules.logical_expression(node) {
+        return Some(NodeRole::LogicalExpression(expression));
     }
     None
 }
@@ -190,7 +190,9 @@ impl ScoringContext<'_> {
             NodeRole::If(construct) => self.score_if(node, construct, nesting),
             NodeRole::FlowConstruct(construct) => self.score_flow_break(node, nesting, construct),
             NodeRole::NestingBoundary(kind) => self.score_nesting_boundary(node, nesting, kind),
-            NodeRole::LogicalExpression => self.score_logical_sequence(node, nesting),
+            NodeRole::LogicalExpression(expression) => {
+                self.score_logical_sequence(node, expression, nesting)
+            }
             NodeRole::LabeledJump(keyword, label) => self.score_jump(node, nesting, keyword, label),
             NodeRole::RecursiveCall => self.score_recursion(node, nesting),
         }
@@ -318,9 +320,14 @@ impl ScoringContext<'_> {
         1 + self.complexity(node, nesting)
     }
 
-    fn score_logical_sequence(&mut self, node: tree_sitter::Node, nesting: u64) -> u64 {
+    fn score_logical_sequence(
+        &mut self,
+        node: tree_sitter::Node,
+        expression: LogicalExpression,
+        nesting: u64,
+    ) -> u64 {
         let mut flat = FlatLogicalExpression::default();
-        flat.flatten(self.rules, node);
+        flat.flatten(self.rules, expression);
 
         let score = count_operator_sequences(&flat.operators);
         if score > 0 {
@@ -346,28 +353,16 @@ struct FlatLogicalExpression<'t> {
 }
 
 impl<'t> FlatLogicalExpression<'t> {
-    fn flatten(&mut self, rules: &dyn ComplexityRules, node: tree_sitter::Node<'t>) {
-        let Some(op) = rules.logical_operator(node) else {
-            return;
-        };
-        for child in node.children(&mut node.walk()) {
-            self.read_child(rules, child, op);
-        }
+    fn flatten(&mut self, rules: &dyn ComplexityRules, expression: LogicalExpression<'t>) {
+        self.read_operand(rules, expression.left);
+        self.operators.push(expression.operator);
+        self.read_operand(rules, expression.right);
     }
 
-    fn read_child(
-        &mut self,
-        rules: &dyn ComplexityRules,
-        child: tree_sitter::Node<'t>,
-        op: LogicalOp,
-    ) {
-        let grouped = rules.skip_parentheses(child);
-        if rules.is_logical_operator_token(child) {
-            self.operators.push(op);
-        } else if rules.logical_operator(grouped).is_some() {
-            self.flatten(rules, grouped);
-        } else {
-            self.operands.push(child);
+    fn read_operand(&mut self, rules: &dyn ComplexityRules, operand: tree_sitter::Node<'t>) {
+        match rules.logical_expression(operand) {
+            Some(expression) => self.flatten(rules, expression),
+            None => self.operands.push(operand),
         }
     }
 }
