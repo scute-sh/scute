@@ -197,6 +197,16 @@ fn scores_if_condition_at_the_if_nesting_level(path: &str, source: &str, expecte
     expect_score(source, path, expected);
 }
 
+// while: +1, ternary in its condition: +1+1
+#[test]
+fn scores_loop_condition_one_level_inside_the_loop() {
+    expect_score(
+        "function f(a: boolean, b: boolean) { while (a ? b : a) {} }",
+        "a.ts",
+        3,
+    );
+}
+
 // Campbell's Cognitive Complexity spec, Appendix C: WildcardPattern.toRegexp, total 20.
 #[test]
 fn matches_spec_worked_example_mixing_else_if_and_nesting() {
