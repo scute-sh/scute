@@ -93,9 +93,10 @@ pub struct ElseBranch<'a> {
     pub body: tree_sitter::Node<'a>,
 }
 
-/// Two operands joined by `&&` or `||`. Grouping parentheses around an
-/// operand are already looked through, since they don't break a sequence of
-/// like operators: in `(a && b) && c`, the left operand is `a && b`.
+/// Two operands joined by `&&` or `||`. Parentheses grouping another logical
+/// expression are already looked through, since they don't break a sequence
+/// of like operators: in `(a && b) && c`, the left operand is `a && b`. Any
+/// other operand stays as written, parentheses included.
 #[derive(Clone, Copy)]
 pub struct LogicalExpression<'a> {
     pub operator: LogicalOp,
