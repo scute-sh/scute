@@ -259,6 +259,19 @@ mod tests {
         );
     }
 
+    #[test_case("a.ts", "\n\n\n\nfunction lined(x) { if (x) {} }" ; "typescript")]
+    #[test_case("A.java", "class A {\n\n\n\n    void lined(boolean x) { if (x) {} }\n}" ; "java")]
+    fn target_names_the_line_the_function_starts_on(filename: &str, source: &str) {
+        let dir = TestDir::new().source_file(filename, source);
+
+        let evals = check_dir(&dir.root());
+
+        assert_that!(
+            evals,
+            elements_are![field!(Evaluation.target, ends_with(":5:lined"))]
+        );
+    }
+
     // for: +1, if: +1+1, two else ifs: +1 each = 5, the default warn threshold
     #[test]
     fn nested_else_if_chain_at_warn_threshold_passes() {
@@ -385,6 +398,21 @@ mod tests {
         "a.rs", "fn f() { 'outer: loop { break 'outer; } }",
         "jump", "'break' to label 'outer (+1)", Some("restructure to avoid labeled jump")
         ; "jump_shows_label"
+    )]
+    #[test_case(
+        "a.ts", "function f(o: object) { for (const k in o) {} }",
+        "flow break", "'for...in' loop (+1)", None
+        ; "for_in_names_the_loop"
+    )]
+    #[test_case(
+        "a.ts", "function f(xs: number[]) { for (const x of xs) {} }",
+        "flow break", "'for...of' loop (+1)", None
+        ; "for_of_names_the_loop"
+    )]
+    #[test_case(
+        "a.ts", "function d(x: boolean) { const g = function* () { if (x) {} }; }",
+        "nesting", "'if' nested 1 level: 'generator > if' (+2)", Some("extract inner block into a function")
+        ; "nesting_chain_names_the_generator_expression"
     )]
     #[test_case(
         "A.java", "class A { void f(List<Integer> c) { for (int x : c) {} } }",

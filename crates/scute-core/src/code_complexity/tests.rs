@@ -269,6 +269,16 @@ fn scores_direct_recursion(path: &str, source: &str) {
     expect_score(source, path, 3);
 }
 
+// recursion: +1, if in its argument: +1, else: +1
+#[test]
+fn scores_structures_inside_recursive_call_arguments() {
+    expect_score(
+        "fn go(n: u64) -> u64 { go(if n > 0 { n - 1 } else { 0 }) }",
+        "a.rs",
+        3,
+    );
+}
+
 // if: +1, else: +1, this.method() recursion: +1
 #[test]
 fn scores_this_method_recursion() {
@@ -307,6 +317,10 @@ impl Abc {
         else { Def::foo(n - 1) }
     }
 }", 2 ; "different_type_is_not_recursion")]
+#[test_case("struct Foo;
+impl Foo {
+    fn count(n: u64) -> u64 { Foo::count(n - 1) }
+}", 1 ; "impl_type_name")]
 fn scores_rust_qualified_recursion(source: &str, expected: u64) {
     expect_score(source, "a.rs", expected);
 }
@@ -334,6 +348,26 @@ fn scores_rust_qualified_recursion(source: &str, expected: u64) {
 }" ; "typescript")]
 fn scores_labeled_break(path: &str, source: &str) {
     expect_score(source, path, 7);
+}
+
+// loop: +1, labeled break: +1, if in its value: +1+1, else: +1
+#[test]
+fn scores_structures_inside_labeled_break_value() {
+    expect_score(
+        "fn jump(x: bool) -> i32 { 'a: loop { break 'a if x { 1 } else { 2 }; } }",
+        "a.rs",
+        5,
+    );
+}
+
+// for: +1, labeled continue: +1
+#[test]
+fn scores_labeled_continue() {
+    expect_score(
+        "function a() { outer: for (;;) { continue outer; } }",
+        "a.ts",
+        2,
+    );
 }
 
 // closure/arrow: nesting +1, if: +1+1, else: +1
@@ -365,6 +399,16 @@ fn scores_function_expression_as_inline_nesting() {
 }",
         "a.ts",
         3,
+    );
+}
+
+// generator expression: nesting +1, if: +1+1
+#[test]
+fn scores_generator_expression_as_inline_nesting() {
+    expect_score(
+        "function d(x: boolean) { const g = function* () { if (x) {} }; }",
+        "a.ts",
+        2,
     );
 }
 
