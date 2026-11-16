@@ -143,15 +143,19 @@ fn score_file(
         .collect()
 }
 
-fn format_nesting_chain(chain: &[rules::FlowConstruct]) -> String {
-    chain
+fn format_nesting_chain(
+    enclosing: &[rules::FlowConstruct],
+    construct: rules::FlowConstruct,
+) -> String {
+    enclosing
         .iter()
+        .chain([&construct])
         .map(|c| c.label)
         .collect::<Vec<_>>()
         .join(" > ")
 }
 
-fn pluralize_levels(n: u64) -> &'static str {
+fn pluralize_levels(n: usize) -> &'static str {
     if n == 1 { "level" } else { "levels" }
 }
 
@@ -181,12 +185,12 @@ fn format_evidence(c: &score::Contributor, path: &Path) -> Evidence {
         ),
         score::ContributorKind::Nesting {
             construct,
-            depth,
-            chain,
+            enclosing,
         } => {
             let name = construct.label;
-            let chain = format_nesting_chain(chain);
-            let levels = pluralize_levels(*depth);
+            let chain = format_nesting_chain(enclosing, *construct);
+            let depth = enclosing.len();
+            let levels = pluralize_levels(depth);
             (
                 "nesting",
                 format!(
@@ -367,6 +371,36 @@ mod tests {
         ; "nesting_chain_names_the_else_closing_an_else_if_chain"
     )]
     #[test_case(
+        "a.rs", "fn f(c: &[i32]) { for _ in c { c.iter().for_each(|y| { if *y > 0 {} }); } }",
+        "nesting", "'if' nested 2 levels: 'for > closure > if' (+3)", Some("extract inner block into a function")
+        ; "nesting_chain_names_the_loop_around_a_closure"
+    )]
+    #[test_case(
+        "a.rs", "fn f(c: &[i32]) { for _ in c { fn g(a: bool) { if a {} } } }",
+        "nesting", "'if' nested 2 levels: 'for > fn > if' (+3)", Some("extract inner block into a function")
+        ; "nesting_chain_names_a_nested_fn_by_its_keyword"
+    )]
+    #[test_case(
+        "a.ts", "function f(c: number[]) { for (const x of c) { c.forEach((y) => { if (y) {} }); } }",
+        "nesting", "'if' nested 2 levels: 'for...of > arrow > if' (+3)", Some("extract inner block into a function")
+        ; "typescript_nesting_chain_names_the_loop_around_an_arrow"
+    )]
+    #[test_case(
+        "a.ts", "function f(n: number) { for (let i = 0; i < n; i++) { function g(a: boolean) { if (a) {} } } }",
+        "nesting", "'if' nested 2 levels: 'for > function > if' (+3)", Some("extract inner block into a function")
+        ; "typescript_nesting_chain_names_a_nested_function_by_its_keyword"
+    )]
+    #[test_case(
+        "a.js", "function f(n) { for (let i = 0; i < n; i++) { function* g(a) { if (a) {} } } }",
+        "nesting", "'if' nested 2 levels: 'for > generator > if' (+3)", Some("extract inner block into a function")
+        ; "javascript_nesting_chain_names_a_nested_generator_declaration"
+    )]
+    #[test_case(
+        "a.js", "function f(n) { for (let i = 0; i < n; i++) { const o = { m(a) { if (a) {} } }; } }",
+        "nesting", "'if' nested 2 levels: 'for > method > if' (+3)", Some("extract inner block into a function")
+        ; "javascript_nesting_chain_names_a_nested_method"
+    )]
+    #[test_case(
         "a.rs", "fn f(a: bool, b: bool) -> bool { a && b }",
         "boolean logic", "'&&' operators (+1)", Some("extract into a named boolean")
         ; "logical_single_operator"
@@ -419,6 +453,27 @@ mod tests {
             "evidence found mismatch for rule '{rule}'"
         );
         assert_eq!(entry.expected, expected.map(|s| Expected::Text(s.into())));
+    }
+
+    #[test]
+    fn nesting_chain_names_every_level_across_closures() {
+        let evidence = evidence_of(
+            "fn f(c: &[i32]) {
+                for x in c {
+                    if *x > 0 {
+                        c.iter().for_each(|_| c.iter().for_each(|z| { if *z > 0 {} }));
+                    }
+                }
+            }",
+        );
+
+        assert_that!(
+            evidence,
+            contains(matches_pattern!(Evidence {
+                found: eq("'if' nested 4 levels: 'for > if > closure > closure > if' (+5)"),
+                ..
+            }))
+        );
     }
 
     #[test_case("a.ts" ; "typescript")]

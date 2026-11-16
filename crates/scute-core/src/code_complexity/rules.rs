@@ -3,7 +3,7 @@ pub enum Construct {
     Conditional,
     Loop,
     ExceptionHandler,
-    InlineNesting,
+    NestedFunction,
 }
 
 impl Construct {
@@ -12,7 +12,7 @@ impl Construct {
             Self::Conditional => "conditional",
             Self::Loop => "loop",
             Self::ExceptionHandler => "exception handler",
-            Self::InlineNesting => "closure",
+            Self::NestedFunction => "nested function",
         }
     }
 }
@@ -63,13 +63,22 @@ impl PartialEq for LogicalOp {
 
 impl Eq for LogicalOp {}
 
+/// A function nested in the one being scored. Everything inside it sits one
+/// level deeper, and nesting chains name it by its construct's label.
 #[derive(Clone, Copy)]
 pub enum NestingKind {
-    /// Increases nesting, part of enclosing function (closures, arrow functions).
-    /// The construct appears in nesting chains.
+    /// Part of the enclosing function only (closures, arrow functions).
     Inline(FlowConstruct),
-    /// Increases nesting in outer function, scored independently at depth 0.
-    Separate,
+    /// Also scored on its own, from depth 0 (nested named functions).
+    Separate(FlowConstruct),
+}
+
+impl NestingKind {
+    pub fn construct(self) -> FlowConstruct {
+        match self {
+            Self::Inline(construct) | Self::Separate(construct) => construct,
+        }
+    }
 }
 
 /// An `if`, split into the parts that score at different nesting levels: the

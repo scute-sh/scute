@@ -34,10 +34,11 @@ pub enum ContributorKind {
     FlowBreak {
         construct: FlowConstruct,
     },
+    /// A structure nested one level deep per entry in `enclosing`, which lists
+    /// the structures around it, outermost first.
     Nesting {
         construct: FlowConstruct,
-        depth: u64,
-        chain: Vec<FlowConstruct>,
+        enclosing: Vec<FlowConstruct>,
     },
     Else {
         label: &'static str,
@@ -168,8 +169,8 @@ struct ScoringContext<'a> {
     receiver_type: Option<&'a str>,
     src: &'a [u8],
     contributors: &'a mut Vec<Contributor>,
-    /// The structures around the node being scored, outermost first, back to
-    /// the nearest function boundary. Nesting evidence names them.
+    /// The structures around the node being scored, outermost first, one per
+    /// nesting level. Nesting evidence names them.
     enclosing: Vec<FlowConstruct>,
 }
 
@@ -211,12 +212,12 @@ impl ScoringContext<'_> {
         nesting: u64,
         construct: FlowConstruct,
     ) -> u64 {
+        debug_assert_eq!(nesting, self.enclosing.len() as u64);
         let increment = 1 + nesting;
         let kind = if nesting > 0 {
             ContributorKind::Nesting {
                 construct,
-                depth: nesting,
-                chain: [self.enclosing.as_slice(), &[construct]].concat(),
+                enclosing: self.enclosing.clone(),
             }
         } else {
             ContributorKind::FlowBreak { construct }
@@ -286,14 +287,7 @@ impl ScoringContext<'_> {
         nesting: u64,
         kind: NestingKind,
     ) -> u64 {
-        let chain_start = match kind {
-            NestingKind::Inline(construct) => vec![construct],
-            NestingKind::Separate => vec![],
-        };
-        let outer = std::mem::replace(&mut self.enclosing, chain_start);
-        let total = self.complexity(node, nesting + 1);
-        self.enclosing = outer;
-        total
+        self.inside(kind.construct(), |ctx| ctx.complexity(node, nesting + 1))
     }
 
     fn score_jump(
@@ -456,9 +450,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(nested.increment, 2); // 1 + depth 1
-        if let ContributorKind::Nesting { depth, chain, .. } = &nested.kind {
-            assert_eq!(*depth, 1);
-            assert_eq!(chain.len(), 2);
+        if let ContributorKind::Nesting { enclosing, .. } = &nested.kind {
+            assert_eq!(enclosing.len(), 1);
         }
     }
 
@@ -513,7 +506,7 @@ mod tests {
     }
 
     #[test]
-    fn nesting_chain_includes_inline_boundary() {
+    fn nesting_chain_runs_through_inline_boundary() {
         let cs = contributors(LOOP_WITH_INLINE_NESTING_AND_CONDITIONAL);
         let nested = cs
             .iter()
@@ -521,10 +514,11 @@ mod tests {
             .unwrap();
 
         assert_eq!(nested.increment, 3); // 1 + depth 2
-        if let ContributorKind::Nesting { depth, chain, .. } = &nested.kind {
-            assert_eq!(*depth, 2);
-            assert_eq!(chain[0].role, Construct::InlineNesting);
-        }
+        let ContributorKind::Nesting { enclosing, .. } = &nested.kind else {
+            panic!("expected nesting contributor");
+        };
+        let roles: Vec<_> = enclosing.iter().map(|c| c.role).collect();
+        assert_eq!(roles, [Construct::Loop, Construct::NestedFunction]);
     }
 
     #[test]

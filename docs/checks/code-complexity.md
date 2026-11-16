@@ -144,7 +144,7 @@ Each line that contributes to a function's score produces an evidence entry. The
 | `recursion` | `recursive call to 'process' (+1)` | consider iterative approach |
 | `jump` | `'break' to label 'outer (+1)` | restructure to avoid labeled jump |
 
-The nesting chain reads left-to-right (outside to inside) and stops at inline nesting boundaries: `'if' nested 2 levels: 'closure > if' (+3)` in Rust, `'if' nested 2 levels: 'arrow > if' (+3)` in JavaScript/TypeScript.
+The nesting chain reads left-to-right (outside to inside) and names every level the count includes, from the scored function inward. Functions nested inside it are levels too, named by their keyword where the language has one: `closure` and `fn` in Rust; `arrow`, `function`, `generator` and `method` in JavaScript/TypeScript. So an `if` in a closure in a loop reads `'if' nested 2 levels: 'for > closure > if' (+3)` in Rust, and `'if' nested 2 levels: 'for...of > arrow > if' (+3)` in JavaScript/TypeScript.
 
 ## Examples
 
