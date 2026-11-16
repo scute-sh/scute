@@ -3,8 +3,8 @@ use crate::language::LanguageRegistry;
 use crate::parser::{AstParser, TreeSitterParser};
 
 use super::rules::{
-    ComplexityRules, Construct, ElseBranch, FlowConstruct, IfConstruct, JumpKeyword, LogicalOp,
-    NestingKind,
+    ComplexityRules, Construct, ElseBranch, FlowConstruct, IfConstruct, JumpKeyword,
+    LogicalExpression, LogicalOp, NestingKind,
 };
 
 const IF: FlowConstruct = FlowConstruct {
@@ -24,7 +24,7 @@ enum NodeRole<'t> {
     If(IfConstruct<'t>),
     FlowConstruct(FlowConstruct),
     NestingBoundary(NestingKind),
-    LogicalExpression,
+    LogicalExpression(LogicalExpression<'t>),
     LabeledJump(JumpKeyword, String),
     RecursiveCall,
 }
@@ -34,10 +34,11 @@ pub enum ContributorKind {
     FlowBreak {
         construct: FlowConstruct,
     },
+    /// A structure nested one level deep per entry in `enclosing`, which lists
+    /// the structures around it, outermost first.
     Nesting {
         construct: FlowConstruct,
-        depth: u64,
-        chain: Vec<FlowConstruct>,
+        enclosing: Vec<FlowConstruct>,
     },
     Else {
         label: &'static str,
@@ -140,8 +141,8 @@ fn classify_structural<'t>(
     if let Some(kind) = rules.nesting_kind(node) {
         return Some(NodeRole::NestingBoundary(kind));
     }
-    if rules.logical_operator(node).is_some() {
-        return Some(NodeRole::LogicalExpression);
+    if let Some(expression) = rules.logical_expression(node) {
+        return Some(NodeRole::LogicalExpression(expression));
     }
     None
 }
@@ -168,8 +169,8 @@ struct ScoringContext<'a> {
     receiver_type: Option<&'a str>,
     src: &'a [u8],
     contributors: &'a mut Vec<Contributor>,
-    /// The structures around the node being scored, outermost first, back to
-    /// the nearest function boundary. Nesting evidence names them.
+    /// The structures around the node being scored, outermost first, one per
+    /// nesting level. Nesting evidence names them.
     enclosing: Vec<FlowConstruct>,
 }
 
@@ -190,7 +191,9 @@ impl ScoringContext<'_> {
             NodeRole::If(construct) => self.score_if(node, construct, nesting),
             NodeRole::FlowConstruct(construct) => self.score_flow_break(node, nesting, construct),
             NodeRole::NestingBoundary(kind) => self.score_nesting_boundary(node, nesting, kind),
-            NodeRole::LogicalExpression => self.score_logical_sequence(node, nesting),
+            NodeRole::LogicalExpression(expression) => {
+                self.score_logical_sequence(node, expression, nesting)
+            }
             NodeRole::LabeledJump(keyword, label) => self.score_jump(node, nesting, keyword, label),
             NodeRole::RecursiveCall => self.score_recursion(node, nesting),
         }
@@ -211,12 +214,12 @@ impl ScoringContext<'_> {
         nesting: u64,
         construct: FlowConstruct,
     ) -> u64 {
+        debug_assert_eq!(nesting, self.enclosing.len() as u64);
         let increment = 1 + nesting;
         let kind = if nesting > 0 {
             ContributorKind::Nesting {
                 construct,
-                depth: nesting,
-                chain: [self.enclosing.as_slice(), &[construct]].concat(),
+                enclosing: self.enclosing.clone(),
             }
         } else {
             ContributorKind::FlowBreak { construct }
@@ -286,14 +289,7 @@ impl ScoringContext<'_> {
         nesting: u64,
         kind: NestingKind,
     ) -> u64 {
-        let chain_start = match kind {
-            NestingKind::Inline(construct) => vec![construct],
-            NestingKind::Separate => vec![],
-        };
-        let outer = std::mem::replace(&mut self.enclosing, chain_start);
-        let total = self.complexity(node, nesting + 1);
-        self.enclosing = outer;
-        total
+        self.inside(kind.construct(), |ctx| ctx.complexity(node, nesting + 1))
     }
 
     fn score_jump(
@@ -318,35 +314,50 @@ impl ScoringContext<'_> {
         1 + self.complexity(node, nesting)
     }
 
-    fn score_logical_sequence(&mut self, node: tree_sitter::Node, nesting: u64) -> u64 {
-        let mut operators = vec![];
-        collect_logical_operators(node, self.rules, &mut operators);
+    fn score_logical_sequence(
+        &mut self,
+        node: tree_sitter::Node,
+        expression: LogicalExpression,
+        nesting: u64,
+    ) -> u64 {
+        let mut flat = FlatLogicalExpression::default();
+        flat.flatten(self.rules, expression);
 
-        let score = count_operator_sequences(&operators);
+        let score = count_operator_sequences(&flat.operators);
         if score > 0 {
+            let operators = flat.operators;
             self.push(ContributorKind::Logical { operators }, node, score);
         }
 
-        score + self.visit_logical_leaves(node, nesting)
+        score
+            + flat
+                .operands
+                .into_iter()
+                .map(|operand| self.complexity(operand, nesting))
+                .sum::<u64>()
+    }
+}
+
+/// A logical expression read left to right as one run of operators and the
+/// operands between them, looking through parentheses.
+#[derive(Default)]
+struct FlatLogicalExpression<'t> {
+    operators: Vec<LogicalOp>,
+    operands: Vec<tree_sitter::Node<'t>>,
+}
+
+impl<'t> FlatLogicalExpression<'t> {
+    fn flatten(&mut self, rules: &dyn ComplexityRules, expression: LogicalExpression<'t>) {
+        self.read_operand(rules, expression.left);
+        self.operators.push(expression.operator);
+        self.read_operand(rules, expression.right);
     }
 
-    fn visit_logical_leaves(&mut self, node: tree_sitter::Node, nesting: u64) -> u64 {
-        let mut cursor = node.walk();
-        let children: Vec<_> = node
-            .children(&mut cursor)
-            .filter(|child| !self.rules.is_logical_operator_token(*child))
-            .collect();
-
-        children
-            .into_iter()
-            .map(|child| {
-                if self.rules.logical_operator(child).is_some() {
-                    self.visit_logical_leaves(child, nesting)
-                } else {
-                    self.complexity(child, nesting)
-                }
-            })
-            .sum()
+    fn read_operand(&mut self, rules: &dyn ComplexityRules, operand: tree_sitter::Node<'t>) {
+        match rules.logical_expression(operand) {
+            Some(expression) => self.flatten(rules, expression),
+            None => self.operands.push(operand),
+        }
     }
 }
 
@@ -356,24 +367,6 @@ fn count_operator_sequences(operators: &[LogicalOp]) -> u64 {
         .filter(|pair| pair[0] != pair[1])
         .count() as u64
         + u64::from(!operators.is_empty())
-}
-
-fn collect_logical_operators(
-    node: tree_sitter::Node,
-    rules: &dyn ComplexityRules,
-    operators: &mut Vec<LogicalOp>,
-) {
-    let Some(op) = rules.logical_operator(node) else {
-        return;
-    };
-
-    let mut cursor = node.walk();
-    for child in node.children(&mut cursor) {
-        if rules.logical_operator(child).is_some() {
-            collect_logical_operators(child, rules, operators);
-        }
-    }
-    operators.push(op);
 }
 
 #[cfg(test)]
@@ -456,9 +449,8 @@ mod tests {
             .unwrap();
 
         assert_eq!(nested.increment, 2); // 1 + depth 1
-        if let ContributorKind::Nesting { depth, chain, .. } = &nested.kind {
-            assert_eq!(*depth, 1);
-            assert_eq!(chain.len(), 2);
+        if let ContributorKind::Nesting { enclosing, .. } = &nested.kind {
+            assert_eq!(enclosing.len(), 1);
         }
     }
 
@@ -513,7 +505,7 @@ mod tests {
     }
 
     #[test]
-    fn nesting_chain_includes_inline_boundary() {
+    fn nesting_chain_runs_through_inline_boundary() {
         let cs = contributors(LOOP_WITH_INLINE_NESTING_AND_CONDITIONAL);
         let nested = cs
             .iter()
@@ -521,10 +513,11 @@ mod tests {
             .unwrap();
 
         assert_eq!(nested.increment, 3); // 1 + depth 2
-        if let ContributorKind::Nesting { depth, chain, .. } = &nested.kind {
-            assert_eq!(*depth, 2);
-            assert_eq!(chain[0].role, Construct::InlineNesting);
-        }
+        let ContributorKind::Nesting { enclosing, .. } = &nested.kind else {
+            panic!("expected nesting contributor");
+        };
+        let roles: Vec<_> = enclosing.iter().map(|c| c.role).collect();
+        assert_eq!(roles, [Construct::Loop, Construct::NestedFunction]);
     }
 
     #[test]

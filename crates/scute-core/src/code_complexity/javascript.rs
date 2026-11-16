@@ -1,9 +1,9 @@
 use crate::language::JsFamily;
 
-use super::grammar::else_clause;
+use super::grammar::{else_clause, logical_binary_expression};
 use super::rules::{
-    ComplexityRules, Construct, FlowConstruct, IfConstruct, JumpKeyword, LogicalOp, NestingKind,
-    ScoringUnit,
+    ComplexityRules, Construct, FlowConstruct, IfConstruct, JumpKeyword, LogicalExpression,
+    NestingKind, ScoringUnit,
 };
 
 impl ComplexityRules for JsFamily {
@@ -111,38 +111,35 @@ impl ComplexityRules for JsFamily {
     fn nesting_kind(&self, node: tree_sitter::Node) -> Option<NestingKind> {
         match node.kind() {
             "arrow_function" => Some(NestingKind::Inline(FlowConstruct {
-                role: Construct::InlineNesting,
+                role: Construct::NestedFunction,
                 label: "arrow",
             })),
             "function_expression" => Some(NestingKind::Inline(FlowConstruct {
-                role: Construct::InlineNesting,
+                role: Construct::NestedFunction,
                 label: "function",
             })),
             "generator_function" => Some(NestingKind::Inline(FlowConstruct {
-                role: Construct::InlineNesting,
+                role: Construct::NestedFunction,
                 label: "generator",
             })),
-            "function_declaration" | "generator_function_declaration" | "method_definition" => {
-                Some(NestingKind::Separate)
-            }
+            "function_declaration" => Some(NestingKind::Separate(FlowConstruct {
+                role: Construct::NestedFunction,
+                label: "function",
+            })),
+            "generator_function_declaration" => Some(NestingKind::Separate(FlowConstruct {
+                role: Construct::NestedFunction,
+                label: "generator",
+            })),
+            "method_definition" => Some(NestingKind::Separate(FlowConstruct {
+                role: Construct::NestedFunction,
+                label: "method",
+            })),
             _ => None,
         }
     }
 
-    fn logical_operator(&self, node: tree_sitter::Node) -> Option<LogicalOp> {
-        if node.kind() != "binary_expression" {
-            return None;
-        }
-        node.children(&mut node.walk())
-            .find(|c| c.kind() == "&&" || c.kind() == "||")
-            .map(|c| match c.kind() {
-                "&&" => LogicalOp::And("&&"),
-                _ => LogicalOp::Or("||"),
-            })
-    }
-
-    fn is_logical_operator_token(&self, node: tree_sitter::Node) -> bool {
-        node.kind() == "&&" || node.kind() == "||"
+    fn logical_expression<'a>(&self, node: tree_sitter::Node<'a>) -> Option<LogicalExpression<'a>> {
+        logical_binary_expression(node)
     }
 }
 

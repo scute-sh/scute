@@ -26,7 +26,7 @@ Every function starts at 0. Six cognitive drivers add to the score:
 | Flow break | +1 | A control flow construct at nesting depth 0 |
 | Nesting | +1 + depth | A control flow construct nested inside other control flow |
 | Else | +1 | `else` or `else if` branch |
-| Boolean logic | +1 per sequence change | `a && b` = +1, `a && b \|\| c` = +2 |
+| Boolean logic | +1 per sequence of like operators | `a && b` = +1, `a && b \|\| c` = +2 |
 | Recursion | +1 | Direct recursive call |
 | Jump | +1 | Labeled `break` or `continue` |
 
@@ -52,8 +52,8 @@ Constructs in the same cognitive role follow the same scoring rules. A `switch` 
 - **Else-if chains are flat.** `if / else if / else if / else` does not compound nesting. Each branch costs +1 at any depth, since the nesting cost was already paid on the `if`. Code inside a branch body is one level deeper, same as inside an `if` body, and its nesting chain names the branch it sits in (`'else > if'`).
 - **An `if`'s condition isn't nested in it.** A ternary or closure in the condition sits at the `if`'s own level. Only the bodies go one level deeper.
 - **Inline nesting inherits depth.** Closures (Rust) and arrow functions / function expressions (JS/TS) bump nesting depth by 1 for their contained code. They're not a fresh scope.
-- **Named function expressions stand on their own.** (JS/TS) Outside any other function, an arrow function or function expression assigned to a variable (`const f = () => {}`), an object-literal property (`save: function () {}`) or a class field (`handle = () => {}`) is scored as its own function, named after the variable, property or field. Inside a function, it's inline nesting like any other arrow function. Anonymous callbacks that aren't assigned to anything aren't scored.
-- **Logical operators count sequence changes.** `a && b && c` is one sequence (+1). `a && b || c && d` has two changes (+3).
+- **Functions bound to a name stand on their own.** (JS/TS) Outside any other function, an arrow function or function expression declared as a variable (`const f = () => {}`), an object-literal property (`save: function () {}`) or a class field (`handle = () => {}`) is scored as its own function, named after the variable, property or field. Inside a function, it's inline nesting like any other arrow function. Functions bound any other way aren't scored: through an assignment (`obj.save = function () {}`, `module.exports.handler = () => {}`), wrapped in parentheses or a type assertion (`const f = (() => {})`, `const g = (() => {}) as Handler`), or passed as an anonymous callback.
+- **Logical operators count sequences, read left to right.** Each run of like operators costs +1, in the order they're written, whatever their precedence. `a && b && c` is one sequence (+1). `a || b && c || d` is three (+3). Parentheses don't break a run: `(a && b) && c` is still +1. A negated group starts its own: `a && !(b && c)` is +2.
 - **Ternaries score like `if`.** (JS/TS) A ternary counts as a conditional and nests like any other flow construct.
 
 ## Usage
@@ -145,7 +145,7 @@ Each line that contributes to a function's score produces an evidence entry. The
 | `recursion` | `recursive call to 'process' (+1)` | consider iterative approach |
 | `jump` | `'break' to label 'outer (+1)` | restructure to avoid labeled jump |
 
-The nesting chain reads left-to-right (outside to inside) and stops at inline nesting boundaries: `'if' nested 2 levels: 'closure > if' (+3)` in Rust, `'if' nested 2 levels: 'arrow > if' (+3)` in JavaScript/TypeScript.
+The nesting chain reads left-to-right (outside to inside) and names every level the count includes, from the scored function inward. Functions nested inside it are levels too, named by their keyword where the language has one: `closure` and `fn` in Rust; `arrow`, `function`, `generator` and `method` in JavaScript/TypeScript. So an `if` in a closure in a loop reads `'if' nested 2 levels: 'for > closure > if' (+3)` in Rust, and `'if' nested 2 levels: 'for...of > arrow > if' (+3)` in JavaScript/TypeScript.
 
 ## Examples
 

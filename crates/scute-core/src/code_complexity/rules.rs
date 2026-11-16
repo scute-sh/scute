@@ -3,7 +3,7 @@ pub enum Construct {
     Conditional,
     Loop,
     ExceptionHandler,
-    InlineNesting,
+    NestedFunction,
 }
 
 impl Construct {
@@ -12,7 +12,7 @@ impl Construct {
             Self::Conditional => "conditional",
             Self::Loop => "loop",
             Self::ExceptionHandler => "exception handler",
-            Self::InlineNesting => "closure",
+            Self::NestedFunction => "nested function",
         }
     }
 }
@@ -63,13 +63,22 @@ impl PartialEq for LogicalOp {
 
 impl Eq for LogicalOp {}
 
+/// A function nested in the one being scored. Everything inside it sits one
+/// level deeper, and nesting chains name it by its construct's label.
 #[derive(Clone, Copy)]
 pub enum NestingKind {
-    /// Increases nesting, part of enclosing function (closures, arrow functions).
-    /// The construct appears in nesting chains.
+    /// Part of the enclosing function only (closures, arrow functions).
     Inline(FlowConstruct),
-    /// Increases nesting in outer function, scored independently at depth 0.
-    Separate,
+    /// Also scored on its own, from depth 0 (nested named functions).
+    Separate(FlowConstruct),
+}
+
+impl NestingKind {
+    pub fn construct(self) -> FlowConstruct {
+        match self {
+            Self::Inline(construct) | Self::Separate(construct) => construct,
+        }
+    }
 }
 
 /// An `if`, split into the parts that score at different nesting levels: the
@@ -93,11 +102,23 @@ pub struct ElseBranch<'a> {
     pub body: tree_sitter::Node<'a>,
 }
 
+/// Two operands joined by `&&` or `||`. Parentheses grouping another logical
+/// expression are already looked through, since they don't break a sequence
+/// of like operators: in `(a && b) && c`, the left operand is `a && b`. Any
+/// other operand stays as written, parentheses included.
+#[derive(Clone, Copy)]
+pub struct LogicalExpression<'a> {
+    pub operator: LogicalOp,
+    pub left: tree_sitter::Node<'a>,
+    pub right: tree_sitter::Node<'a>,
+}
+
 pub struct ScoringUnit<'a> {
     pub name: String,
     pub line: usize,
-    /// What gets scored: the function's body, a block or a single expression.
-    /// The scorer classifies this node itself, then everything inside it.
+    /// What gets scored: the function's body (a block or a single expression),
+    /// or the whole declaration for a function that has none. The scorer
+    /// classifies this node itself, then everything inside it.
     pub body: tree_sitter::Node<'a>,
     pub receiver_type: Option<String>,
 }
@@ -128,13 +149,9 @@ pub trait ComplexityRules {
     /// named function), return how it affects scoring.
     fn nesting_kind(&self, node: tree_sitter::Node) -> Option<NestingKind>;
 
-    /// If this node is a logical expression, return which operator it uses.
-    /// Used to count operator sequences.
-    fn logical_operator(&self, node: tree_sitter::Node) -> Option<LogicalOp>;
-
-    /// Whether this node is a logical operator token (`&&`, `||`).
-    /// Used to filter operands when walking logical expression trees.
-    fn is_logical_operator_token(&self, node: tree_sitter::Node) -> bool;
+    /// If this node is a logical expression, return its operator and operands.
+    /// Used to read operator sequences left to right.
+    fn logical_expression<'a>(&self, node: tree_sitter::Node<'a>) -> Option<LogicalExpression<'a>>;
 
     /// If this node is a labeled jump (`break 'label`, `continue 'label`),
     /// return the keyword and label text. Scores +1 as a hybrid increment.

@@ -143,15 +143,19 @@ fn score_file(
         .collect()
 }
 
-fn format_nesting_chain(chain: &[rules::FlowConstruct]) -> String {
-    chain
+fn format_nesting_chain(
+    enclosing: &[rules::FlowConstruct],
+    construct: rules::FlowConstruct,
+) -> String {
+    enclosing
         .iter()
+        .chain([&construct])
         .map(|c| c.label)
         .collect::<Vec<_>>()
         .join(" > ")
 }
 
-fn pluralize_levels(n: u64) -> &'static str {
+fn pluralize_levels(n: usize) -> &'static str {
     if n == 1 { "level" } else { "levels" }
 }
 
@@ -181,12 +185,12 @@ fn format_evidence(c: &score::Contributor, path: &Path) -> Evidence {
         ),
         score::ContributorKind::Nesting {
             construct,
-            depth,
-            chain,
+            enclosing,
         } => {
             let name = construct.label;
-            let chain = format_nesting_chain(chain);
-            let levels = pluralize_levels(*depth);
+            let chain = format_nesting_chain(enclosing, *construct);
+            let depth = enclosing.len();
+            let levels = pluralize_levels(depth);
             (
                 "nesting",
                 format!(
@@ -256,6 +260,19 @@ mod tests {
                 field!(Evaluation.target, ends_with(":1:a")),
                 field!(Evaluation.target, ends_with(":1:b")),
             ]
+        );
+    }
+
+    #[test_case("a.ts", "\n\n\n\nfunction lined(x) { if (x) {} }" ; "typescript")]
+    #[test_case("A.java", "class A {\n\n\n\n    void lined(boolean x) { if (x) {} }\n}" ; "java")]
+    fn target_names_the_line_the_function_starts_on(filename: &str, source: &str) {
+        let dir = TestDir::new().source_file(filename, source);
+
+        let evals = check_dir(&dir.root());
+
+        assert_that!(
+            evals,
+            elements_are![field!(Evaluation.target, ends_with(":5:lined"))]
         );
     }
 
@@ -367,6 +384,36 @@ mod tests {
         ; "nesting_chain_names_the_else_closing_an_else_if_chain"
     )]
     #[test_case(
+        "a.rs", "fn f(c: &[i32]) { for _ in c { c.iter().for_each(|y| { if *y > 0 {} }); } }",
+        "nesting", "'if' nested 2 levels: 'for > closure > if' (+3)", Some("extract inner block into a function")
+        ; "nesting_chain_names_the_loop_around_a_closure"
+    )]
+    #[test_case(
+        "a.rs", "fn f(c: &[i32]) { for _ in c { fn g(a: bool) { if a {} } } }",
+        "nesting", "'if' nested 2 levels: 'for > fn > if' (+3)", Some("extract inner block into a function")
+        ; "nesting_chain_names_a_nested_fn_by_its_keyword"
+    )]
+    #[test_case(
+        "a.ts", "function f(c: number[]) { for (const x of c) { c.forEach((y) => { if (y) {} }); } }",
+        "nesting", "'if' nested 2 levels: 'for...of > arrow > if' (+3)", Some("extract inner block into a function")
+        ; "typescript_nesting_chain_names_the_loop_around_an_arrow"
+    )]
+    #[test_case(
+        "a.ts", "function f(n: number) { for (let i = 0; i < n; i++) { function g(a: boolean) { if (a) {} } } }",
+        "nesting", "'if' nested 2 levels: 'for > function > if' (+3)", Some("extract inner block into a function")
+        ; "typescript_nesting_chain_names_a_nested_function_by_its_keyword"
+    )]
+    #[test_case(
+        "a.js", "function f(n) { for (let i = 0; i < n; i++) { function* g(a) { if (a) {} } } }",
+        "nesting", "'if' nested 2 levels: 'for > generator > if' (+3)", Some("extract inner block into a function")
+        ; "javascript_nesting_chain_names_a_nested_generator_declaration"
+    )]
+    #[test_case(
+        "a.js", "function f(n) { for (let i = 0; i < n; i++) { const o = { m(a) { if (a) {} } }; } }",
+        "nesting", "'if' nested 2 levels: 'for > method > if' (+3)", Some("extract inner block into a function")
+        ; "javascript_nesting_chain_names_a_nested_method"
+    )]
+    #[test_case(
         "a.rs", "fn f(a: bool, b: bool) -> bool { a && b }",
         "boolean logic", "'&&' operators (+1)", Some("extract into a named boolean")
         ; "logical_single_operator"
@@ -385,6 +432,21 @@ mod tests {
         "a.rs", "fn f() { 'outer: loop { break 'outer; } }",
         "jump", "'break' to label 'outer (+1)", Some("restructure to avoid labeled jump")
         ; "jump_shows_label"
+    )]
+    #[test_case(
+        "a.ts", "function f(o: object) { for (const k in o) {} }",
+        "flow break", "'for...in' loop (+1)", None
+        ; "for_in_names_the_loop"
+    )]
+    #[test_case(
+        "a.ts", "function f(xs: number[]) { for (const x of xs) {} }",
+        "flow break", "'for...of' loop (+1)", None
+        ; "for_of_names_the_loop"
+    )]
+    #[test_case(
+        "a.ts", "function d(x: boolean) { const g = function* () { if (x) {} }; }",
+        "nesting", "'if' nested 1 level: 'generator > if' (+2)", Some("extract inner block into a function")
+        ; "nesting_chain_names_the_generator_expression"
     )]
     #[test_case(
         "A.java", "class A { void f(List<Integer> c) { for (int x : c) {} } }",
@@ -419,6 +481,27 @@ mod tests {
             "evidence found mismatch for rule '{rule}'"
         );
         assert_eq!(entry.expected, expected.map(|s| Expected::Text(s.into())));
+    }
+
+    #[test]
+    fn nesting_chain_names_every_level_across_closures() {
+        let evidence = evidence_of(
+            "fn f(c: &[i32]) {
+                for x in c {
+                    if *x > 0 {
+                        c.iter().for_each(|_| c.iter().for_each(|z| { if *z > 0 {} }));
+                    }
+                }
+            }",
+        );
+
+        assert_that!(
+            evidence,
+            contains(matches_pattern!(Evidence {
+                found: eq("'if' nested 4 levels: 'for > if > closure > closure > if' (+5)"),
+                ..
+            }))
+        );
     }
 
     #[test_case("a.ts" ; "typescript")]
