@@ -159,9 +159,9 @@ pub trait ComplexityRules {
 
     /// Whether a function outside any other function is ignored when used
     /// purely as a declarative container, with no structural increment at its
-    /// own top level: the functions nested in it then add no nesting. The spec
-    /// defines this for JavaScript, where outer functions stand in for
-    /// namespaces and classes.
+    /// own top level: a function directly inside it then adds no nesting level
+    /// (functions nested deeper still add theirs). The spec defines this for
+    /// JavaScript, where outer functions stand in for namespaces and classes.
     fn ignores_declarative_outer_functions(&self) -> bool {
         false
     }
