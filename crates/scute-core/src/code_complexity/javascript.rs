@@ -141,6 +141,10 @@ impl ComplexityRules for JsFamily {
     fn logical_expression<'a>(&self, node: tree_sitter::Node<'a>) -> Option<LogicalExpression<'a>> {
         logical_binary_expression(node)
     }
+
+    fn ignores_declarative_outer_functions(&self) -> bool {
+        true
+    }
 }
 
 const DECLARED_FUNCTIONS: &[&str] = &[

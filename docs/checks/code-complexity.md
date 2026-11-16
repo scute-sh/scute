@@ -53,6 +53,16 @@ Constructs in the same cognitive role follow the same scoring rules. A `switch` 
 - **An `if`'s condition isn't nested in it.** A ternary or closure in the condition sits at the `if`'s own level. Only the bodies go one level deeper.
 - **Inline nesting inherits depth.** Closures (Rust) and arrow functions / function expressions (JS/TS) bump nesting depth by 1 for their contained code. They're not a fresh scope.
 - **Functions bound to a name stand on their own.** (JS/TS) Outside any other function, an arrow function or function expression declared as a variable (`const f = () => {}`), an object-literal property (`save: function () {}`) or a class field (`handle = () => {}`) is scored as its own function, named after the variable, property or field. Inside a function, it's inline nesting like any other arrow function. Functions bound any other way aren't scored: through an assignment (`obj.save = function () {}`, `module.exports.handler = () => {}`), wrapped in parentheses or a type assertion (`const f = (() => {})`, `const g = (() => {}) as Handler`), or passed as an anonymous callback.
+- **Declarative outer functions add no nesting.** (JS/TS) A function outside any other function that only declares things works as a namespace, a faux class or a component holding handlers. When nothing at its own top level is an `if`, `switch`, loop, `catch` or ternary, the functions defined directly inside it add no nesting level: an `if` in such a handler costs +1, not +2. Functions nested deeper still add a level each. Unscored functions count as enclosing ones too: a function declared inside an IIFE or a `describe(() => {})` callback isn't outside any other function, so it nests as usual. Boolean operators, labeled jumps and recursion at the top level don't count against it, and what sits inside its nested functions doesn't either. One `if` at its top level and it nests like any other function.
+
+  ```js
+  function Counter({ step }) {   // declarative: no structure at its top level
+    const increment = () => {
+      if (step > 0) {}           // +1
+    };
+    return <button onClick={increment}>+</button>;
+  }
+  ```
 - **Logical operators count sequences, read left to right.** Each run of like operators costs +1, in the order they're written, whatever their precedence. `a && b && c` is one sequence (+1). `a || b && c || d` is three (+3). Parentheses don't break a run: `(a && b) && c` is still +1. A negated group starts its own: `a && !(b && c)` is +2. Operands score like any other code, at the nesting level around the expression: `n == 0 || go(n - 1)` inside `go` is +2 (the `||` and the recursion), and `a && match x { … }` is +2 too.
 - **Ternaries score like `if`.** (JS/TS) A ternary counts as a conditional and nests like any other flow construct.
 
@@ -145,7 +155,7 @@ Each line that contributes to a function's score produces an evidence entry. The
 | `recursion` | `recursive call to 'process' (+1)` | consider iterative approach |
 | `jump` | `'break' to label 'outer (+1)` | restructure to avoid labeled jump |
 
-The nesting chain reads left-to-right (outside to inside) and names every level the count includes, from the scored function inward. Functions nested inside it are levels too, named by their keyword where the language has one: `closure` and `fn` in Rust; `arrow`, `function`, `generator` and `method` in JavaScript/TypeScript. So an `if` in a closure in a loop reads `'if' nested 2 levels: 'for > closure > if' (+3)` in Rust, and `'if' nested 2 levels: 'for...of > arrow > if' (+3)` in JavaScript/TypeScript.
+The nesting chain reads left-to-right (outside to inside) and names every level the count includes, from the scored function inward. Functions nested inside it are levels too, labeled by kind: `closure` and `fn` in Rust; `arrow`, `function`, `generator` and `method` in JavaScript/TypeScript. A function that adds no level, like one directly inside a declarative outer function, stays out of the chain. So an `if` in a closure in a loop reads `'if' nested 2 levels: 'for > closure > if' (+3)` in Rust, and `'if' nested 2 levels: 'for...of > arrow > if' (+3)` in JavaScript/TypeScript.
 
 ## Examples
 

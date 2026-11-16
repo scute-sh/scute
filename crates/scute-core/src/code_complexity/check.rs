@@ -444,9 +444,14 @@ mod tests {
         ; "for_of_names_the_loop"
     )]
     #[test_case(
-        "a.ts", "function d(x: boolean) { const g = function* () { if (x) {} }; }",
-        "nesting", "'if' nested 1 level: 'generator > if' (+2)", Some("extract inner block into a function")
+        "a.ts", "function d(x: boolean) { while (x) { const g = function* () { if (x) {} }; } }",
+        "nesting", "'if' nested 2 levels: 'while > generator > if' (+3)", Some("extract inner block into a function")
         ; "nesting_chain_names_the_generator_expression"
+    )]
+    #[test_case(
+        "a.js", "function outer(x) { const a = () => { const b = () => { if (x) {} }; }; }",
+        "nesting", "'if' nested 1 level: 'arrow > if' (+2)", Some("extract inner block into a function")
+        ; "nesting_chain_leaves_out_the_function_ignored_in_a_declarative_outer_function"
     )]
     #[test_case(
         "A.java", "class A { void f(List<Integer> c) { for (int x : c) {} } }",

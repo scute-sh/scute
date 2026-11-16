@@ -156,6 +156,15 @@ pub trait ComplexityRules {
     /// return the keyword and label text. Scores +1 as a hybrid increment.
     fn jump_label(&self, node: tree_sitter::Node, src: &[u8]) -> Option<(JumpKeyword, String)>;
 
+    /// Whether a function outside any other function is ignored when used
+    /// purely as a declarative container, with no structural increment at its
+    /// own top level: a function directly inside it then adds no nesting level
+    /// (functions nested deeper still add theirs). The spec defines this for
+    /// JavaScript, where outer functions stand in for namespaces and classes.
+    fn ignores_declarative_outer_functions(&self) -> bool {
+        false
+    }
+
     /// Whether this node is a direct recursive call to the function being scored.
     fn is_recursive_call(
         &self,

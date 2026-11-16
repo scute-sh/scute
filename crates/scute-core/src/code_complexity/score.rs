@@ -4,7 +4,7 @@ use crate::parser::{AstParser, TreeSitterParser};
 
 use super::rules::{
     ComplexityRules, Construct, ElseBranch, FlowConstruct, IfConstruct, JumpKeyword,
-    LogicalExpression, LogicalOp, NestingKind,
+    LogicalExpression, LogicalOp, NestingKind, ScoringUnit,
 };
 
 const IF: FlowConstruct = FlowConstruct {
@@ -83,37 +83,66 @@ pub fn score_functions(
     };
     let src = file.content.as_bytes();
     let mut results = vec![];
-    collect_functions(tree.root_node(), src, rules, &mut results);
+    collect_functions(tree.root_node(), src, rules, true, &mut results);
     results
 }
 
+/// Scores every function under `node`. `outer` holds while no function
+/// encloses `node`.
 fn collect_functions(
     node: tree_sitter::Node,
     src: &[u8],
     rules: &dyn ComplexityRules,
+    outer: bool,
     results: &mut Vec<FunctionScore>,
 ) {
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
-        if let Some(unit) = rules.scoring_unit(child, src) {
-            let mut contributors = vec![];
-            let score = ScoringContext {
-                rules,
-                fn_name: &unit.name,
-                receiver_type: unit.receiver_type.as_deref(),
-                src,
-                contributors: &mut contributors,
-                enclosing: vec![],
-            }
-            .score_node(unit.body, 0);
-            results.push(FunctionScore {
-                name: unit.name,
-                line: unit.line,
-                score,
-                contributors,
-            });
+        let unit = rules.scoring_unit(child, src);
+        let child_is_outer = outer && unit.is_none() && rules.nesting_kind(child).is_none();
+        if let Some(unit) = unit {
+            results.push(score_unit(unit, outer, src, rules));
         }
-        collect_functions(child, src, rules, results);
+        collect_functions(child, src, rules, child_is_outer, results);
+    }
+}
+
+fn score_unit(
+    unit: ScoringUnit,
+    outer: bool,
+    src: &[u8],
+    rules: &dyn ComplexityRules,
+) -> FunctionScore {
+    let mut contributors = vec![];
+    let score = ScoringContext {
+        rules,
+        fn_name: &unit.name,
+        receiver_type: unit.receiver_type.as_deref(),
+        src,
+        contributors: &mut contributors,
+        enclosing: vec![],
+        declarative_top_level: outer
+            && rules.ignores_declarative_outer_functions()
+            && !has_top_level_structure(rules, unit.body),
+    }
+    .score_node(unit.body);
+    FunctionScore {
+        name: unit.name,
+        line: unit.line,
+        score,
+        contributors,
+    }
+}
+
+/// Whether a structural increment sits under `node` outside any function
+/// nested in it.
+fn has_top_level_structure(rules: &dyn ComplexityRules, node: tree_sitter::Node) -> bool {
+    match classify_structural(rules, node) {
+        Some(NodeRole::If(_) | NodeRole::FlowConstruct(_)) => true,
+        Some(NodeRole::NestingBoundary(_)) => false,
+        _ => node
+            .children(&mut node.walk())
+            .any(|child| has_top_level_structure(rules, child)),
     }
 }
 
@@ -169,33 +198,36 @@ struct ScoringContext<'a> {
     receiver_type: Option<&'a str>,
     src: &'a [u8],
     contributors: &'a mut Vec<Contributor>,
-    /// The structures around the node being scored, outermost first, one per
-    /// nesting level. Nesting evidence names them.
+    /// The structures around the node being scored, outermost first. Each one
+    /// is a nesting level: increments count them and evidence names them.
     enclosing: Vec<FlowConstruct>,
+    /// Whether the node being scored sits at the top level of a declarative
+    /// outer function, where nested functions add no nesting.
+    declarative_top_level: bool,
 }
 
 impl ScoringContext<'_> {
-    fn complexity(&mut self, node: tree_sitter::Node, nesting: u64) -> u64 {
+    fn complexity(&mut self, node: tree_sitter::Node) -> u64 {
         let mut cursor = node.walk();
         node.children(&mut cursor)
-            .map(|child| self.score_node(child, nesting))
+            .map(|child| self.score_node(child))
             .sum()
     }
 
-    fn score_node(&mut self, node: tree_sitter::Node, nesting: u64) -> u64 {
+    fn score_node(&mut self, node: tree_sitter::Node) -> u64 {
         let Some(role) = classify(self.rules, node, self.fn_name, self.receiver_type, self.src)
         else {
-            return self.complexity(node, nesting);
+            return self.complexity(node);
         };
         match role {
-            NodeRole::If(construct) => self.score_if(node, construct, nesting),
-            NodeRole::FlowConstruct(construct) => self.score_flow_break(node, nesting, construct),
-            NodeRole::NestingBoundary(kind) => self.score_nesting_boundary(node, nesting, kind),
+            NodeRole::If(construct) => self.score_if(node, construct),
+            NodeRole::FlowConstruct(construct) => self.score_flow_break(node, construct),
+            NodeRole::NestingBoundary(kind) => self.score_nesting_boundary(node, kind),
             NodeRole::LogicalExpression(expression) => {
-                self.score_logical_sequence(node, expression, nesting)
+                self.score_logical_sequence(node, expression)
             }
-            NodeRole::LabeledJump(keyword, label) => self.score_jump(node, nesting, keyword, label),
-            NodeRole::RecursiveCall => self.score_recursion(node, nesting),
+            NodeRole::LabeledJump(keyword, label) => self.score_jump(node, keyword, label),
+            NodeRole::RecursiveCall => self.score_recursion(node),
         }
     }
 
@@ -208,27 +240,22 @@ impl ScoringContext<'_> {
     }
 
     /// Records the `1 + nesting` increment of a structure and returns it.
-    fn push_structural(
-        &mut self,
-        node: tree_sitter::Node,
-        nesting: u64,
-        construct: FlowConstruct,
-    ) -> u64 {
-        debug_assert_eq!(nesting, self.enclosing.len() as u64);
-        let increment = 1 + nesting;
-        let kind = if nesting > 0 {
+    fn push_structural(&mut self, node: tree_sitter::Node, construct: FlowConstruct) -> u64 {
+        let increment = 1 + self.enclosing.len() as u64;
+        let kind = if self.enclosing.is_empty() {
+            ContributorKind::FlowBreak { construct }
+        } else {
             ContributorKind::Nesting {
                 construct,
                 enclosing: self.enclosing.clone(),
             }
-        } else {
-            ContributorKind::FlowBreak { construct }
         };
         self.push(kind, node, increment);
         increment
     }
 
-    /// Scores with `construct` added to the enclosing structures.
+    /// Scores one level deeper, with `construct` added to the enclosing
+    /// structures.
     fn inside(&mut self, construct: FlowConstruct, score: impl FnOnce(&mut Self) -> u64) -> u64 {
         self.enclosing.push(construct);
         let total = score(self);
@@ -236,46 +263,34 @@ impl ScoringContext<'_> {
         total
     }
 
-    fn score_flow_break(
-        &mut self,
-        node: tree_sitter::Node,
-        nesting: u64,
-        construct: FlowConstruct,
-    ) -> u64 {
-        let increment = self.push_structural(node, nesting, construct);
-        increment + self.inside(construct, |ctx| ctx.complexity(node, nesting + 1))
+    fn score_flow_break(&mut self, node: tree_sitter::Node, construct: FlowConstruct) -> u64 {
+        let increment = self.push_structural(node, construct);
+        increment + self.inside(construct, |ctx| ctx.complexity(node))
     }
 
-    fn score_if(&mut self, node: tree_sitter::Node, construct: IfConstruct, nesting: u64) -> u64 {
-        let increment = self.push_structural(node, nesting, IF);
-        increment + self.score_if_parts(construct, nesting, IF)
+    fn score_if(&mut self, node: tree_sitter::Node, construct: IfConstruct) -> u64 {
+        let increment = self.push_structural(node, IF);
+        increment + self.score_if_parts(construct, IF)
     }
 
     /// Scores an `if`'s condition at the `if`'s own level, then its consequence
     /// and `else` one level deeper. `branch` names the consequence in evidence.
-    fn score_if_parts(
-        &mut self,
-        construct: IfConstruct,
-        nesting: u64,
-        branch: FlowConstruct,
-    ) -> u64 {
-        let condition = self.score_node(construct.condition, nesting);
-        let consequence = self.inside(branch, |ctx| {
-            ctx.score_node(construct.consequence, nesting + 1)
-        });
+    fn score_if_parts(&mut self, construct: IfConstruct, branch: FlowConstruct) -> u64 {
+        let condition = self.score_node(construct.condition);
+        let consequence = self.inside(branch, |ctx| ctx.score_node(construct.consequence));
         let alternative = construct
             .alternative
-            .map_or(0, |alternative| self.score_else(alternative, nesting));
+            .map_or(0, |alternative| self.score_else(alternative));
         condition + consequence + alternative
     }
 
-    fn score_else(&mut self, branch: ElseBranch, nesting: u64) -> u64 {
+    fn score_else(&mut self, branch: ElseBranch) -> u64 {
         if let Some(chained) = self.rules.if_construct(branch.body) {
             self.push_hybrid(ELSE_IF, branch.keyword);
-            return 1 + self.score_if_parts(chained, nesting, ELSE_IF);
+            return 1 + self.score_if_parts(chained, ELSE_IF);
         }
         self.push_hybrid(ELSE, branch.keyword);
-        1 + self.inside(ELSE, |ctx| ctx.score_node(branch.body, nesting + 1))
+        1 + self.inside(ELSE, |ctx| ctx.score_node(branch.body))
     }
 
     fn push_hybrid(&mut self, construct: FlowConstruct, keyword: tree_sitter::Node) {
@@ -283,27 +298,24 @@ impl ScoringContext<'_> {
         self.push(ContributorKind::Else { label }, keyword, 1);
     }
 
-    fn score_nesting_boundary(
-        &mut self,
-        node: tree_sitter::Node,
-        nesting: u64,
-        kind: NestingKind,
-    ) -> u64 {
-        self.inside(kind.construct(), |ctx| ctx.complexity(node, nesting + 1))
+    /// A function at the top level of a declarative outer function adds no
+    /// level, but the functions nested in it do.
+    fn score_nesting_boundary(&mut self, node: tree_sitter::Node, kind: NestingKind) -> u64 {
+        if !self.declarative_top_level {
+            return self.inside(kind.construct(), |ctx| ctx.complexity(node));
+        }
+        self.declarative_top_level = false;
+        let total = self.complexity(node);
+        self.declarative_top_level = true;
+        total
     }
 
-    fn score_jump(
-        &mut self,
-        node: tree_sitter::Node,
-        nesting: u64,
-        keyword: JumpKeyword,
-        label: String,
-    ) -> u64 {
+    fn score_jump(&mut self, node: tree_sitter::Node, keyword: JumpKeyword, label: String) -> u64 {
         self.push(ContributorKind::Jump { keyword, label }, node, 1);
-        1 + self.complexity(node, nesting)
+        1 + self.complexity(node)
     }
 
-    fn score_recursion(&mut self, node: tree_sitter::Node, nesting: u64) -> u64 {
+    fn score_recursion(&mut self, node: tree_sitter::Node) -> u64 {
         self.push(
             ContributorKind::Recursion {
                 fn_name: self.fn_name.to_string(),
@@ -311,14 +323,13 @@ impl ScoringContext<'_> {
             node,
             1,
         );
-        1 + self.complexity(node, nesting)
+        1 + self.complexity(node)
     }
 
     fn score_logical_sequence(
         &mut self,
         node: tree_sitter::Node,
         expression: LogicalExpression,
-        nesting: u64,
     ) -> u64 {
         let mut flat = FlatLogicalExpression::default();
         flat.flatten(self.rules, expression);
@@ -333,7 +344,7 @@ impl ScoringContext<'_> {
             + flat
                 .operands
                 .into_iter()
-                .map(|operand| self.score_node(operand, nesting))
+                .map(|operand| self.score_node(operand))
                 .sum::<u64>()
     }
 }
