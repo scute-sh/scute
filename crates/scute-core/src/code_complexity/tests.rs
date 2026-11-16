@@ -304,12 +304,28 @@ fn scores_parenthesized_structure_used_as_boolean_operand(path: &str, source: &s
     expect_score(source, path, expected);
 }
 
-// Pins current behavior: an unparenthesized structure used as an operand isn't scored.
-// Issue #173 will score it like its parenthesized twin.
-#[test_case("fn f(a: bool, b: bool, c: bool) -> bool { a && if b { c } else { a } }" ; "if_expression")]
-#[test_case("fn f(a: bool, b: bool, c: bool) -> bool { a && f(b, c, a) }" ; "recursive_call")]
-fn skips_bare_structure_used_as_boolean_operand(source: &str) {
-    expect_score(source, "a.rs", 1);
+#[test_case("a.rs", "fn go(n: u64) -> bool { n == 0 || go(n - 1) }", 2 ; "rust_recursion")]
+#[test_case("a.rs", "fn f(a: bool, x: u8) -> bool { a && match x { 0 => true, _ => false } }", 2 ; "rust_match")]
+#[test_case("a.rs", "fn f(a: bool, b: bool) -> bool { a && if b { true } else { false } }", 3 ; "rust_if")]
+#[test_case("a.rs", "fn f(a: bool, b: bool, c: bool) -> bool { a && b || f(a, b, c) }", 3 ; "rust_recursion_after_mixed_operators")]
+#[test_case("a.js", "function f(n) { return n <= 1 || f(n - 1); }", 2 ; "javascript_recursion")]
+#[test_case("a.ts", "function f(n: number): boolean { return n <= 1 || f(n - 1); }", 2 ; "typescript_recursion")]
+fn scores_bare_structure_used_as_boolean_operand(path: &str, source: &str, expected: u64) {
+    expect_score(source, path, expected);
+}
+
+// for: +1, `&&`: +1, if: +2 (nesting 1), else: +1
+#[test_case("a.rs", "fn f(xs: &[bool], b: bool) { for a in xs { let _ = *a && if b { true } else { false }; } }", 5 ; "rust_bare_if")]
+// for: +1, `||`: +1, recursion: +1
+#[test_case("a.js", "function f(xs) { for (const a of xs) { a || f(xs); } }", 3 ; "javascript_bare_recursion")]
+// for: +1, `&&`: +1, ternary: +2 (nesting 1)
+#[test_case("a.ts", "function f(xs: boolean[], b: boolean) { for (const a of xs) { const c = a && (b ? a : b); } }", 4 ; "typescript_parenthesized_ternary")]
+fn scores_boolean_operand_structure_at_nesting_of_surrounding_code(
+    path: &str,
+    source: &str,
+    expected: u64,
+) {
+    expect_score(source, path, expected);
 }
 
 #[test]

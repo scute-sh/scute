@@ -333,7 +333,7 @@ impl ScoringContext<'_> {
             + flat
                 .operands
                 .into_iter()
-                .map(|operand| self.complexity(operand, nesting))
+                .map(|operand| self.score_node(operand, nesting))
                 .sum::<u64>()
     }
 }
