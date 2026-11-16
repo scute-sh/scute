@@ -1,8 +1,8 @@
 use crate::language::Java;
 
 use super::rules::{
-    ComplexityRules, Construct, ElseBranch, FlowConstruct, IfConstruct, JumpKeyword, LogicalOp,
-    NestingKind, ScoringUnit,
+    ComplexityRules, Construct, ElseBranch, FlowConstruct, IfConstruct, JumpKeyword,
+    LogicalExpression, NestingKind, ScoringUnit,
 };
 
 impl ComplexityRules for Java {
@@ -52,12 +52,11 @@ impl ComplexityRules for Java {
         None
     }
 
-    fn logical_operator(&self, _node: tree_sitter::Node) -> Option<LogicalOp> {
+    fn logical_expression<'a>(
+        &self,
+        _node: tree_sitter::Node<'a>,
+    ) -> Option<LogicalExpression<'a>> {
         None
-    }
-
-    fn is_logical_operator_token(&self, _node: tree_sitter::Node) -> bool {
-        false
     }
 
     fn jump_label(&self, _node: tree_sitter::Node, _src: &[u8]) -> Option<(JumpKeyword, String)> {
