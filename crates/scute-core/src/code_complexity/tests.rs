@@ -757,17 +757,21 @@ fn ignores_any_declarative_function_outside_other_functions(path: &str, source: 
     expect_single_function(source, path, "outer", 1, 1);
 }
 
-#[test]
-fn nests_inside_declarative_function_scored_on_its_own_inside_another_function() {
-    let results = score(
-        "function outer(c) {
-            if (c) {}
-            function inner() { register(() => { if (c) {} }); }
-        }",
-        "a.js",
-    );
-
-    assert_function_score(&results, "inner", 2);
+#[test_case("function outer(c) {
+    if (c) {}
+    function inner() { register(() => { if (c) {} }); }
+}" ; "scored_function")]
+#[test_case("(function () {
+    function inner(c) { register(() => { if (c) {} }); }
+})();" ; "iife")]
+#[test_case("describe('x', () => {
+    function inner(c) { register(() => { if (c) {} }); }
+});" ; "anonymous_callback")]
+#[test_case("module.exports.plugin = (o) => ({
+    inner(build) { register(() => { if (build) {} }); }
+});" ; "function_bound_by_assignment")]
+fn nests_inside_declarative_function_scored_on_its_own_inside_another_function(source: &str) {
+    assert_function_score(&score(source, "a.js"), "inner", 2);
 }
 
 #[test_case("a.rs", "fn outer(c: bool) { let f = || { if c {} }; }" ; "rust_closure")]

@@ -99,7 +99,7 @@ fn collect_functions(
     let mut cursor = node.walk();
     for child in node.children(&mut cursor) {
         let unit = rules.scoring_unit(child, src);
-        let child_is_outer = outer && unit.is_none();
+        let child_is_outer = outer && unit.is_none() && rules.nesting_kind(child).is_none();
         if let Some(unit) = unit {
             results.push(score_unit(unit, outer, src, rules));
         }
