@@ -1,9 +1,19 @@
 use crate::code_complexity::check::languages;
 use crate::files::SourceFile;
 
+use super::rules::{Construct, FlowConstruct};
 use super::score::{Contributor, ContributorKind, FunctionScore, score_functions};
 use googletest::prelude::*;
 use test_case::test_case;
+
+const IF: FlowConstruct = FlowConstruct {
+    role: Construct::Conditional,
+    label: "if",
+};
+const ARROW: FlowConstruct = FlowConstruct {
+    role: Construct::NestedFunction,
+    label: "arrow",
+};
 
 fn score(source: &str, path: &str) -> Vec<super::score::FunctionScore> {
     let file = SourceFile {
@@ -431,45 +441,48 @@ fn scores_labeled_continue() {
     );
 }
 
+// The JS/TS outer functions start with an `if` (+1) so they aren't declarative.
 // closure/arrow: nesting +1, if: +1+1, else: +1
 #[test_case("a.rs", "fn f(items: &[i32]) -> Vec<i32> {
     items.iter().filter(|x| {
         if **x > 0 { true } else { false }
     }).copied().collect()
-}" ; "rust_closure")]
+}", 3 ; "rust_closure")]
 #[test_case("a.ts", "function f(items: number[]) {
+    if (items.length === 0) { return []; }
     return items.filter((x) => {
         if (x > 0) { return true; }
         else { return false; }
     });
-}" ; "typescript_arrow")]
-fn scores_inline_nesting(path: &str, source: &str) {
-    expect_score(source, path, 3);
+}", 4 ; "typescript_arrow")]
+fn scores_inline_nesting(path: &str, source: &str, expected: u64) {
+    expect_score(source, path, expected);
 }
 
 // function expression: const f = function() {...}
-// nesting +1, if: +1+1, else: +1
+// outer if: +1, nesting +1, if: +1+1, else: +1
 #[test]
 fn scores_function_expression_as_inline_nesting() {
     expect_score(
-        "function f() {
+        "function f(x: boolean) {
+    if (x) { return; }
     const g = function() {
         if (true) { return 1; }
         else { return 0; }
     };
 }",
         "a.ts",
-        3,
+        4,
     );
 }
 
-// generator expression: nesting +1, if: +1+1
+// generator expression: outer if: +1, nesting +1, if: +1+1
 #[test]
 fn scores_generator_expression_as_inline_nesting() {
     expect_score(
-        "function d(x: boolean) { const g = function* () { if (x) {} }; }",
+        "function d(x: boolean) { if (x) {} const g = function* () { if (x) {} }; }",
         "a.ts",
-        2,
+        3,
     );
 }
 
@@ -556,16 +569,16 @@ fn scores_the_expression_body_of_an_arrow_function_bound_to_a_name(
     expect_single_function(source, path, name, 1, 1);
 }
 
-// arrow/function: nesting +1, if: +1+1
-#[test_case("a.js", "function outer(x) { const f = (y) => { if (y) {} }; }" ; "javascript_variable")]
-#[test_case("a.ts", "function outer(x: boolean) { const api = { save: function (y: boolean) { if (y) {} } }; }" ; "typescript_object_property")]
-#[test_case("a.tsx", "function outer(x: boolean) { class A { handle = (y: boolean) => { if (y) {} }; } }" ; "tsx_class_field")]
-#[test_case("a.js", "const outer = (x) => { const f = (y) => { if (y) {} }; };" ; "javascript_variable_in_assigned_arrow")]
+// outer if: +1, arrow/function: nesting +1, if: +1+1
+#[test_case("a.js", "function outer(x) { if (x) {} const f = (y) => { if (y) {} }; }" ; "javascript_variable")]
+#[test_case("a.ts", "function outer(x: boolean) { if (x) {} const api = { save: function (y: boolean) { if (y) {} } }; }" ; "typescript_object_property")]
+#[test_case("a.tsx", "function outer(x: boolean) { if (x) {} class A { handle = (y: boolean) => { if (y) {} }; } }" ; "tsx_class_field")]
+#[test_case("a.js", "const outer = (x) => { if (x) {} const f = (y) => { if (y) {} }; };" ; "javascript_variable_in_assigned_arrow")]
 fn adds_assigned_function_inside_a_function_to_that_function_one_level_deeper(
     path: &str,
     source: &str,
 ) {
-    expect_single_function(source, path, "outer", 1, 2);
+    expect_single_function(source, path, "outer", 1, 3);
 }
 
 #[test_case("a.js", "const f =\n\n  (x) => { if (x) {} };" ; "javascript_variable")]
@@ -630,6 +643,137 @@ fn matches_spec_worked_example_with_an_object_literal_method(path: &str) {
         2,
         20,
     );
+}
+
+const DECLARATIVE_SPEC_EXAMPLE: &str = "function declarative(bar, condition) {
+    var foo;
+    bar.myFun = function () {
+        if (condition) {}
+    };
+}";
+
+// Campbell's Cognitive Complexity spec, p.14: the outer function only declares
+// things, so `myFun` adds no nesting and its `if` scores +1.
+#[test_case("a.js" ; "javascript")]
+#[test_case("a.ts" ; "typescript")]
+#[test_case("a.tsx" ; "tsx")]
+fn matches_spec_example_ignoring_a_declarative_outer_function(path: &str) {
+    let results = score(DECLARATIVE_SPEC_EXAMPLE, path);
+
+    assert_that!(
+        results,
+        elements_are![matches_pattern!(FunctionScore {
+            score: eq(&1),
+            contributors: elements_are![matches_pattern!(Contributor {
+                kind: eq(&ContributorKind::FlowBreak { construct: IF }),
+                line: eq(&4),
+                ..
+            })],
+            ..
+        })]
+    );
+}
+
+// Campbell's Cognitive Complexity spec, p.14: if +1 at the top level, so
+// `myFun` adds nesting and its `if` scores +2.
+#[test_case("a.js" ; "javascript")]
+#[test_case("a.ts" ; "typescript")]
+#[test_case("a.tsx" ; "tsx")]
+fn matches_spec_example_scoring_a_non_declarative_outer_function(path: &str) {
+    expect_score(
+        "function nonDeclarative(bar, condition) {
+            var foo;
+            if (condition) {}
+            bar.myFun = function () {
+                if (condition) {}
+            };
+        }",
+        path,
+        3,
+    );
+}
+
+// The top-level statement scores on its own, then the inner `if` scores +1
+// when the outer function stays declarative and +2 when it doesn't.
+#[test_case("const ok = a && b;", 2 ; "boolean_operators")]
+#[test_case("done: { break done; }", 2 ; "labeled_jump")]
+#[test_case("outer(a, b);", 2 ; "recursion")]
+#[test_case("if (a) {}", 3 ; "if_statement")]
+#[test_case("switch (a) {}", 3 ; "switch")]
+#[test_case("while (a) {}", 3 ; "while_loop")]
+#[test_case("try {} catch (e) {}", 3 ; "catch")]
+#[test_case("const n = a ? 1 : 2;", 3 ; "ternary")]
+#[test_case("const ok = a && (b ? 1 : 2);", 4 ; "ternary_inside_boolean_operand")]
+fn ignores_outer_function_only_without_top_level_structural_increment(
+    statement: &str,
+    expected: u64,
+) {
+    expect_score(
+        &format!(
+            "function outer(a, b) {{
+                {statement}
+                b.handle = () => {{ if (a) {{}} }};
+            }}"
+        ),
+        "a.js",
+        expected,
+    );
+}
+
+#[test]
+fn nests_functions_inside_the_ignored_boundary_of_a_declarative_outer_function() {
+    let results = score(
+        "function outer(x) { const a = () => { const b = () => { if (x) {} }; }; }",
+        "a.js",
+    );
+
+    assert_that!(
+        results,
+        elements_are![matches_pattern!(FunctionScore {
+            score: eq(&2),
+            contributors: elements_are![matches_pattern!(Contributor {
+                kind: eq(&ContributorKind::Nesting {
+                    construct: IF,
+                    enclosing: vec![ARROW],
+                }),
+                increment: eq(&2),
+                ..
+            })],
+            ..
+        })]
+    );
+}
+
+#[test_case("a.js", "function outer(c) { register(() => { if (c) {} }); }" ; "function_declaration")]
+#[test_case("a.js", "class A { outer(c) { register(() => { if (c) {} }); } }" ; "class_method")]
+#[test_case("a.js", "const outer = (c) => { register(() => { if (c) {} }); };" ; "variable")]
+#[test_case("a.js", "const api = { outer: function (c) { register(() => { if (c) {} }); } };" ; "object_literal_property")]
+#[test_case("a.js", "class A { outer = (c) => { register(() => { if (c) {} }); }; }" ; "class_field")]
+#[test_case("a.tsx", "function outer({ step }: Props) {
+    const increment = () => { if (step > 0) {} };
+    return <button onClick={increment}>+</button>;
+}" ; "tsx_component")]
+fn ignores_any_declarative_function_outside_other_functions(path: &str, source: &str) {
+    expect_single_function(source, path, "outer", 1, 1);
+}
+
+#[test]
+fn nests_inside_declarative_function_scored_on_its_own_inside_another_function() {
+    let results = score(
+        "function outer(c) {
+            if (c) {}
+            function inner() { register(() => { if (c) {} }); }
+        }",
+        "a.js",
+    );
+
+    assert_function_score(&results, "inner", 2);
+}
+
+#[test_case("a.rs", "fn outer(c: bool) { let f = || { if c {} }; }" ; "rust_closure")]
+#[test_case("a.rs", "fn outer(c: bool) { fn inner(c: bool) { if c {} } }" ; "rust_nested_fn")]
+fn nests_inside_declarative_outer_function_outside_javascript(path: &str, source: &str) {
+    assert_function_score(&score(source, path), "outer", 2);
 }
 
 #[test_case("a.rs",
