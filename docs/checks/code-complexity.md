@@ -63,7 +63,7 @@ Constructs in the same cognitive role follow the same scoring rules. A `switch` 
     return <button onClick={increment}>+</button>;
   }
   ```
-- **Logical operators count sequences, read left to right.** Each run of like operators costs +1, in the order they're written, whatever their precedence. `a && b && c` is one sequence (+1). `a || b && c || d` is three (+3). Parentheses don't break a run: `(a && b) && c` is still +1. A negated group starts its own: `a && !(b && c)` is +2.
+- **Logical operators count sequences, read left to right.** Each run of like operators costs +1, in the order they're written, whatever their precedence. `a && b && c` is one sequence (+1). `a || b && c || d` is three (+3). Parentheses don't break a run: `(a && b) && c` is still +1. A negated group starts its own: `a && !(b && c)` is +2. Operands score like any other code, at the nesting level around the expression: `n == 0 || go(n - 1)` inside `go` is +2 (the `||` and the recursion), and `a && match x { … }` is +2 too.
 - **Ternaries score like `if`.** (JS/TS) A ternary counts as a conditional and nests like any other flow construct.
 
 ## Usage
