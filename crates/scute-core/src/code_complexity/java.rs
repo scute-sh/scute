@@ -22,7 +22,7 @@ impl ComplexityRules for Java {
         Some(ScoringUnit {
             name,
             line: node.start_position().row + 1,
-            node: node.child_by_field_name("body").unwrap_or(node),
+            body: node.child_by_field_name("body").unwrap_or(node),
             receiver_type: None,
         })
     }
