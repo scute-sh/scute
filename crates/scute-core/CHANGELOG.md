@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.0.17](https://github.com/scute-sh/scute/compare/scute-core-v0.0.16...scute-core-v0.0.17) - 2026-11-16
+
+### Fixed
+
+- score structures used directly as boolean operands ([#182](https://github.com/scute-sh/scute/pull/182))
+- score JS/TS functions assigned to names ([#177](https://github.com/scute-sh/scute/pull/177))
+- count boolean operator sequences in source order ([#179](https://github.com/scute-sh/scute/pull/179))
+- name every nesting level in code-complexity evidence ([#181](https://github.com/scute-sh/scute/pull/181))
+- keep an if's condition at the if's own nesting level ([#171](https://github.com/scute-sh/scute/pull/171))
+
+### Other
+
+- pin complexity scoring paths that could break silently ([#178](https://github.com/scute-sh/scute/pull/178))
+- make three complexity tests fail when their behavior breaks ([#170](https://github.com/scute-sh/scute/pull/170))
+- give complexity scoring's receiver type one name ([#168](https://github.com/scute-sh/scute/pull/168))
+
 ## [0.0.16](https://github.com/scute-sh/scute/compare/scute-core-v0.0.15...scute-core-v0.0.16) - 2026-11-10
 
 ### Added
